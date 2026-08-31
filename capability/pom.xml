@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>com.mtfm</groupId>
+		<artifactId>deadman-integration-pipeline</artifactId>
+		<version>0.0.1-SNAPSHOT</version>
+	</parent>
+	<artifactId>capability</artifactId>
+	<packaging>pom</packaging>
+	<name>capability</name>
+	<description>南向/北向能力聚合，各子模块只依赖 core-spi 与协议 SDK</description>
+
+	<modules>
+		<module>loopback</module>
+		<module>modbus</module>
+		<module>mqtt</module>
+		<module>hikvision</module>
+		<module>cloud</module>
+	</modules>
+</project>

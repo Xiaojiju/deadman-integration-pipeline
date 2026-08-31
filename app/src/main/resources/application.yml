@@ -1,0 +1,11 @@
+spring:
+  application:
+    name: deadman-integration-pipeline
+  datasource:
+    url: ${GATEWAY_DATASOURCE_URL:jdbc:postgresql://192.168.3.247:5432/integration-pipeline}
+    username: ${GATEWAY_DATASOURCE_USERNAME:postgres}
+    password: ${GATEWAY_DATASOURCE_PASSWORD:yxsk@2025}
+    driver-class-name: org.postgresql.Driver
+
+server:
+  port: ${GATEWAY_PORT:8080}

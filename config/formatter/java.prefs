@@ -1,0 +1,3 @@
+eclipse.preferences.version=1
+org.eclipse.jdt.core.formatter.settings.profile=P3C-CodeStyle
+org.eclipse.jdt.core.formatter.settings.url=file\:config/formatter/eclipse-codestyle.xml

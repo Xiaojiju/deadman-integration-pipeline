@@ -1,0 +1,41 @@
+package com.mtfm.gateway.spi.port;
+
+import com.mtfm.gateway.spi.capability.Driver;
+import com.mtfm.gateway.spi.capability.FunctionExecutor;
+
+/**
+ * 南向能力与设备绑定登记端口。
+ *
+ * <p>使用示例：
+ * <pre>{@code
+ * registry.registerDriver(modbusDriver);
+ * registry.registerExecutor(modbusExecutor);
+ * registry.register("dev-001", "modbus-tcp");
+ * registry.unregister("dev-001");
+ * }</pre>
+ */
+public interface DriverRegistry {
+
+    /** 注册南向解码驱动。 */
+    void registerDriver(Driver driver);
+
+    /** 注册南向功能执行器。 */
+    void registerExecutor(FunctionExecutor executor);
+
+    /**
+     * 绑定设备与南向能力。一设备一南向协议，重复绑定不同类型失败。
+     *
+     * @param deviceId       设备 ID
+     * @param capabilityType 能力类型
+     * @return 是否绑定成功
+     */
+    boolean register(String deviceId, String capabilityType);
+
+    /**
+     * 解除设备绑定；在途 Execute 不中断。
+     *
+     * @param deviceId 设备 ID
+     * @return 是否解绑成功
+     */
+    boolean unregister(String deviceId);
+}
