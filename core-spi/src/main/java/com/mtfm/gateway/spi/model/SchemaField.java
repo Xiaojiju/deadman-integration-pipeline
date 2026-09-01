@@ -5,7 +5,9 @@ import java.util.List;
 /**
  * 能力/功能字段说明。底层仍可落 JSON，调用方按本结构渲染表单。
  *
- * <p>使用示例：
+ * <p>
+ * 使用示例：
+ * 
  * <pre>{@code
  * SchemaField host = SchemaField.required("host", FieldType.STRING, "Modbus 主机", "127.0.0.1");
  * SchemaField secret = SchemaField.secret("password", "连接密码");
@@ -22,7 +24,7 @@ import java.util.List;
  * @param defaultValue 默认值
  * @param secret       是否敏感字段（密码框）
  * @param choices      下拉选项，type 为 SELECT 时使用
- * @param format       UI 采值约束（与 type 解耦）
+ * @param format       采值约束（与 type 解耦）
  */
 public record SchemaField(
         String name,
@@ -33,8 +35,7 @@ public record SchemaField(
         Object defaultValue,
         boolean secret,
         List<String> choices,
-        FieldFormat format
-) {
+        FieldFormat format) {
 
     public SchemaField {
         if (name == null || name.isBlank()) {
@@ -77,23 +78,23 @@ public record SchemaField(
         return new SchemaField(name, type, false, description, name, defaultValue, false, List.of(), FieldFormat.NONE);
     }
 
-    /** 创建带 UI 约束的可选字段。 */
+    /** 创建带约束的可选字段。 */
     public static SchemaField optional(String name, FieldType type, String description, FieldFormat format) {
         return new SchemaField(name, type, false, description, name, null, false, List.of(), format);
     }
 
-    /** 创建带 UI 约束的必填字段。 */
+    /** 创建带约束的必填字段。 */
     public static SchemaField required(String name, FieldType type, String description, FieldFormat format) {
         return new SchemaField(name, type, true, description, name, null, false, List.of(), format);
     }
 
-    /** 创建带默认值与 UI 约束的可选字段。 */
+    /** 创建带默认值与约束的可选字段。 */
     public static SchemaField optional(String name, FieldType type, String description, Object defaultValue,
             FieldFormat format) {
         return new SchemaField(name, type, false, description, name, defaultValue, false, List.of(), format);
     }
 
-    /** 创建带默认值与 UI 约束的必填字段。 */
+    /** 创建带默认值与约束的必填字段。 */
     public static SchemaField required(String name, FieldType type, String description, Object defaultValue,
             FieldFormat format) {
         return new SchemaField(name, type, true, description, name, defaultValue, false, List.of(), format);
