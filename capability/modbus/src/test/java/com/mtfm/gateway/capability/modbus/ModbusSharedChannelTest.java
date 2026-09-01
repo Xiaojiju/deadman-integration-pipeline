@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 class ModbusSharedChannelTest {
 
     @Test
-    void 一通道两从站互不影响且解绑按引用计数() {
+    void oneChannelTwoSlavesIndependentUnbindByRefCount() {
         InMemoryModbusBus bus = new InMemoryModbusBus();
         ModbusExecutor executor = new ModbusExecutor(bus);
         executor.bind(endpoint("A", "gw-1", 1));

@@ -43,7 +43,7 @@ class CatalogFormServiceImportTest {
     private CatalogFormService forms;
 
     @Test
-    void FIXED导入将parameters写入WriteFields并保留choices() {
+    void fixedImportWritesParametersIntoWriteFieldsWithChoices() {
         when(store.findProduct("p1")).thenReturn(Optional.of(new com.mtfm.gateway.catalog.entity.ProductEntity()));
         when(store.findFunction("p1", "remoteControlDoor")).thenReturn(Optional.empty());
         when(store.properties()).thenReturn(properties);

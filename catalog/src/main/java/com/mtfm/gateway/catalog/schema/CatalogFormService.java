@@ -25,6 +25,7 @@ import com.mtfm.gateway.catalog.json.JsonMaps;
 import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.spi.capability.CapabilityRegistrar;
 import com.mtfm.gateway.spi.model.CapabilityDescriptor;
+import com.mtfm.gateway.spi.model.FieldType;
 import com.mtfm.gateway.spi.model.FormField;
 import com.mtfm.gateway.spi.model.FunctionCommand;
 import com.mtfm.gateway.spi.model.FunctionTemplate;
@@ -463,7 +464,7 @@ public class CatalogFormService {
             result.add(new PropertyItem(
                     field.name(),
                     item.attributeValue(),
-                    field.type(),
+                    field.type().code(),
                     description));
         }
         return List.copyOf(result);
@@ -479,8 +480,8 @@ public class CatalogFormService {
             fields.add(new WriteFieldOption(
                     field.name(),
                     field.description(),
-                    field.type(),
-                    field.type(),
+                    field.type().code(),
+                    field.type().code(),
                     false,
                     PropertySchemas.choicesToValueOptions(field)));
         }
@@ -524,8 +525,8 @@ public class CatalogFormService {
             result.add(new WriteFieldOption(
                     schemaField.name(),
                     description,
-                    schemaField.type(),
-                    schemaField.type(),
+                    schemaField.type().code(),
+                    schemaField.type().code(),
                     req != null && req.ignoreRequest(),
                     options));
         }
@@ -944,13 +945,13 @@ public class CatalogFormService {
                 .toList();
     }
 
-    private static String inferType(Object value) {
+    private static FieldType inferType(Object value) {
         if (value instanceof Number) {
-            return "int";
+            return FieldType.INT;
         }
         if (value instanceof Boolean) {
-            return "boolean";
+            return FieldType.BOOLEAN;
         }
-        return "string";
+        return FieldType.STRING;
     }
 }

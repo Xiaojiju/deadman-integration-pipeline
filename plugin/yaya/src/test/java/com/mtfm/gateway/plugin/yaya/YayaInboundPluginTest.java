@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class YayaInboundPluginTest {
 
     @Test
-    void 仅前缀设备入链且映射cmd() {
+    void onlyPrefixedDeviceEntersAndMapsCmd() {
         YayaInboundPlugin plugin = new YayaInboundPlugin();
         EnvelopeDraft yaya = EnvelopeDraft.builder()
                 .deviceId("yaya-1")

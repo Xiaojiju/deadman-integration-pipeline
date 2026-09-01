@@ -21,7 +21,7 @@ public final class PropertySchemas {
         return new PropertyItem(
                 field.name(),
                 def == null ? "" : String.valueOf(def),
-                field.type(),
+                field.type().code(),
                 field.description());
     }
 
@@ -38,10 +38,11 @@ public final class PropertySchemas {
             return List.of();
         }
         String defaultText = field.defaultValue() == null ? null : String.valueOf(field.defaultValue());
+        String typeCode = field.type().code();
         List<ValueOption> options = new ArrayList<>();
         for (String choice : field.choices()) {
             boolean isDefault = defaultText != null && defaultText.equals(choice);
-            options.add(new ValueOption(choice, choice, choice, field.type(), field.type(), isDefault));
+            options.add(new ValueOption(choice, choice, choice, typeCode, typeCode, isDefault));
         }
         return List.copyOf(options);
     }

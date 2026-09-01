@@ -1,5 +1,6 @@
 import { Loader2Icon } from "lucide-react"
 
+import { SchemaFieldControl } from "@/components/schema-field-control"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -20,9 +21,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { Textarea } from "@/components/ui/textarea"
 import { catalogApi } from "@/lib/api"
-import { recordToProperties } from "@/lib/schema-form"
+import { isIntFieldType, recordToProperties } from "@/lib/schema-form"
 import type { CapabilityDescriptor, ChannelEntity, ProductEntity, SchemaField } from "@/lib/types"
 import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
@@ -103,8 +103,7 @@ export function RegisterDeviceDialog({
         if (!raw && !field.required) {
           continue
         }
-        parsedAddress[field.name] =
-          field.type === "int" || field.type === "integer" ? Number(raw) : raw
+        parsedAddress[field.name] = isIntFieldType(field.type) ? Number(raw) : raw
       }
       await catalogApi.registerDevice({
         deviceCode: deviceCode.trim(),
@@ -191,25 +190,14 @@ export function RegisterDeviceDialog({
                 {field.label || field.name}
                 {field.required ? " *" : ""}
               </FieldLabel>
-              {field.type === "string" && (field.description?.includes("列表") || field.name.endsWith("List")) ? (
-                <Textarea
-                  id={`addr-${field.name}`}
-                  value={address[field.name] ?? ""}
-                  onChange={(event) =>
-                    setAddress((prev) => ({ ...prev, [field.name]: event.target.value }))
-                  }
-                />
-              ) : (
-                <Input
-                  id={`addr-${field.name}`}
-                  type={field.type === "int" || field.type === "integer" ? "number" : "text"}
-                  value={address[field.name] ?? ""}
-                  onChange={(event) =>
-                    setAddress((prev) => ({ ...prev, [field.name]: event.target.value }))
-                  }
-                  placeholder={field.description}
-                />
-              )}
+              <SchemaFieldControl
+                field={field}
+                value={address[field.name] ?? ""}
+                idPrefix="addr"
+                onChange={(next) =>
+                  setAddress((prev) => ({ ...prev, [field.name]: next }))
+                }
+              />
             </Field>
           ))}
           <Field orientation="horizontal" className="items-center justify-between">

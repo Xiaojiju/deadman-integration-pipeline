@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class HikvisionUnbindTest {
 
     @Test
-    void 解绑一台不影响其它通道() {
+    void unbindOneDoesNotAffectOtherChannels() {
         ConcurrentHashMap<String, StubHikvisionClient> created = new ConcurrentHashMap<>();
         HikvisionExecutor executor = new HikvisionExecutor(config ->
                 created.computeIfAbsent(config.channelId(), StubHikvisionClient::new));
@@ -34,7 +34,7 @@ class HikvisionUnbindTest {
     }
 
     @Test
-    void 按功能分发() {
+    void dispatchesByFunction() {
         StubHikvisionClient client = new StubHikvisionClient("ch-1");
         HikvisionExecutor executor = new HikvisionExecutor(config -> client);
         executor.bind(binding("door-1", "ch-1"));

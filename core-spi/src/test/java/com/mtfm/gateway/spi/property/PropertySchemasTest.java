@@ -1,6 +1,7 @@
 package com.mtfm.gateway.spi.property;
 
 import com.mtfm.gateway.spi.model.SchemaField;
+import com.mtfm.gateway.spi.model.FieldType;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -13,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class PropertySchemasTest {
 
     @Test
-    void choices转WriteValueOption并标记默认项() {
+    void choicesBecomeWriteValueOptionsWithDefault() {
         SchemaField field = SchemaField.choice("command", "控门指令", true, "open", List.of("open", "close"));
         List<ValueOption> options = PropertySchemas.choicesToValueOptions(field);
         assertEquals(2, options.size());
@@ -24,9 +25,9 @@ class PropertySchemasTest {
     }
 
     @Test
-    void choiceOptionsByField只收集有枚举的字段() {
+    void choiceOptionsByFieldOnlyCollectsEnumFields() {
         List<SchemaField> fields = List.of(
-                SchemaField.required("target", "string", "门号"),
+                SchemaField.required("target", FieldType.STRING, "门号"),
                 SchemaField.choice("command", "控门指令", true, "open", List.of("open", "close")));
         Map<String, List<ValueOption>> byField = PropertySchemas.choiceOptionsByField(fields);
         assertEquals(1, byField.size());

@@ -10,15 +10,17 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import type { FieldFormat, FieldType } from "@/lib/types"
 
 export type SchemaControlField = {
   name: string
-  type: string
+  type: FieldType | string
   required?: boolean
   description?: string
   label?: string
   secret?: boolean
   choices?: string[]
+  format?: FieldFormat | string
   value?: unknown
 }
 
@@ -30,18 +32,67 @@ type Props = {
 }
 
 /**
- * 按 schema 类型渲染控件：
- * - select / 有 choices：下拉；恰好 2 个选项时用按钮组
+ * 按 schema type + format 渲染控件：
+ * - format=datetime_iso8601：日期时间选择
+ * - format=image_base64：本地选图 → Base64
+ * - format=text_list / type=json：多行文本
+ * - select / choices：下拉或按钮组
  * - boolean：开关
- * - list/json：多行文本
  * - 其它：普通输入
  */
 export function SchemaFieldControl({ field, value, onChange, idPrefix = "field" }: Props) {
   const id = `${idPrefix}-${field.name}`
   const choices = field.choices ?? []
-  const isSelect = field.type === "select" || choices.length > 0
+  const format = (field.format ?? "none").toLowerCase()
+  const type = (field.type ?? "string").toLowerCase()
+  const isSelect = type === "select" || choices.length > 0
 
-  if (field.type === "boolean") {
+  if (format === "datetime_iso8601" || format === "datetime") {
+    return (
+      <Input
+        id={id}
+        type="datetime-local"
+        value={toDatetimeLocalValue(value)}
+        onChange={(event) => onChange(fromDatetimeLocalValue(event.target.value))}
+      />
+    )
+  }
+
+  if (format === "image_base64" || format === "image") {
+    return (
+      <div className="space-y-2">
+        <Input
+          id={id}
+          type="file"
+          accept="image/*"
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            if (!file) {
+              onChange("")
+              return
+            }
+            const reader = new FileReader()
+            reader.onload = () => {
+              const result = typeof reader.result === "string" ? reader.result : ""
+              // 服务端通常要纯 Base64；若含 dataURL 前缀则剥掉
+              const comma = result.indexOf(",")
+              onChange(comma >= 0 ? result.slice(comma + 1) : result)
+            }
+            reader.readAsDataURL(file)
+          }}
+        />
+        {value ? (
+          <p className="truncate text-xs text-muted-foreground">
+            已选择图片（Base64 {value.length} 字符）
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">{field.description || "选择本地图片后自动转 Base64"}</p>
+        )}
+      </div>
+    )
+  }
+
+  if (type === "boolean") {
     const checked = value === "true" || value === "1"
     return (
       <div className="flex items-center justify-between gap-3">
@@ -92,7 +143,11 @@ export function SchemaFieldControl({ field, value, onChange, idPrefix = "field" 
     )
   }
 
-  if (field.name.toLowerCase().includes("list") || field.type === "json") {
+  if (
+    format === "text_list" ||
+    type === "json" ||
+    field.name.toLowerCase().includes("list")
+  ) {
     return (
       <Textarea
         id={id}
@@ -107,9 +162,9 @@ export function SchemaFieldControl({ field, value, onChange, idPrefix = "field" 
     <Input
       id={id}
       type={
-        field.secret
+        field.secret || type === "password"
           ? "password"
-          : field.type === "int" || field.type === "integer"
+          : type === "int" || type === "integer"
             ? "number"
             : "text"
       }
@@ -128,4 +183,31 @@ function labelForChoice(choice: string): string {
     off: "关 off",
   }
   return map[choice] ?? choice
+}
+
+/** ISO / 任意可解析时间 → datetime-local 值（yyyy-MM-ddTHH:mm）。 */
+function toDatetimeLocalValue(raw: string): string {
+  if (!raw) {
+    return ""
+  }
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T")
+  const date = new Date(normalized)
+  if (Number.isNaN(date.getTime())) {
+    // 已是本地控件格式则直接用前 16 位
+    return normalized.length >= 16 ? normalized.slice(0, 16) : normalized
+  }
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+/** datetime-local → ISO-8601（本地时区偏移）。 */
+function fromDatetimeLocalValue(local: string): string {
+  if (!local) {
+    return ""
+  }
+  const date = new Date(local)
+  if (Number.isNaN(date.getTime())) {
+    return local
+  }
+  return date.toISOString()
 }

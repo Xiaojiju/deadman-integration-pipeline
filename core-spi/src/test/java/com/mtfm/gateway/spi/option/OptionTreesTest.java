@@ -14,14 +14,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class OptionTreesTest {
 
     @Test
-    void 扁字符串读成标量() {
+    void flatStringReadsAsScalar() {
         Option option = OptionTrees.fromUnknown("1200");
         assertTrue(option.isScalar());
         assertEquals("1200", ((OptionValue.Scalar) option.value()).raw());
     }
 
     @Test
-    void 对象与数组合并差异节点() {
+    void objectAndArrayMergeDiffNodes() {
         Map<String, Option> productFields = new LinkedHashMap<>();
         productFields.put("speed", Option.scalar("100"));
         productFields.put("mode", Option.scalar("auto"));
@@ -40,7 +40,7 @@ class OptionTreesTest {
     }
 
     @Test
-    void 数组可序列化为多级节点() {
+    void arraySerializesToNestedNodes() {
         Option array = OptionTrees.fromUnknown(List.of("a", Map.of("k", "v")));
         assertTrue(array.isArray());
         OptionValue.ArrayNode node = (OptionValue.ArrayNode) array.value();
@@ -49,7 +49,7 @@ class OptionTreesTest {
     }
 
     @Test
-    void 对象树可压成表单值() {
+    void objectTreeFlattensToFormValues() {
         Map<String, Option> fields = new LinkedHashMap<>();
         fields.put("host", Option.scalar("10.0.0.1"));
         fields.put("port", Option.scalar("502"));

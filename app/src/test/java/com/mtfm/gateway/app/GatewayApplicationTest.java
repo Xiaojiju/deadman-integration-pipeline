@@ -15,7 +15,7 @@ class GatewayApplicationTest {
     private GatewayPipeline pipeline;
 
     @Test
-    void 宿主可启动且流水线已装配() {
+    void hostStartsWithPipelineWired() {
         assertNotNull(pipeline);
         assertNotNull(pipeline.find("PROTO").orElse(null));
         assertNotNull(pipeline.find("MODBUS").orElse(null));

@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { catalogApi } from "@/lib/api"
-import { toFieldStringMap } from "@/lib/schema-form"
+import { isBooleanFieldType, isIntFieldType, toFieldStringMap } from "@/lib/schema-form"
 import type { FunctionFormView, ValueOption } from "@/lib/types"
 
 type Props = {
@@ -121,9 +121,9 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
           if (raw === "" && !field.required) {
             continue
           }
-          if (field.type === "int" || field.type === "integer") {
+          if (isIntFieldType(field.type)) {
             args[field.name] = Number(raw)
-          } else if (field.type === "boolean") {
+          } else if (isBooleanFieldType(field.type)) {
             args[field.name] = raw === "true" || raw === "1"
           } else if (raw.trim().startsWith("[") || raw.trim().startsWith("{")) {
             try {

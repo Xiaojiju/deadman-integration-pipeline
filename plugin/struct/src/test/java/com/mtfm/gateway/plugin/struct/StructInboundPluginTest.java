@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class StructInboundPluginTest {
 
     @Test
-    void 填充默认fields() {
+    void fillsDefaultFields() {
         StructInboundPlugin plugin = new StructInboundPlugin();
         EnvelopeDraft draft = EnvelopeDraft.builder()
                 .deviceId("dev-1")

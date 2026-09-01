@@ -2,6 +2,7 @@ import { PlusIcon } from "lucide-react"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
+import { SchemaFieldControl } from "@/components/schema-field-control"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -263,14 +264,13 @@ export function ChannelsPanel({ channels, capabilities, onChanged }: Props) {
                   {field.label || field.name}
                   {field.required ? " *" : ""}
                 </FieldLabel>
-                <Input
-                  id={`conn-${field.name}`}
-                  type={field.secret ? "password" : field.type === "int" ? "number" : "text"}
+                <SchemaFieldControl
+                  field={field}
                   value={connection[field.name] ?? ""}
-                  onChange={(event) =>
-                    setConnection((prev) => ({ ...prev, [field.name]: event.target.value }))
+                  idPrefix="conn"
+                  onChange={(next) =>
+                    setConnection((prev) => ({ ...prev, [field.name]: next }))
                   }
-                  placeholder={field.description}
                 />
               </Field>
             ))}

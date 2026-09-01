@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class MqttExecutorTest {
 
     @Test
-    void 共享通道引用计数与发布() {
+    void sharedChannelRefCountAndPublish() {
         InMemoryMqttTransport transport = new InMemoryMqttTransport();
         MqttExecutor executor = new MqttExecutor(transport);
         executor.bind(binding("A", "ch-1", "dev/A"));

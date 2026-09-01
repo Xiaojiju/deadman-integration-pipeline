@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class CatalogStoreOverrideParseTest {
 
     @Test
-    void 按functionId解析旧optionOverrides() {
+    void parsesLegacyOptionOverridesByFunctionId() {
         Map<String, Object> legacy = Map.of(
                 "remoteControlDoor", Map.of("command", "open", "target", "1"));
         Map<String, List<PropertyItem>> parsed = CatalogStore.parseLegacyOverrides(legacy);
@@ -21,7 +21,7 @@ class CatalogStoreOverrideParseTest {
     }
 
     @Test
-    void 扁平覆盖不归属到任意功能() {
+    void flatOverrideDoesNotBelongToAnyFunction() {
         Map<String, List<PropertyItem>> parsed = CatalogStore.parseLegacyOverrides(Map.of("command", "open"));
         assertTrue(parsed.isEmpty());
     }

@@ -44,7 +44,7 @@ class GatewayPipelineLoopbackTest {
     }
 
     @Test
-    void 提交命令拿到贴胶回执() throws Exception {
+    void submitCommandReturnsStampedReceipt() throws Exception {
         StubExecutor executor = new StubExecutor();
         StubPublisher publisher = new StubPublisher();
         InMemoryFunctionCatalog catalog = new InMemoryFunctionCatalog().allow("dev-1", "fn.switch");
@@ -67,7 +67,7 @@ class GatewayPipelineLoopbackTest {
     }
 
     @Test
-    void 插件拒绝不贴胶不进Execute() throws Exception {
+    void pluginRejectSkipsStampAndExecute() throws Exception {
         StubExecutor executor = new StubExecutor();
         StubPublisher publisher = new StubPublisher();
         InMemoryFunctionCatalog catalog = new InMemoryFunctionCatalog().allow("dev-1", "fn.switch");
@@ -89,7 +89,7 @@ class GatewayPipelineLoopbackTest {
     }
 
     @Test
-    void 遥测跳过Execute() {
+    void telemetrySkipsExecute() {
         StubExecutor executor = new StubExecutor();
         StubPublisher publisher = new StubPublisher();
         pipeline = GatewayPipeline.builder().build();

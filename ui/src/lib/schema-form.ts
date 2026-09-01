@@ -1,5 +1,16 @@
 import type { PropertyItem, SchemaField } from "@/lib/types"
 
+/** 是否为整型字段（兼容旧 integer）。 */
+export function isIntFieldType(type?: string | null): boolean {
+  const key = (type ?? "").toLowerCase()
+  return key === "int" || key === "integer" || key === "number" || key === "long"
+}
+
+export function isBooleanFieldType(type?: string | null): boolean {
+  const key = (type ?? "").toLowerCase()
+  return key === "boolean" || key === "bool"
+}
+
 /** 兼容 JSON 文本或已解析对象。 */
 export function asRecord(value?: string | Record<string, unknown> | null): Record<string, unknown> {
   if (value == null) {
@@ -37,7 +48,7 @@ export function recordToProperties(
     return {
       attribute,
       attributeValue: value == null ? "" : String(value),
-      dataType: field?.type ?? inferDataType(value),
+      dataType: field?.type ? String(field.type) : inferDataType(value),
       description: field?.description ?? "",
     }
   })
@@ -82,11 +93,11 @@ export function buildValuesFromFields(
     if (!raw && skipEmptyOptional && !field.required) {
       continue
     }
-    if (field.type === "int" || field.type === "integer") {
+    if (isIntFieldType(field.type)) {
       body[field.name] = raw === "" ? undefined : Number(raw)
       continue
     }
-    if (field.type === "boolean") {
+    if (isBooleanFieldType(field.type)) {
       body[field.name] = raw === "true" || raw === "1"
       continue
     }

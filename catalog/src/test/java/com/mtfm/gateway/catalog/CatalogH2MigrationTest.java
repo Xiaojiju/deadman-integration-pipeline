@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class CatalogH2MigrationTest {
 
     @Test
-    void h2本地库可迁移并投影一通道两地址() throws Exception {
+    void h2MigratesAndProjectsOneChannelTwoAddresses() throws Exception {
         String url = "jdbc:h2:mem:catalog_test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE";
         Flyway.configure()
                 .dataSource(url, "sa", "")

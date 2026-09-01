@@ -1,12 +1,41 @@
+export type FieldType =
+  | "string"
+  | "int"
+  | "boolean"
+  | "select"
+  | "password"
+  | "json"
+
+export type FieldFormat =
+  | "none"
+  | "datetime_iso8601"
+  | "image_base64"
+  | "text_list"
+
 export type SchemaField = {
   name: string
-  type: string
+  type: FieldType | string
   required: boolean
   description: string
   label: string
   defaultValue?: unknown
   secret?: boolean
   choices?: string[]
+  /** UI 采值约束；与 type 解耦 */
+  format?: FieldFormat | string
+}
+
+export type FormFieldView = {
+  name: string
+  type: FieldType | string
+  required: boolean
+  description: string
+  label: string
+  value?: unknown
+  secret?: boolean
+  choices?: string[]
+  defaultValue?: unknown
+  format?: FieldFormat | string
 }
 
 export type PropertyItem = {
@@ -122,17 +151,7 @@ export type FunctionFormView = {
   accessPermission: number
   capabilityType: string
   writeAccessType?: string
-  parameters: Array<{
-    name: string
-    type: string
-    required: boolean
-    description: string
-    label: string
-    value?: unknown
-    secret?: boolean
-    choices?: string[]
-    defaultValue?: unknown
-  }>
+  parameters: FormFieldView[]
   properties?: PropertyItem[]
   writeValueOptions?: ValueOption[]
   values: Record<string, unknown>

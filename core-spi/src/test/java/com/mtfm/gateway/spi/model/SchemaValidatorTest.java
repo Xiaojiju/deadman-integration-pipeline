@@ -12,10 +12,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SchemaValidatorTest {
 
     @Test
-    void 缺少必填字段则失败() {
+    void failsWhenRequiredFieldMissing() {
         List<SchemaField> schema = List.of(
-                SchemaField.required("host", "string", "主机"),
-                SchemaField.optional("port", "int", "端口", 1883)
+                SchemaField.required("host", FieldType.STRING, "主机"),
+                SchemaField.optional("port", FieldType.INT, "端口", 1883)
         );
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> SchemaValidator.require(schema, Map.of("port", 1883), "通道 connection"));
@@ -23,8 +23,8 @@ class SchemaValidatorTest {
     }
 
     @Test
-    void 必填齐全则通过() {
-        List<SchemaField> schema = List.of(SchemaField.required("slaveId", "int", "从站号"));
+    void passesWhenRequiredFieldsPresent() {
+        List<SchemaField> schema = List.of(SchemaField.required("slaveId", FieldType.INT, "从站号"));
         assertDoesNotThrow(() -> SchemaValidator.require(schema, Map.of("slaveId", 1), "端点 address"));
     }
 }

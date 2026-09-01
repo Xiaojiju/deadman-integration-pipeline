@@ -8,13 +8,13 @@ import java.util.List;
  * <p>使用示例：
  * <pre>{@code
  * FormField field = FormField.from(
- *         SchemaField.required("offset", "int", "寄存器偏移"),
+ *         SchemaField.required("offset", FieldType.INT, "寄存器偏移"),
  *         100);
  * // field.value() == 100, field.label() == "offset"
  * }</pre>
  *
  * @param name         字段名
- * @param type         控件类型
+ * @param type         固定字段类型
  * @param required     是否必填
  * @param label        显示标签
  * @param description  说明文字
@@ -22,24 +22,27 @@ import java.util.List;
  * @param value        当前绑定值
  * @param secret       是否敏感字段
  * @param choices      下拉选项
+ * @param format       UI 采值约束
  */
 public record FormField(
         String name,
-        String type,
+        FieldType type,
         boolean required,
         String label,
         String description,
         Object defaultValue,
         Object value,
         boolean secret,
-        List<String> choices
+        List<String> choices,
+        FieldFormat format
 ) {
 
     public FormField {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("name 不能为空");
         }
-        type = type == null || type.isBlank() ? "string" : type;
+        type = type == null ? FieldType.STRING : type;
+        format = format == null ? FieldFormat.NONE : format;
         label = (label == null || label.isBlank()) ? name : label;
         description = description == null ? "" : description;
         choices = choices == null ? List.of() : List.copyOf(choices);
@@ -57,7 +60,8 @@ public record FormField(
                 schema.defaultValue(),
                 resolved,
                 schema.secret(),
-                schema.choices()
+                schema.choices(),
+                schema.format()
         );
     }
 }

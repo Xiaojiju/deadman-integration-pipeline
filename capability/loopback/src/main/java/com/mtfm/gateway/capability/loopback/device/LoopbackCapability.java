@@ -1,6 +1,7 @@
 package com.mtfm.gateway.capability.loopback.device;
 
 import com.mtfm.gateway.spi.model.CapabilityDescriptor;
+import com.mtfm.gateway.spi.model.FieldType;
 import com.mtfm.gateway.spi.model.FunctionTemplate;
 import com.mtfm.gateway.spi.model.SchemaField;
 
@@ -19,8 +20,8 @@ public final class LoopbackCapability {
 
     public static final CapabilityDescriptor DESCRIPTOR = new CapabilityDescriptor(
             TYPE,
-            List.of(SchemaField.optional("mode", "string", "回环模式，仅文档")),
-            List.of(SchemaField.optional("alias", "string", "逻辑别名，不属于寻址片")),
+            List.of(SchemaField.optional("mode", FieldType.STRING, "回环模式，仅文档")),
+            List.of(SchemaField.optional("alias", FieldType.STRING, "逻辑别名，不属于寻址片")),
             List.of(
                     FunctionTemplate.of(FN_SWITCH, "WRITE", List.of(
                             SchemaField.choice("action", "开关动作", true, "on", List.of("on", "off"))
