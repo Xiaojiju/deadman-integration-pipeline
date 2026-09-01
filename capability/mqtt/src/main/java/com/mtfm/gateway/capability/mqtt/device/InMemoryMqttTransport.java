@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 
 /**
- * 内存 MQTT 传输：按 channelId 引用计数。
+ * 内存 MQTT 传输：按 channelId 引用计数；subscribe 按 topic 分发。
  */
 public final class InMemoryMqttTransport implements MqttTransport {
 
@@ -18,7 +18,7 @@ public final class InMemoryMqttTransport implements MqttTransport {
     private final CopyOnWriteArrayList<String> published = new CopyOnWriteArrayList<>();
 
     @Override
-    public void retain(String channelId, String broker) {
+    public void retain(String channelId, MqttBrokerConnection connection) {
         refs.computeIfAbsent(channelId, key -> new AtomicInteger()).incrementAndGet();
     }
 
@@ -30,7 +30,7 @@ public final class InMemoryMqttTransport implements MqttTransport {
         }
         if (count.decrementAndGet() <= 0) {
             refs.remove(channelId);
-            subscribers.remove(channelId);
+            subscribers.keySet().removeIf(key -> key.startsWith(channelId + "\0"));
         }
     }
 
@@ -43,7 +43,7 @@ public final class InMemoryMqttTransport implements MqttTransport {
     @Override
     public void publish(String channelId, String topic, String payload) {
         published.add(channelId + "|" + topic + "|" + payload);
-        CopyOnWriteArrayList<BiConsumer<String, String>> handlers = subscribers.get(channelId);
+        CopyOnWriteArrayList<BiConsumer<String, String>> handlers = subscribers.get(key(channelId, topic));
         if (handlers != null) {
             handlers.forEach(handler -> handler.accept(topic, payload));
         }
@@ -51,10 +51,14 @@ public final class InMemoryMqttTransport implements MqttTransport {
 
     @Override
     public void subscribe(String channelId, String topic, BiConsumer<String, String> handler) {
-        subscribers.computeIfAbsent(channelId, key -> new CopyOnWriteArrayList<>()).add(handler);
+        subscribers.computeIfAbsent(key(channelId, topic), ignored -> new CopyOnWriteArrayList<>()).add(handler);
     }
 
     public List<String> snapshot() {
         return new ArrayList<>(published);
+    }
+
+    private static String key(String channelId, String topic) {
+        return channelId + "\0" + topic;
     }
 }

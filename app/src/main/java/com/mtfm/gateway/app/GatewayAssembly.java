@@ -17,12 +17,17 @@ import com.mtfm.gateway.capability.mqtt.device.InMemoryMqttTransport;
 import com.mtfm.gateway.capability.mqtt.device.MqttCapability;
 import com.mtfm.gateway.capability.mqtt.device.MqttDriver;
 import com.mtfm.gateway.capability.mqtt.device.MqttExecutor;
+import com.mtfm.gateway.capability.mqtt.device.MqttReadInboundPlugin;
+import com.mtfm.gateway.capability.mqtt.device.MqttTransport;
+import com.mtfm.gateway.capability.mqtt.device.PahoMqttTransport;
 import com.mtfm.gateway.catalog.apply.CatalogApplyService;
+import com.mtfm.gateway.catalog.apply.CatalogMqttSubscribeRoutes;
 import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.plugin.struct.StructInboundPlugin;
 import com.mtfm.gateway.plugin.yaya.YayaInboundPlugin;
 import com.mtfm.gateway.runtime.GatewayPipeline;
 import com.mtfm.gateway.spi.capability.Publisher;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -44,6 +49,7 @@ import org.springframework.context.annotation.Primary;
  * }</pre>
  */
 @Configuration
+@EnableConfigurationProperties(GatewayMqttProperties.class)
 public class GatewayAssembly {
 
     @Bean
@@ -56,9 +62,17 @@ public class GatewayAssembly {
         return new ModbusExecutor(new InMemoryModbusBus());
     }
 
+    @Bean(destroyMethod = "close")
+    public MqttTransport mqttTransport(GatewayMqttProperties mqttProperties) {
+        if ("memory".equalsIgnoreCase(mqttProperties.getTransport())) {
+            return new InMemoryMqttTransport();
+        }
+        return new PahoMqttTransport();
+    }
+
     @Bean
-    public MqttExecutor mqttExecutor() {
-        return new MqttExecutor(new InMemoryMqttTransport());
+    public MqttExecutor mqttExecutor(MqttTransport mqttTransport) {
+        return new MqttExecutor(mqttTransport);
     }
 
     @Bean
@@ -74,6 +88,7 @@ public class GatewayAssembly {
 
     @Bean
     public GatewayPipeline gatewayPipeline(CatalogStore catalogStore, CatalogApplyService applyService,
+            CatalogMqttSubscribeRoutes mqttSubscribeRoutes,
             LoopbackExecutor loopbackExecutor, ModbusExecutor modbusExecutor,
             MqttExecutor mqttExecutor, HikvisionExecutor hikvisionExecutor,
             Publisher cloudPublisher) {
@@ -87,7 +102,9 @@ public class GatewayAssembly {
         pipeline.register(CloudCapability.DESCRIPTOR, null, null);
         pipeline.register(new YayaInboundPlugin());
         pipeline.register(new StructInboundPlugin());
+        pipeline.register(new MqttReadInboundPlugin(catalogStore));
         pipeline.register(cloudPublisher);
+        mqttExecutor.attach(pipeline, mqttSubscribeRoutes);
         applyService.attach(pipeline);
         applyService.registerExecutor(loopbackExecutor);
         applyService.registerExecutor(modbusExecutor);

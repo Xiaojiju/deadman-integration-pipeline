@@ -161,6 +161,8 @@ export function schemaToFixedWriteFields(fields: SchemaField[]): WriteFieldOptio
     transformDataType: field.type || "string",
     ignoreRequest: false,
     options: choicesToFixedOptions([field]),
+    format: field.format || "none",
+    valueGenerator: field.valueGenerator,
   }))
 }
 
@@ -192,6 +194,10 @@ export function mergeFixedWriteFields(
     return {
       ...base,
       description: existing?.description || base.description,
+      accessDataType: existing?.accessDataType || base.accessDataType,
+      transformDataType: existing?.transformDataType || base.transformDataType,
+      format: existing?.format || base.format || "none",
+      valueGenerator: existing?.valueGenerator ?? base.valueGenerator,
       ignoreRequest: existing?.ignoreRequest ?? base.ignoreRequest,
       options: mergeFixedOptions(base.options ?? [], optionSource),
     }

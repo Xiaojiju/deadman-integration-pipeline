@@ -1,3 +1,4 @@
+import type { FieldNodeModel, ValueMappingModel } from "@/lib/payload-form"
 import type {
   CapabilityDescriptor,
   ChannelEntity,
@@ -128,14 +129,18 @@ export const catalogApi = {
     body: {
       accessType?: string
       properties?: PropertyItem[]
-      parameters?: Record<string, unknown>
       writeAccessType?: string
       writeValueOptions?: ValueOption[]
       writeFields?: WriteFieldOption[]
+      readFields?: WriteFieldOption[]
       readValueOptions?: ValueOption[]
-      protocolMapping?: Record<string, unknown>
       sortIndex?: number
       description?: string
+      publishTopicSlot?: string
+      subscribeTopicSlot?: string
+      payloadMode?: string
+      structSchema?: FieldNodeModel
+      valueMappings?: ValueMappingModel[]
     }
   ) =>
     request(
@@ -152,6 +157,32 @@ export const catalogApi = {
     ),
   deviceFunctions: (deviceCode: string) =>
     request<FunctionFormView[]>(`/catalog/devices/${encodeURIComponent(deviceCode)}/functions`),
+  deviceFieldOverrides: (deviceCode: string, functionId: string) =>
+    request<Record<string, unknown>>(
+      `/catalog/devices/${encodeURIComponent(deviceCode)}/functions/${encodeURIComponent(functionId)}/field-overrides`
+    ),
+  replaceDeviceFieldOverrides: (
+    deviceCode: string,
+    functionId: string,
+    overrides: Record<string, unknown>
+  ) =>
+    request<Record<string, unknown>>(
+      `/catalog/devices/${encodeURIComponent(deviceCode)}/functions/${encodeURIComponent(functionId)}/field-overrides`,
+      { method: "PUT", body: JSON.stringify({ overrides }) }
+    ),
+  deviceTopicOverrides: (deviceCode: string, functionId: string) =>
+    request<Record<string, string>>(
+      `/catalog/devices/${encodeURIComponent(deviceCode)}/functions/${encodeURIComponent(functionId)}/topic-overrides`
+    ),
+  replaceDeviceTopicOverrides: (
+    deviceCode: string,
+    functionId: string,
+    overrides: Record<string, string>
+  ) =>
+    request<Record<string, string>>(
+      `/catalog/devices/${encodeURIComponent(deviceCode)}/functions/${encodeURIComponent(functionId)}/topic-overrides`,
+      { method: "PUT", body: JSON.stringify({ overrides }) }
+    ),
   registerDevice: (body: {
     deviceCode: string
     productId: string
@@ -214,14 +245,18 @@ export const catalogApi = {
       capabilityType: string
       accessType?: string
       properties?: PropertyItem[]
-      parameters?: Record<string, unknown>
       writeAccessType?: string
       writeValueOptions?: ValueOption[]
       writeFields?: WriteFieldOption[]
+      readFields?: WriteFieldOption[]
       readValueOptions?: ValueOption[]
-      protocolMapping?: Record<string, unknown>
       sortIndex?: number
       description?: string
+      publishTopicSlot?: string
+      subscribeTopicSlot?: string
+      payloadMode?: string
+      structSchema?: FieldNodeModel
+      valueMappings?: ValueMappingModel[]
     }
   ) =>
     request(`/catalog/products/${encodeURIComponent(productId)}/functions`, {

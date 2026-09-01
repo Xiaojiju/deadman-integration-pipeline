@@ -22,13 +22,38 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { catalogApi } from "@/lib/api"
-import { isBooleanFieldType, isIntFieldType, toFieldStringMap } from "@/lib/schema-form"
+import { isBooleanFieldType, isIntFieldType, isArrayFieldType, toFieldStringMap } from "@/lib/schema-form"
 import type { FunctionFormView, ValueOption } from "@/lib/types"
 
 type Props = {
   open: boolean
   onOpenChange: (open: boolean) => void
   deviceCode: string
+}
+
+function parseFieldValue(field: { type?: string; name: string }, raw: string): unknown {
+  if (raw === "") {
+    return raw
+  }
+  if (isIntFieldType(field.type)) {
+    return Number(raw)
+  }
+  if (isBooleanFieldType(field.type)) {
+    return raw === "true" || raw === "1"
+  }
+  if (
+    isArrayFieldType(field.type) ||
+    field.type === "json" ||
+    raw.trim().startsWith("[") ||
+    raw.trim().startsWith("{")
+  ) {
+    try {
+      return JSON.parse(raw)
+    } catch {
+      return raw
+    }
+  }
+  return raw
 }
 
 export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
@@ -39,29 +64,22 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
   const [loading, setLoading] = useState(false)
   const [pending, setPending] = useState(false)
 
+  const writeFunctions = useMemo(
+    () => functions.filter((item) => item.accessType?.toUpperCase() === "WRITE"),
+    [functions]
+  )
+
   const selected = useMemo(
-    () => functions.find((item) => item.functionId === functionId),
-    [functions, functionId]
+    () => writeFunctions.find((item) => item.functionId === functionId),
+    [writeFunctions, functionId]
   )
 
   const writeOptions: ValueOption[] = selected?.writeValueOptions ?? []
+  const isValueMode =
+    selected?.payloadMode === "VALUE" ||
+    (writeOptions.length > 0 && selected?.writeAccessType === "VALUE")
 
-  /** 有 writeValueOptions 时，推断目标参数字段（优先单字段枚举）。 */
-  const optionTargetField = useMemo(() => {
-    if (!selected || writeOptions.length === 0) {
-      return null
-    }
-    const withChoices = (selected.parameters ?? []).filter(
-      (field) => field.choices && field.choices.length > 0
-    )
-    if (withChoices.length === 1) {
-      return withChoices[0].name
-    }
-    if ((selected.parameters ?? []).length === 1) {
-      return selected.parameters[0].name
-    }
-    return "command"
-  }, [selected, writeOptions])
+  const callerFields = useMemo(() => selected?.parameters ?? [], [selected])
 
   useEffect(() => {
     if (!open || !deviceCode) {
@@ -71,8 +89,9 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
     catalogApi
       .deviceFunctions(deviceCode)
       .then((items) => {
+        const writable = items.filter((item) => item.accessType?.toUpperCase() === "WRITE")
         setFunctions(items)
-        const first = items[0]
+        const first = writable[0]
         setFunctionId(first?.functionId ?? "")
         setValues(toFieldStringMap(first?.values ?? {}))
       })
@@ -89,9 +108,7 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
     setValues(toFieldStringMap(selected.values ?? {}))
     const options = selected.writeValueOptions ?? []
     const preferred =
-      options.find((item) => item.isDefault)?.optionValue
-      ?? options[0]?.optionValue
-      ?? ""
+      options.find((item) => item.isDefault)?.optionValue ?? options[0]?.optionValue ?? ""
     setSelectedOptionValue(preferred)
   }, [selected])
 
@@ -109,31 +126,19 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
           setPending(false)
           return
         }
-        if (!optionTargetField) {
-          toast.error("无法定位写选项目标字段")
-          setPending(false)
-          return
+        if (isValueMode) {
+          args.value = selectedOptionValue
+        } else {
+          const target = callerFields.length === 1 ? callerFields[0].name : "command"
+          args[target] = selectedOptionValue
         }
-        args[optionTargetField] = selectedOptionValue
       } else {
-        for (const field of selected?.parameters ?? []) {
+        for (const field of callerFields) {
           const raw = values[field.name] ?? ""
           if (raw === "" && !field.required) {
             continue
           }
-          if (isIntFieldType(field.type)) {
-            args[field.name] = Number(raw)
-          } else if (isBooleanFieldType(field.type)) {
-            args[field.name] = raw === "true" || raw === "1"
-          } else if (raw.trim().startsWith("[") || raw.trim().startsWith("{")) {
-            try {
-              args[field.name] = JSON.parse(raw)
-            } catch {
-              args[field.name] = raw
-            }
-          } else {
-            args[field.name] = raw
-          }
+          args[field.name] = parseFieldValue(field, raw)
         }
       }
       const result = await catalogApi.invokeCommand(deviceCode, functionId, args)
@@ -162,7 +167,7 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
         <DialogHeader>
           <DialogTitle>手动下发 · {deviceCode}</DialogTitle>
           <DialogDescription>
-            先选择写选项，再点击下发；无写选项时填写字段后下发。默认参数由产品功能配置自动合并。
+            仅需填写调用方字段；seq、at、deviceId 等平台/设备字段由配置自动填充。
           </DialogDescription>
         </DialogHeader>
         {loading ? (
@@ -170,8 +175,8 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
             <Loader2Icon className="size-4 animate-spin" />
             加载功能列表…
           </div>
-        ) : functions.length === 0 ? (
-          <p className="text-sm text-muted-foreground">该设备产品尚未配置功能。</p>
+        ) : writeFunctions.length === 0 ? (
+          <p className="text-sm text-muted-foreground">该设备产品尚未配置 WRITE 功能。</p>
         ) : (
           <FieldGroup>
             <Field>
@@ -182,7 +187,7 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    {functions.map((item) => (
+                    {writeFunctions.map((item) => (
                       <SelectItem key={item.functionId} value={item.functionId}>
                         {item.description && item.description !== item.functionId
                           ? `${item.functionId} · ${item.description}`
@@ -195,7 +200,7 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
             </Field>
             {writeOptions.length > 0 ? (
               <Field>
-                <FieldLabel>写选项</FieldLabel>
+                <FieldLabel>{isValueMode ? "业务值" : "写选项"}</FieldLabel>
                 <div className="flex flex-wrap gap-2">
                   {writeOptions.map((option) => (
                     <Button
@@ -213,7 +218,7 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
                 </div>
               </Field>
             ) : (
-              (selected?.parameters ?? []).map((field) => (
+              callerFields.map((field) => (
                 <Field key={field.name}>
                   <FieldLabel htmlFor={`cmd-${field.name}`}>
                     {field.label || field.name}

@@ -6,18 +6,15 @@ import java.util.function.BiConsumer;
  * 南向 MQTT 传输抽象，生产可接 Paho，单测用 {@link InMemoryMqttTransport}。
  *
  * <p>
- * {@link #retain(String, String)} / {@link #release(String)} 按 channelId 引用计数管理
+ * {@link #retain(String, MqttBrokerConnection)} / {@link #release(String)} 按 channelId 引用计数管理
  * Broker 会话。
  */
 public interface MqttTransport extends AutoCloseable {
 
     /**
-     * 保留通道
-     * 
-     * @param channelId 通道 ID
-     * @param broker    中转 broker URL
+     * 保留通道并建立（或复用）Broker 会话。
      */
-    void retain(String channelId, String broker);
+    void retain(String channelId, MqttBrokerConnection connection);
 
     /**
      * 释放通道

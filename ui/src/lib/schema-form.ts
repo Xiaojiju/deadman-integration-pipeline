@@ -11,6 +11,16 @@ export function isBooleanFieldType(type?: string | null): boolean {
   return key === "boolean" || key === "bool"
 }
 
+export function isArrayFieldType(type?: string | null): boolean {
+  const key = (type ?? "").toLowerCase()
+  return key === "array" || key === "list"
+}
+
+export function isJsonFieldType(type?: string | null): boolean {
+  const key = (type ?? "").toLowerCase()
+  return key === "json" || key === "object"
+}
+
 /** 兼容 JSON 文本或已解析对象。 */
 export function asRecord(value?: string | Record<string, unknown> | null): Record<string, unknown> {
   if (value == null) {
@@ -99,6 +109,17 @@ export function buildValuesFromFields(
     }
     if (isBooleanFieldType(field.type)) {
       body[field.name] = raw === "true" || raw === "1"
+      continue
+    }
+    if (isArrayFieldType(field.type) || isJsonFieldType(field.type)) {
+      if (!raw) {
+        continue
+      }
+      try {
+        body[field.name] = JSON.parse(raw)
+      } catch {
+        body[field.name] = raw
+      }
       continue
     }
     body[field.name] = raw

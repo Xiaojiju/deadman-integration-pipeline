@@ -13,7 +13,8 @@ public enum FieldType {
     BOOLEAN("boolean"),
     SELECT("select"),
     PASSWORD("password"),
-    JSON("json");
+    JSON("json"),
+    ARRAY("array");
 
     private final String code;
 
@@ -28,7 +29,7 @@ public enum FieldType {
 
     /**
      * 解析 wire / 别名；未知回落 {@link #STRING}。
-     * <p>兼容 {@code integer} → {@link #INT}。
+     * <p>兼容 {@code integer} → {@link #INT}；{@code list} → {@link #ARRAY}（与 {@link FieldFormat#TEXT_LIST} 的 list 别名分属不同枚举）。
      */
     @JsonCreator
     public static FieldType from(String raw) {
@@ -43,6 +44,7 @@ public enum FieldType {
             case "select", "enum", "choice" -> SELECT;
             case "password", "secret" -> PASSWORD;
             case "json", "object" -> JSON;
+            case "array", "list" -> ARRAY;
             default -> STRING;
         };
     }

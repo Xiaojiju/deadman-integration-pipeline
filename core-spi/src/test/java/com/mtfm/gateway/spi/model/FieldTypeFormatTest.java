@@ -17,8 +17,11 @@ class FieldTypeFormatTest {
         assertEquals(FieldType.SELECT, FieldType.from("enum"));
         assertEquals(FieldType.PASSWORD, FieldType.from("secret"));
         assertEquals(FieldType.JSON, FieldType.from("json"));
+        assertEquals(FieldType.ARRAY, FieldType.from("array"));
+        assertEquals(FieldType.ARRAY, FieldType.from("list"));
         assertEquals(FieldType.STRING, FieldType.from("unknown-xyz"));
         assertEquals("int", FieldType.INT.code());
+        assertEquals("array", FieldType.ARRAY.code());
     }
 
     @Test

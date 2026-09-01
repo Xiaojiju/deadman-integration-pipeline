@@ -14,6 +14,10 @@ public class WriteOptionEntity {
     private String accessDataType;
     private String transformDataType;
     private Boolean ignoreRequest;
+    /** UI 采值约束（FieldFormat wire）。 */
+    private String format;
+    /** 平台值生成器 wire code。 */
+    private String valueGenerator;
 
     public String getId() {
         return id;
@@ -69,5 +73,21 @@ public class WriteOptionEntity {
 
     public void setIgnoreRequest(Boolean ignoreRequest) {
         this.ignoreRequest = ignoreRequest;
+    }
+
+    public String getFormat() {
+        return format;
+    }
+
+    public void setFormat(String format) {
+        this.format = format;
+    }
+
+    public String getValueGenerator() {
+        return valueGenerator;
+    }
+
+    public void setValueGenerator(String valueGenerator) {
+        this.valueGenerator = valueGenerator;
     }
 }

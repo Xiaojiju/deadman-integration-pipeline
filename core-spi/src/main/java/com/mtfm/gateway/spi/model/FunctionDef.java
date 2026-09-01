@@ -19,7 +19,8 @@ import java.util.List;
  * @param writeAccessType    VALUE / STRUCT
  * @param writeValueOptions  VALUE 模式写选项
  * @param writeFields        STRUCT 模式写字段
- * @param readValueOptions   读选项
+ * @param readFields         READ 功能字段
+ * @param readValueOptions   读值映射
  */
 public record FunctionDef(
         String functionId,
@@ -30,6 +31,7 @@ public record FunctionDef(
         ValueAccessType writeAccessType,
         List<ValueOption> writeValueOptions,
         List<WriteFieldOption> writeFields,
+        List<WriteFieldOption> readFields,
         List<ValueOption> readValueOptions
 ) {
 
@@ -44,13 +46,29 @@ public record FunctionDef(
         writeAccessType = writeAccessType == null ? ValueAccessType.VALUE : writeAccessType;
         writeValueOptions = writeValueOptions == null ? List.of() : List.copyOf(writeValueOptions);
         writeFields = writeFields == null ? List.of() : List.copyOf(writeFields);
+        readFields = readFields == null ? List.of() : List.copyOf(readFields);
         readValueOptions = readValueOptions == null ? List.of() : List.copyOf(readValueOptions);
     }
 
     /** 兼容旧四参构造。 */
     public FunctionDef(String functionId, String accessType, int accessPermission, Option optionSchema) {
         this(functionId, accessType, accessPermission, optionSchema, List.of(), ValueAccessType.VALUE,
-                List.of(), List.of(), List.of());
+                List.of(), List.of(), List.of(), List.of());
+    }
+
+    /** 兼容旧九参构造（无 readFields）。 */
+    public FunctionDef(
+            String functionId,
+            String accessType,
+            int accessPermission,
+            Option optionSchema,
+            List<PropertyItem> properties,
+            ValueAccessType writeAccessType,
+            List<ValueOption> writeValueOptions,
+            List<WriteFieldOption> writeFields,
+            List<ValueOption> readValueOptions) {
+        this(functionId, accessType, accessPermission, optionSchema, properties, writeAccessType,
+                writeValueOptions, writeFields, List.of(), readValueOptions);
     }
 
     /** 仅含 functionId 与 accessType 的简化构造。 */

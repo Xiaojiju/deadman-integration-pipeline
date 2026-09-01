@@ -3,12 +3,6 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import {
-  KeyValueListEditor,
-  keyValueRowsToRecord,
-  recordToKeyValueRows,
-  type KeyValueRow,
-} from "@/components/key-value-list-editor"
-import {
   FixedPropertyDescriptionEditor,
   mergeFixedProperties,
   schemaToFixedProperties,
@@ -22,14 +16,9 @@ import {
   mergeFixedWriteFields,
   schemaToFixedWriteFields,
 } from "@/components/fixed-write-field-editor"
-import {
-  ValueOptionListEditor,
-  filterValidValueOptions,
-} from "@/components/value-option-list-editor"
-import {
-  WriteFieldListEditor,
-  filterValidWriteFields,
-} from "@/components/write-field-list-editor"
+import { filterValidValueOptions } from "@/components/value-option-list-editor"
+import { FieldNodeTreeEditor } from "@/components/field-node-tree-editor"
+import { ValueMappingEditor, filterValidMappings } from "@/components/value-mapping-editor"
 import { ListPagination } from "@/components/list-pagination"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -82,6 +71,19 @@ import type {
   ValueOption,
   WriteFieldOption,
 } from "@/lib/types"
+import type { FieldNodeModel, ValueMappingModel } from "@/lib/payload-form"
+import {
+  emptyObjectRoot,
+  fieldNodeToWriteFields,
+  normalizeFieldNode,
+  resolvePayloadMode,
+  valueOptionsToMappings,
+  writeFieldsToFieldNode,
+} from "@/lib/payload-form"
+import {
+  WriteFieldListEditor,
+  filterValidWriteFields,
+} from "@/components/write-field-list-editor"
 
 const PAGE_SIZE = 20
 
@@ -117,19 +119,26 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
   const [capabilityType, setCapabilityType] = useState("")
   const [functionId, setFunctionId] = useState("")
   const [accessType, setAccessType] = useState("WRITE")
-  const [writeAccessType, setWriteAccessType] = useState<"VALUE" | "STRUCT">("VALUE")
   const [sortIndex, setSortIndex] = useState("0")
   const [customProperties, setCustomProperties] = useState<PropertyItem[]>([])
   const [writeValueOptions, setWriteValueOptions] = useState<ValueOption[]>([])
   const [writeFields, setWriteFields] = useState<WriteFieldOption[]>([])
+  const [readFields, setReadFields] = useState<WriteFieldOption[]>([])
   const [readValueOptions, setReadValueOptions] = useState<ValueOption[]>([])
-  const [protocolRows, setProtocolRows] = useState<KeyValueRow[]>([])
   const [fnDescription, setFnDescription] = useState("")
+  const [publishTopicSlot, setPublishTopicSlot] = useState("")
+  const [subscribeTopicSlot, setSubscribeTopicSlot] = useState("")
+  const [payloadMode, setPayloadMode] = useState<"VALUE" | "STRUCT">("STRUCT")
+  const [structRoot, setStructRoot] = useState<FieldNodeModel>(() => emptyObjectRoot())
+  const [valueMappings, setValueMappings] = useState<ValueMappingModel[]>([])
 
   const selectedCapability = capabilities.find((item) => item.capabilityType === capabilityType)
   const templates = selectedCapability?.functionTemplates ?? []
   const isFixed = selectedCapability?.functionMode === "FIXED"
   const selectedTemplate = templates.find((item) => item.functionId === functionId)
+  /** OPEN 能力下命中预置模板的功能（如 MQTT publish/subscribe）结构锁定 */
+  const isCapabilityDefaultFn = Boolean(!isFixed && selectedTemplate)
+  const structureLocked = isFixed || isCapabilityDefaultFn
   const paramSchema: SchemaField[] = useMemo(
     () => selectedTemplate?.parameters ?? [],
     [selectedTemplate]
@@ -281,14 +290,18 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
     setCapabilityType(capabilities[0]?.capabilityType ?? "")
     setFunctionId("")
     setAccessType("WRITE")
-    setWriteAccessType("VALUE")
     setSortIndex("0")
     setCustomProperties([])
     setWriteValueOptions([])
     setWriteFields([])
+    setReadFields([])
     setReadValueOptions([])
-    setProtocolRows([])
     setFnDescription("")
+    setPublishTopicSlot("")
+    setSubscribeTopicSlot("")
+    setPayloadMode("STRUCT")
+    setStructRoot(emptyObjectRoot())
+    setValueMappings([])
     setFnOpen(true)
   }
 
@@ -299,24 +312,27 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
     setCapabilityType(fn.capabilityType ?? "")
     setFunctionId(fn.functionId)
     setAccessType(fn.accessType || "WRITE")
-    setWriteAccessType(fn.writeAccessType === "STRUCT" ? "STRUCT" : "VALUE")
     setSortIndex(String(fn.sortIndex ?? 0))
     setFnDescription(fn.description ?? "")
     setCustomProperties(fn.properties ?? [])
-    const mapping =
-      typeof fn.protocolMapping === "string"
-        ? (() => {
-            try {
-              return JSON.parse(fn.protocolMapping) as Record<string, unknown>
-            } catch {
-              return {}
-            }
-          })()
-        : (fn.protocolMapping ?? {})
-    setProtocolRows(recordToKeyValueRows(mapping))
     setWriteValueOptions(fn.writeValueOptions ?? [])
     setWriteFields(fn.writeFields ?? [])
+    setReadFields(fn.readFields ?? [])
     setReadValueOptions(fn.readValueOptions ?? [])
+    setPublishTopicSlot(fn.publishTopicSlot ?? "")
+    setSubscribeTopicSlot(fn.subscribeTopicSlot ?? "")
+    const mode = resolvePayloadMode(fn)
+    setPayloadMode(mode)
+    if (fn.structSchema) {
+      setStructRoot(normalizeFieldNode(fn.structSchema))
+    } else {
+      setStructRoot(writeFieldsToFieldNode(fn.writeFields ?? []))
+    }
+    if (fn.valueMappings && fn.valueMappings.length > 0) {
+      setValueMappings(fn.valueMappings)
+    } else {
+      setValueMappings(valueOptionsToMappings(fn.writeValueOptions ?? [], fn.writeFields ?? []))
+    }
     setFnOpen(true)
   }
 
@@ -334,9 +350,11 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
     const fields = schemaToFixedWriteFields(template.parameters ?? [])
     setCustomProperties(props)
     setWriteFields(fields)
+    setStructRoot(writeFieldsToFieldNode(fields))
     setWriteValueOptions([])
     setReadValueOptions([])
-    setWriteAccessType("STRUCT")
+    setPayloadMode("STRUCT")
+    setValueMappings([])
   }
 
   function onCapabilityOrFunctionChange(nextCapability: string, nextFunctionId: string) {
@@ -358,25 +376,47 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
       toast.error("FIXED 功能必须选择能力预置模板")
       return
     }
+    const lockedOpenDefault = isCapabilityDefaultFn
     const properties = isFixed ? displayFixedProperties : undefined
     const fixedFields = isFixed ? displayFixedWriteFields : []
-    const writeOpts = isFixed ? [] : filterValidValueOptions(writeValueOptions)
-    const structFields = isFixed ? fixedFields : filterValidWriteFields(writeFields)
-    const readOpts = filterValidValueOptions(readValueOptions)
-    const protocolMapping = isFixed ? {} : keyValueRowsToRecord(protocolRows)
+    const writeOpts = isFixed || lockedOpenDefault ? [] : []
+    const writeStructFields = isFixed
+      ? fixedFields
+      : lockedOpenDefault
+        ? []
+        : accessType === "WRITE"
+          ? fieldNodeToWriteFields(structRoot)
+          : []
+    const readStructFields = isFixed || lockedOpenDefault
+      ? []
+      : accessType === "READ"
+        ? filterValidWriteFields(readFields)
+        : []
+    const readOpts = isFixed && !lockedOpenDefault ? filterValidValueOptions(readValueOptions) : []
 
     setPending(true)
     try {
       const body = {
-        accessType,
-        properties,
-        writeAccessType: isFixed ? "STRUCT" : writeAccessType,
-        writeValueOptions: (isFixed || writeAccessType !== "VALUE") ? [] : writeOpts,
-        writeFields: (isFixed || writeAccessType === "STRUCT") ? structFields : [],
+        accessType: lockedOpenDefault ? selectedTemplate?.accessType ?? accessType : accessType,
+        properties: lockedOpenDefault ? undefined : properties,
+        writeAccessType: payloadMode === "VALUE" ? "VALUE" : "STRUCT",
+        writeValueOptions: writeOpts,
+        writeFields: writeStructFields,
+        readFields: readStructFields,
         readValueOptions: readOpts,
-        protocolMapping: Object.keys(protocolMapping).length ? protocolMapping : undefined,
         sortIndex: Number(sortIndex) || 0,
         description: fnDescription.trim() || undefined,
+        publishTopicSlot: capabilityType === "MQTT" ? publishTopicSlot.trim() || undefined : undefined,
+        subscribeTopicSlot: capabilityType === "MQTT" ? subscribeTopicSlot.trim() || undefined : undefined,
+        payloadMode: !isFixed && !lockedOpenDefault && accessType === "WRITE" ? payloadMode : undefined,
+        structSchema:
+          !isFixed && !lockedOpenDefault && accessType === "WRITE"
+            ? normalizeFieldNode(structRoot)
+            : undefined,
+        valueMappings:
+          !isFixed && !lockedOpenDefault && accessType === "WRITE" && payloadMode === "VALUE"
+            ? filterValidMappings(valueMappings)
+            : undefined,
       }
       if (fnMode === "edit" && editingFunction) {
         await catalogApi.updateProductFunction(productId, editingFunction.functionId, body)
@@ -610,8 +650,10 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
             <DialogTitle>{fnMode === "edit" ? "编辑产品功能" : "创建产品功能"}</DialogTitle>
             <DialogDescription>
               {fnMode === "edit"
-                ? "FIXED：默认参数与写字段的 field/取值不可改，可改说明；OPEN：可维护属性与选项。"
-                : "FIXED：从预置模板选择，参数与写字段由模板规定。OPEN：可自定义 functionId 与写选项。"}
+                ? structureLocked
+                  ? "预置功能结构不可改，仅可维护说明与排序。"
+                  : "FIXED：默认参数与写字段的 field/取值不可改，可改说明；OPEN：读/写均可配置字段类型与约束。"
+                : "FIXED：从预置模板选择。OPEN：自定义 functionId，读/写均可配置每个字段的 FieldType 与 format。"}
             </DialogDescription>
           </DialogHeader>
           <FieldGroup>
@@ -712,7 +754,7 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
               <Select
                 value={accessType}
                 onValueChange={setAccessType}
-                disabled={isFixed}
+                disabled={structureLocked}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -725,34 +767,11 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                 </SelectContent>
               </Select>
             </Field>
-            {!isFixed ? (
-              <Field>
-                <FieldLabel>写访问模式 writeAccessType</FieldLabel>
-                <Select
-                  value={writeAccessType}
-                  onValueChange={(value) => setWriteAccessType(value as "VALUE" | "STRUCT")}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      <SelectItem value="VALUE">VALUE（标量选项）</SelectItem>
-                      <SelectItem value="STRUCT">STRUCT（多字段）</SelectItem>
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </Field>
+            {!structureLocked ? (
+              <p className="text-sm text-muted-foreground">
+                按 accessType 配置字段：WRITE 用 writeFields，READ 用 readFields；平台生成字段（如 seq、at）执行时自动填充。
+              </p>
             ) : null}
-            <Field>
-              <FieldLabel htmlFor="sortIndex">排序</FieldLabel>
-              <Input
-                id="sortIndex"
-                type="number"
-                value={sortIndex}
-                onChange={(e) => setSortIndex(e.target.value)}
-              />
-            </Field>
             {isFixed ? (
               <>
                 <FixedPropertyDescriptionEditor
@@ -792,40 +811,88 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                   </Field>
                 )}
               </>
-            ) : writeAccessType === "VALUE" ? (
-              <ValueOptionListEditor
-                label="写值选项 writeValueOptions"
-                description="下发时的枚举按钮，如 open / close"
-                value={writeValueOptions}
-                onChange={setWriteValueOptions}
+            ) : isCapabilityDefaultFn ? null : accessType === "READ" ? (
+              <WriteFieldListEditor
+                label="读字段 readFields"
+                description="READ 功能字段：type / format / 平台生成器"
+                value={readFields}
+                onChange={setReadFields}
               />
             ) : (
-              <WriteFieldListEditor
-                label="写字段 writeFields"
-                description="STRUCT 模式下每个字段及其可选值"
-                value={writeFields}
-                onChange={setWriteFields}
-              />
-            )}
-            {!isFixed ? (
               <>
-                <ValueOptionListEditor
-                  label="读值选项 readValueOptions"
-                  description="上报值 ↔ 业务映射（可选）"
-                  value={readValueOptions}
-                  onChange={setReadValueOptions}
+                <Field>
+                  <FieldLabel>载荷模式 payloadMode</FieldLabel>
+                  <Select
+                    value={payloadMode}
+                    onValueChange={(v) => setPayloadMode(v as "VALUE" | "STRUCT")}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="STRUCT">STRUCT — 按字段填表下发</SelectItem>
+                        <SelectItem value="VALUE">VALUE — 调用方只传业务简值</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <FieldNodeTreeEditor
+                  label="协议字段树 structSchema"
+                  description="构建完整 JSON；platform/device 字段执行时自动填充"
+                  value={structRoot}
+                  onChange={setStructRoot}
                 />
-                <KeyValueListEditor
-                  label="协议映射 protocolMapping"
-                  description="协议层参数（可选），如寄存器偏移"
-                  value={protocolRows}
-                  onChange={setProtocolRows}
-                  keyLabel="映射字段名 key"
-                  valueLabel="映射字段值 value"
-                  keyPlaceholder="例如 holdingOffset"
-                  valuePlaceholder="例如 100"
-                />
+                {payloadMode === "VALUE" ? (
+                  <ValueMappingEditor
+                    label="VALUE 映射 valueMappings"
+                    description='业务值（如 open）→ patch 到字段树；下发时传 { value: "open" }'
+                    value={valueMappings}
+                    onChange={setValueMappings}
+                  />
+                ) : null}
               </>
+            )}
+            {capabilityType === "MQTT" ? (
+              <>
+                <Field>
+                  <FieldLabel htmlFor="publishTopicSlot">发布 Topic Slot</FieldLabel>
+                  <Input
+                    id="publishTopicSlot"
+                    value={publishTopicSlot}
+                    onChange={(e) => setPublishTopicSlot(e.target.value)}
+                    placeholder="留空则用 default_pub；或填 topics 中的 slot 名"
+                    disabled={accessType === "READ"}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="subscribeTopicSlot">订阅 Topic Slot</FieldLabel>
+                  <Input
+                    id="subscribeTopicSlot"
+                    value={subscribeTopicSlot}
+                    onChange={(e) => setSubscribeTopicSlot(e.target.value)}
+                    placeholder="留空则用 default_sub；READ 功能常用"
+                    disabled={accessType === "WRITE"}
+                  />
+                </Field>
+                <p className="text-sm text-muted-foreground">
+                  Topic 实际路径在设备 Address 中配置（default_pub / default_sub / topics JSON）。
+                </p>
+              </>
+            ) : null}
+            <Field>
+              <FieldLabel htmlFor="sortIndex">排序</FieldLabel>
+              <Input
+                id="sortIndex"
+                type="number"
+                value={sortIndex}
+                onChange={(e) => setSortIndex(e.target.value)}
+              />
+            </Field>
+            {isCapabilityDefaultFn ? (
+              <p className="rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
+                能力预置功能（无参）结构已锁定，不可配置字段；仅可改说明与排序。
+              </p>
             ) : null}
           </FieldGroup>
           <DialogFooter>

@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
 
 import { CommandDialogPanel } from "@/components/command-dialog"
+import { DeviceOverrideDialog } from "@/components/device-override-dialog"
 import { ListPagination } from "@/components/list-pagination"
 import { RegisterDeviceDialog } from "@/components/register-device-dialog"
 import { Badge } from "@/components/ui/badge"
@@ -74,6 +75,7 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
   const [loading, setLoading] = useState(true)
   const [registerOpen, setRegisterOpen] = useState(false)
   const [commandDevice, setCommandDevice] = useState<string | null>(null)
+  const [overrideDevice, setOverrideDevice] = useState<DeviceEntity | null>(null)
   const [busyCode, setBusyCode] = useState<string | null>(null)
   const [editDevice, setEditDevice] = useState<DeviceEntity | null>(null)
   const [editName, setEditName] = useState("")
@@ -233,6 +235,14 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
                           size="sm"
                           variant="outline"
                           disabled={busy}
+                          onClick={() => setOverrideDevice(device)}
+                        >
+                          覆盖
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
                           onClick={() => setCommandDevice(device.deviceCode)}
                         >
                           <PlayIcon data-icon="inline-start" />
@@ -357,6 +367,16 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
           deviceCode={commandDevice}
         />
       ) : null}
+      <DeviceOverrideDialog
+        open={overrideDevice != null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setOverrideDevice(null)
+          }
+        }}
+        device={overrideDevice}
+        product={overrideDevice ? productMap.get(overrideDevice.productId) : undefined}
+      />
     </Card>
   )
 }

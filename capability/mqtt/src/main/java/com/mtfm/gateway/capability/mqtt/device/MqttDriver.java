@@ -38,12 +38,19 @@ public final class MqttDriver implements Driver {
         if (kind == EnvelopeKind.COMMAND && (functionId == null || functionId.isBlank())) {
             functionId = MqttCapability.FN_PUBLISH;
         }
+        String text = raw.textOrUtf8();
+        Map<String, Object> payload = kind == EnvelopeKind.TELEMETRY
+                ? MqttPayloadJson.parseObject(text)
+                : Map.of("text", text);
+        if (payload.isEmpty() && text != null && !text.isBlank()) {
+            payload = Map.of("text", text);
+        }
         return EnvelopeDraft.builder()
                 .kind(kind)
                 .deviceId(deviceId)
                 .functionId(functionId)
                 .capabilityType(capabilityType())
-                .payload(Map.of("text", raw.textOrUtf8()))
+                .payload(com.mtfm.gateway.spi.model.Attributes.from(payload))
                 .headers(raw.headers())
                 .build();
     }

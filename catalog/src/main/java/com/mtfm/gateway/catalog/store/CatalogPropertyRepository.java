@@ -2,16 +2,24 @@ package com.mtfm.gateway.catalog.store;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.mtfm.gateway.catalog.entity.ChannelPropertyEntity;
+import com.mtfm.gateway.catalog.entity.DeviceFieldOverrideEntity;
 import com.mtfm.gateway.catalog.entity.DeviceFunctionOverrideEntity;
+import com.mtfm.gateway.catalog.entity.DeviceTopicOverrideEntity;
 import com.mtfm.gateway.catalog.entity.EndpointPropertyEntity;
 import com.mtfm.gateway.catalog.entity.FunctionPropertyEntity;
+import com.mtfm.gateway.catalog.entity.ReadFieldEntity;
+import com.mtfm.gateway.catalog.entity.ReadFieldValueOptionEntity;
 import com.mtfm.gateway.catalog.entity.ReadValueOptionEntity;
 import com.mtfm.gateway.catalog.entity.WriteOptionEntity;
 import com.mtfm.gateway.catalog.entity.WriteValueOptionEntity;
 import com.mtfm.gateway.catalog.mapper.ChannelPropertyMapper;
+import com.mtfm.gateway.catalog.mapper.DeviceFieldOverrideMapper;
 import com.mtfm.gateway.catalog.mapper.DeviceFunctionOverrideMapper;
+import com.mtfm.gateway.catalog.mapper.DeviceTopicOverrideMapper;
 import com.mtfm.gateway.catalog.mapper.EndpointPropertyMapper;
 import com.mtfm.gateway.catalog.mapper.FunctionPropertyMapper;
+import com.mtfm.gateway.catalog.mapper.ReadFieldMapper;
+import com.mtfm.gateway.catalog.mapper.ReadFieldValueOptionMapper;
 import com.mtfm.gateway.catalog.mapper.ReadValueOptionMapper;
 import com.mtfm.gateway.catalog.mapper.WriteOptionMapper;
 import com.mtfm.gateway.catalog.mapper.WriteValueOptionMapper;
@@ -24,6 +32,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * EAV 属性与读写 Option 的批量替换仓储（删旧插新，对齐旧 property）。
@@ -38,6 +47,10 @@ public class CatalogPropertyRepository {
     private final WriteOptionMapper writeOptions;
     private final WriteValueOptionMapper writeValueOptions;
     private final ReadValueOptionMapper readValueOptions;
+    private final ReadFieldMapper readFields;
+    private final ReadFieldValueOptionMapper readFieldValueOptions;
+    private final DeviceFieldOverrideMapper deviceFieldOverrides;
+    private final DeviceTopicOverrideMapper deviceTopicOverrides;
 
     public CatalogPropertyRepository(
             ChannelPropertyMapper channelProperties,
@@ -46,7 +59,11 @@ public class CatalogPropertyRepository {
             DeviceFunctionOverrideMapper deviceOverrides,
             WriteOptionMapper writeOptions,
             WriteValueOptionMapper writeValueOptions,
-            ReadValueOptionMapper readValueOptions) {
+            ReadValueOptionMapper readValueOptions,
+            ReadFieldMapper readFields,
+            ReadFieldValueOptionMapper readFieldValueOptions,
+            DeviceFieldOverrideMapper deviceFieldOverrides,
+            DeviceTopicOverrideMapper deviceTopicOverrides) {
         this.channelProperties = channelProperties;
         this.endpointProperties = endpointProperties;
         this.functionProperties = functionProperties;
@@ -54,6 +71,10 @@ public class CatalogPropertyRepository {
         this.writeOptions = writeOptions;
         this.writeValueOptions = writeValueOptions;
         this.readValueOptions = readValueOptions;
+        this.readFields = readFields;
+        this.readFieldValueOptions = readFieldValueOptions;
+        this.deviceFieldOverrides = deviceFieldOverrides;
+        this.deviceTopicOverrides = deviceTopicOverrides;
     }
 
     // ——— Channel ———
@@ -206,6 +227,89 @@ public class CatalogPropertyRepository {
 
     public void deleteDeviceOverrides(String deviceId) {
         deviceOverrides.delete(new QueryWrapper<DeviceFunctionOverrideEntity>().eq("device_id", deviceId));
+        deviceFieldOverrides.delete(new QueryWrapper<DeviceFieldOverrideEntity>().eq("device_id", deviceId));
+        deviceTopicOverrides.delete(new QueryWrapper<DeviceTopicOverrideEntity>().eq("device_id", deviceId));
+    }
+
+    public Map<String, Object> listDeviceFieldOverrides(String deviceId, String functionId) {
+        return deviceFieldOverrides.selectList(new QueryWrapper<DeviceFieldOverrideEntity>()
+                        .eq("device_id", deviceId)
+                        .eq("function_id", functionId))
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        DeviceFieldOverrideEntity::getFieldPath,
+                        row -> parseJsonValue(row.getFieldValue()),
+                        (a, b) -> b,
+                        java.util.LinkedHashMap::new));
+    }
+
+    public Map<String, String> listDeviceTopicOverrides(String deviceId, String functionId) {
+        return deviceTopicOverrides.selectList(new QueryWrapper<DeviceTopicOverrideEntity>()
+                        .eq("device_id", deviceId)
+                        .eq("function_id", functionId))
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        DeviceTopicOverrideEntity::getTopicSlot,
+                        DeviceTopicOverrideEntity::getTopicValue,
+                        (a, b) -> b,
+                        java.util.LinkedHashMap::new));
+    }
+
+    public void replaceDeviceFieldOverrides(String deviceId, String functionId, Map<String, Object> overrides) {
+        deviceFieldOverrides.delete(new QueryWrapper<DeviceFieldOverrideEntity>()
+                .eq("device_id", deviceId)
+                .eq("function_id", functionId));
+        if (overrides == null || overrides.isEmpty()) {
+            return;
+        }
+        overrides.forEach((path, value) -> {
+            if (path == null || path.isBlank() || value == null) {
+                return;
+            }
+            DeviceFieldOverrideEntity row = new DeviceFieldOverrideEntity();
+            row.setId(SnowflakeIds.next());
+            row.setDeviceId(deviceId);
+            row.setFunctionId(functionId);
+            row.setFieldPath(path.trim());
+            row.setFieldValue(com.mtfm.gateway.catalog.json.JsonMaps.write(value));
+            deviceFieldOverrides.insert(row);
+        });
+    }
+
+    public void replaceDeviceTopicOverrides(String deviceId, String functionId, Map<String, String> overrides) {
+        deviceTopicOverrides.delete(new QueryWrapper<DeviceTopicOverrideEntity>()
+                .eq("device_id", deviceId)
+                .eq("function_id", functionId));
+        if (overrides == null || overrides.isEmpty()) {
+            return;
+        }
+        overrides.forEach((slot, topic) -> {
+            if (slot == null || slot.isBlank() || topic == null || topic.isBlank()) {
+                return;
+            }
+            DeviceTopicOverrideEntity row = new DeviceTopicOverrideEntity();
+            row.setId(SnowflakeIds.next());
+            row.setDeviceId(deviceId);
+            row.setFunctionId(functionId);
+            row.setTopicSlot(slot.trim());
+            row.setTopicValue(topic.trim());
+            deviceTopicOverrides.insert(row);
+        });
+    }
+
+    private static Object parseJsonValue(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        String trimmed = raw.trim();
+        if (trimmed.startsWith("{") || trimmed.startsWith("[") || trimmed.startsWith("\"")) {
+            try {
+                return new com.fasterxml.jackson.databind.ObjectMapper().readValue(trimmed, Object.class);
+            } catch (Exception ignored) {
+                return raw;
+            }
+        }
+        return raw;
     }
 
     // ——— Write / Read options ———
@@ -237,7 +341,34 @@ public class CatalogPropertyRepository {
                     field.getAccessDataType(),
                     field.getTransformDataType(),
                     Boolean.TRUE.equals(field.getIgnoreRequest()),
-                    options));
+                    options,
+                    field.getFormat(),
+                    field.getValueGenerator()));
+        }
+        return List.copyOf(result);
+    }
+
+    public List<WriteFieldOption> listReadFields(String productFunctionId) {
+        List<ReadFieldEntity> fields = readFields.selectList(new QueryWrapper<ReadFieldEntity>()
+                .eq("product_function_id", productFunctionId)
+                .orderByAsc("field"));
+        List<WriteFieldOption> result = new ArrayList<>();
+        for (ReadFieldEntity field : fields) {
+            List<ValueOption> options = readFieldValueOptions.selectList(new QueryWrapper<ReadFieldValueOptionEntity>()
+                            .eq("parent_id", field.getId())
+                            .orderByAsc("option_value"))
+                    .stream()
+                    .map(CatalogPropertyRepository::toReadFieldValueOption)
+                    .toList();
+            result.add(new WriteFieldOption(
+                    field.getField(),
+                    field.getDescription(),
+                    field.getAccessDataType(),
+                    field.getTransformDataType(),
+                    Boolean.TRUE.equals(field.getIgnoreRequest()),
+                    options,
+                    field.getFormat(),
+                    field.getValueGenerator()));
         }
         return List.copyOf(result);
     }
@@ -274,12 +405,35 @@ public class CatalogPropertyRepository {
                 row.setAccessDataType(field.accessDataType());
                 row.setTransformDataType(field.transformDataType());
                 row.setIgnoreRequest(field.ignoreRequest());
+                row.setFormat(field.format());
+                row.setValueGenerator(field.valueGenerator());
                 writeOptions.insert(row);
                 insertWriteValueOptions(row.getId(), field.options());
             }
             return;
         }
         insertWriteValueOptions(productFunctionId, valueOptions);
+    }
+
+    public void replaceReadFields(String productFunctionId, List<WriteFieldOption> readFieldsList) {
+        deleteReadFields(productFunctionId);
+        if (readFieldsList == null || readFieldsList.isEmpty()) {
+            return;
+        }
+        for (WriteFieldOption field : readFieldsList) {
+            ReadFieldEntity row = new ReadFieldEntity();
+            row.setId(SnowflakeIds.next());
+            row.setProductFunctionId(productFunctionId);
+            row.setField(field.field());
+            row.setDescription(field.description());
+            row.setAccessDataType(field.accessDataType());
+            row.setTransformDataType(field.transformDataType());
+            row.setIgnoreRequest(field.ignoreRequest());
+            row.setFormat(field.format());
+            row.setValueGenerator(field.valueGenerator());
+            readFields.insert(row);
+            insertReadFieldValueOptions(row.getId(), field.options());
+        }
     }
 
     public void replaceReadValueOptions(String productFunctionId, List<ValueOption> options) {
@@ -312,11 +466,40 @@ public class CatalogPropertyRepository {
                 .eq("product_function_id", productFunctionId));
     }
 
+    public void deleteReadFields(String productFunctionId) {
+        List<ReadFieldEntity> fields = readFields.selectList(new QueryWrapper<ReadFieldEntity>()
+                .eq("product_function_id", productFunctionId));
+        for (ReadFieldEntity field : fields) {
+            readFieldValueOptions.delete(new QueryWrapper<ReadFieldValueOptionEntity>()
+                    .eq("parent_id", field.getId()));
+        }
+        readFields.delete(new QueryWrapper<ReadFieldEntity>().eq("product_function_id", productFunctionId));
+    }
+
     /** 删除产品功能关联的全部 EAV / Option。 */
     public void deleteAllForProductFunction(String productFunctionId) {
         deleteFunctionProperties(productFunctionId);
         deleteWriteOptions(productFunctionId);
+        deleteReadFields(productFunctionId);
         deleteReadValueOptions(productFunctionId);
+    }
+
+    private void insertReadFieldValueOptions(String parentId, List<ValueOption> options) {
+        if (options == null || options.isEmpty()) {
+            return;
+        }
+        for (ValueOption option : options) {
+            ReadFieldValueOptionEntity row = new ReadFieldValueOptionEntity();
+            row.setId(SnowflakeIds.next());
+            row.setParentId(parentId);
+            row.setDescription(option.description());
+            row.setOptionValue(option.optionValue());
+            row.setMappingValue(option.mappingValue());
+            row.setAccessDataType(option.accessDataType());
+            row.setTransformDataType(option.transformDataType());
+            row.setIsDefault(option.isDefault());
+            readFieldValueOptions.insert(row);
+        }
     }
 
     private void insertWriteValueOptions(String parentId, List<ValueOption> options) {
@@ -368,6 +551,16 @@ public class CatalogPropertyRepository {
     }
 
     private static ValueOption toReadValueOption(ReadValueOptionEntity row) {
+        return new ValueOption(
+                row.getOptionValue(),
+                row.getMappingValue(),
+                row.getDescription(),
+                row.getAccessDataType(),
+                row.getTransformDataType(),
+                row.getIsDefault());
+    }
+
+    private static ValueOption toReadFieldValueOption(ReadFieldValueOptionEntity row) {
         return new ValueOption(
                 row.getOptionValue(),
                 row.getMappingValue(),

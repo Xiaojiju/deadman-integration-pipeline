@@ -146,6 +146,7 @@ export function SchemaFieldControl({ field, value, onChange, idPrefix = "field" 
   if (
     format === "text_list" ||
     type === "json" ||
+    type === "array" ||
     field.name.toLowerCase().includes("list")
   ) {
     return (
@@ -153,7 +154,11 @@ export function SchemaFieldControl({ field, value, onChange, idPrefix = "field" 
         id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder={field.description}
+        placeholder={
+          type === "array"
+            ? field.description || 'JSON 数组，例如 ["a","b"] 或 [1,2]'
+            : field.description
+        }
       />
     )
   }

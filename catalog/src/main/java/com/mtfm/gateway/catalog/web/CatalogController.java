@@ -4,6 +4,8 @@ import com.mtfm.gateway.catalog.apply.CatalogApplyService;
 import com.mtfm.gateway.catalog.dto.ChannelView;
 import com.mtfm.gateway.catalog.dto.ChannelWriteRequest;
 import com.mtfm.gateway.catalog.dto.DeviceCommandRequest;
+import com.mtfm.gateway.catalog.dto.DeviceFieldOverridesWriteRequest;
+import com.mtfm.gateway.catalog.dto.DeviceTopicOverridesWriteRequest;
 import com.mtfm.gateway.catalog.dto.DeviceEndpointView;
 import com.mtfm.gateway.catalog.dto.DeviceEndpointWriteRequest;
 import com.mtfm.gateway.catalog.dto.DeviceRegisterRequest;
@@ -299,5 +301,39 @@ public class CatalogController {
     public CompletableFuture<ExecutionResult> invoke(@PathVariable String deviceCode,
             @RequestBody DeviceCommandRequest request) {
         return applyService.invoke(deviceCode, request);
+    }
+
+    /** 设备功能级字段覆盖（如 deviceId 与平台编码不同）。 */
+    @GetMapping("/devices/{deviceCode}/functions/{functionId}/field-overrides")
+    public Map<String, Object> deviceFieldOverrides(
+            @PathVariable String deviceCode, @PathVariable String functionId) {
+        return forms.deviceFieldOverrides(deviceCode, functionId);
+    }
+
+    @PutMapping("/devices/{deviceCode}/functions/{functionId}/field-overrides")
+    public Map<String, Object> replaceDeviceFieldOverrides(
+            @PathVariable String deviceCode,
+            @PathVariable String functionId,
+            @RequestBody DeviceFieldOverridesWriteRequest request) {
+        forms.replaceDeviceFieldOverrides(deviceCode, functionId,
+                request == null ? Map.of() : request.overrides());
+        return forms.deviceFieldOverrides(deviceCode, functionId);
+    }
+
+    /** 设备功能级 topic slot 覆盖。 */
+    @GetMapping("/devices/{deviceCode}/functions/{functionId}/topic-overrides")
+    public Map<String, String> deviceTopicOverrides(
+            @PathVariable String deviceCode, @PathVariable String functionId) {
+        return forms.deviceTopicOverrides(deviceCode, functionId);
+    }
+
+    @PutMapping("/devices/{deviceCode}/functions/{functionId}/topic-overrides")
+    public Map<String, String> replaceDeviceTopicOverrides(
+            @PathVariable String deviceCode,
+            @PathVariable String functionId,
+            @RequestBody DeviceTopicOverridesWriteRequest request) {
+        forms.replaceDeviceTopicOverrides(deviceCode, functionId,
+                request == null ? Map.of() : request.overrides());
+        return forms.deviceTopicOverrides(deviceCode, functionId);
     }
 }

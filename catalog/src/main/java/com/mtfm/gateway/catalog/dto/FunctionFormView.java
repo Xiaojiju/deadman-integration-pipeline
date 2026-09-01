@@ -21,6 +21,7 @@ public record FunctionFormView(
         List<PropertyItem> properties,
         List<ValueOption> writeValueOptions,
         Map<String, Object> values,
-        Map<String, Object> protocolMapping
+        Map<String, Object> protocolMapping,
+        String payloadMode
 ) {
 }

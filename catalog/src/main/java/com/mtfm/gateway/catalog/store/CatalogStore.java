@@ -156,6 +156,7 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
         ValueAccessType writeAccess = ValueAccessType.from(function.getWriteAccessType());
         List<ValueOption> writeValues = properties.listWriteValueOptions(function.getId());
         List<WriteFieldOption> writeFields = properties.listWriteFields(function.getId());
+        List<WriteFieldOption> readFields = properties.listReadFields(function.getId());
         List<ValueOption> readValues = properties.listReadValueOptions(function.getId());
         return Optional.of(new FunctionDef(
                 function.getFunctionId(),
@@ -166,6 +167,7 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
                 writeAccess,
                 writeValues,
                 writeFields,
+                readFields,
                 readValues));
     }
 

@@ -5,6 +5,7 @@ export type FieldType =
   | "select"
   | "password"
   | "json"
+  | "array"
 
 export type FieldFormat =
   | "none"
@@ -23,6 +24,8 @@ export type SchemaField = {
   choices?: string[]
   /** UI 采值约束；与 type 解耦 */
   format?: FieldFormat | string
+  /** 平台值生成器 wire code（模板字段可选） */
+  valueGenerator?: string
 }
 
 export type FormFieldView = {
@@ -61,6 +64,10 @@ export type WriteFieldOption = {
   transformDataType?: string
   ignoreRequest?: boolean
   options?: ValueOption[]
+  /** UI 采值约束（FieldFormat wire） */
+  format?: string
+  /** 平台值生成器（FieldValueGenerator wire）；空=调用方提供 */
+  valueGenerator?: string
 }
 
 export type FunctionTemplate = {
@@ -118,9 +125,14 @@ export type ProductFunctionEntity = {
   properties?: PropertyItem[]
   writeValueOptions?: ValueOption[]
   writeFields?: WriteFieldOption[]
+  readFields?: WriteFieldOption[]
   readValueOptions?: ValueOption[]
-  protocolMapping?: Record<string, unknown> | string
   sortIndex?: number
+  publishTopicSlot?: string
+  subscribeTopicSlot?: string
+  payloadMode?: string
+  structSchema?: import("@/lib/payload-form").FieldNodeModel
+  valueMappings?: import("@/lib/payload-form").ValueMappingModel[]
 }
 
 export type ChannelEntity = {
@@ -156,6 +168,8 @@ export type FunctionFormView = {
   writeValueOptions?: ValueOption[]
   values: Record<string, unknown>
   protocolMapping?: Record<string, unknown>
+  /** VALUE / STRUCT；空则按 writeAccessType 推断 */
+  payloadMode?: string
 }
 
 export type ExecutionResult = {

@@ -62,6 +62,23 @@ public class ProductFunctionEntity {
     /** 功能说明（可覆盖能力模板 description）。 */
     private String description;
 
+    /** 载荷模式：VALUE / STRUCT。 */
+    private String payloadMode;
+
+    /** FieldNode 树 JSON。 */
+    @TableField(typeHandler = JsonColumnTypeHandler.class)
+    private String structSchema;
+
+    /** ValueMapping 列表 JSON。 */
+    @TableField(typeHandler = JsonColumnTypeHandler.class)
+    private String valueMappings;
+
+    /** MQTT 发布 topic slot。 */
+    private String publishTopicSlot;
+
+    /** MQTT 订阅 topic slot。 */
+    private String subscribeTopicSlot;
+
     public String getId() {
         return id;
     }
@@ -148,5 +165,45 @@ public class ProductFunctionEntity {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getPayloadMode() {
+        return payloadMode;
+    }
+
+    public void setPayloadMode(String payloadMode) {
+        this.payloadMode = payloadMode;
+    }
+
+    public String getStructSchema() {
+        return structSchema;
+    }
+
+    public void setStructSchema(String structSchema) {
+        this.structSchema = structSchema;
+    }
+
+    public String getValueMappings() {
+        return valueMappings;
+    }
+
+    public void setValueMappings(String valueMappings) {
+        this.valueMappings = valueMappings;
+    }
+
+    public String getPublishTopicSlot() {
+        return publishTopicSlot;
+    }
+
+    public void setPublishTopicSlot(String publishTopicSlot) {
+        this.publishTopicSlot = publishTopicSlot;
+    }
+
+    public String getSubscribeTopicSlot() {
+        return subscribeTopicSlot;
+    }
+
+    public void setSubscribeTopicSlot(String subscribeTopicSlot) {
+        this.subscribeTopicSlot = subscribeTopicSlot;
     }
 }
