@@ -81,6 +81,11 @@ public final class DefaultRegistries implements DriverRegistry, PluginRegistry, 
     }
 
     @Override
+    public boolean isRegistered(String deviceId) {
+        return deviceId != null && deviceBindings.containsKey(deviceId);
+    }
+
+    @Override
     public boolean register(InboundPlugin plugin) {
         if (plugin == null || plugin.name() == null || plugin.name().isBlank()) {
             throw new RegistryException("入站插件名不能为空");

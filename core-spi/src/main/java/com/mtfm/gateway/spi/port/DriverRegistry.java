@@ -38,4 +38,7 @@ public interface DriverRegistry {
      * @return 是否解绑成功
      */
     boolean unregister(String deviceId);
+
+    /** 设备是否已绑定到运行时（已 load）。 */
+    boolean isRegistered(String deviceId);
 }

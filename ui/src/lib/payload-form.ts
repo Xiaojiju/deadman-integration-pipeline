@@ -13,6 +13,9 @@ export type FieldNodeModel = {
   element?: FieldNodeModel | null
   choices?: string[]
   description?: string
+  callerField?: string
+  byteLength?: number | null
+  byteOrder?: string | null
 }
 
 export type FieldPatchModel = {
@@ -23,6 +26,7 @@ export type FieldPatchModel = {
 export type ValueMappingModel = {
   mappingValue: string
   description?: string
+  callerField?: string
   target?: "PATCH_FIELDS" | "FILL_ROOT" | string
   rootValue?: unknown
   patches?: FieldPatchModel[]
@@ -33,49 +37,90 @@ export function emptyObjectRoot(): FieldNodeModel {
 }
 
 export function writeFieldsToFieldNode(fields: WriteFieldOption[]): FieldNodeModel {
-  const children = (fields ?? [])
-    .filter((row) => row.field?.trim())
-    .map((row) => {
-      const choices = (row.options ?? []).map((o) => o.optionValue).filter(Boolean)
-      const type = choices.length > 0 ? "select" : row.accessDataType || "string"
-      const source: FieldSourceWire = row.valueGenerator ? "platform" : "caller"
-      return {
-        name: row.field.trim(),
-        type,
-        format: row.format || "none",
-        source,
-        valueGenerator: row.valueGenerator ?? null,
-        constant: null,
-        children: [],
-        choices,
-        description: row.description ?? "",
-      }
-    })
-  return { ...emptyObjectRoot(), children }
+  const root = emptyObjectRoot()
+  for (const row of fields ?? []) {
+    if (!row.field?.trim()) {
+      continue
+    }
+    insertPath(root, row.field.trim().split("."), row)
+  }
+  return root
+}
+
+function insertPath(parent: FieldNodeModel, parts: string[], row: WriteFieldOption) {
+  const [head, ...rest] = parts
+  const isIndex = /^\d+$/.test(head)
+  if (isIndex && parent.type !== "array") {
+    parent.type = "array"
+  }
+  parent.children = parent.children ?? []
+  let child = parent.children.find((item) => item.name === head)
+  if (!child) {
+    child = emptyFieldNode(head)
+    parent.children.push(child)
+  }
+  if (rest.length === 0) {
+    applyFieldRow(child, row)
+    return
+  }
+  if (rest[0] && /^\d+$/.test(rest[0])) {
+    if (child.type === "string") {
+      child.type = "array"
+    }
+  } else if (child.type === "string") {
+    child.type = "object"
+  }
+  insertPath(child, rest, row)
+}
+
+function applyFieldRow(node: FieldNodeModel, row: WriteFieldOption) {
+  const choices = (row.options ?? []).map((item) => item.optionValue).filter(Boolean)
+  const source: FieldSourceWire =
+    (row.source as FieldSourceWire) || (row.valueGenerator ? "platform" : "caller")
+  const scalar = !["object", "json", "array"].includes(row.accessDataType || "")
+  node.type =
+    choices.length > 0 && source !== "mapped" && scalar ? "select" : row.accessDataType || "string"
+  node.format = row.format || "none"
+  node.source = source
+  node.valueGenerator = row.valueGenerator ?? null
+  node.constant = row.constant ?? null
+  node.choices = choices
+  node.description = row.description ?? ""
+  node.callerField = row.callerField || (source === "mapped" ? "value" : undefined)
+  node.byteLength = row.byteLength ?? undefined
+  node.byteOrder = row.byteOrder || undefined
 }
 
 export function fieldNodeToWriteFields(root: FieldNodeModel | null | undefined): WriteFieldOption[] {
   const leaves = collectLeaves(root, "")
   return leaves.map(({ path, node }) => {
     const choices = node.choices ?? []
+    const source = (node.source as FieldSourceWire) || (node.valueGenerator ? "platform" : "caller")
     const options =
-      choices.length > 0
-        ? choices.map((value) => ({
-            optionValue: value,
-            mappingValue: value,
-            description: value,
-          }))
-        : []
-    const platform = node.source === "platform" || Boolean(node.valueGenerator)
+      source === "mapped"
+        ? []
+        : choices.length > 0
+          ? choices.map((value) => ({
+              optionValue: value,
+              mappingValue: value,
+              description: value,
+            }))
+          : []
+    const ignore = source !== "caller"
     return {
       field: path,
       description: node.description ?? "",
       accessDataType: node.type === "select" ? "string" : node.type || "string",
       transformDataType: node.type === "select" ? "string" : node.type || "string",
-      ignoreRequest: platform,
+      ignoreRequest: ignore,
       options,
       format: node.format || "none",
       valueGenerator: node.valueGenerator || undefined,
+      source,
+      constant: node.constant == null || node.constant === "" ? undefined : String(node.constant),
+      callerField: source === "mapped" ? node.callerField || "value" : undefined,
+      byteLength: node.byteLength || undefined,
+      byteOrder: node.byteOrder || undefined,
     }
   })
 }
@@ -90,6 +135,7 @@ function collectLeaves(
   const isContainer =
     node.type === "object" ||
     node.type === "json" ||
+    node.type === "array" ||
     (node.children && node.children.length > 0)
   if (isContainer && node.children && node.children.length > 0) {
     return node.children.flatMap((child) => {
@@ -97,6 +143,7 @@ function collectLeaves(
       if (
         child.type === "object" ||
         child.type === "json" ||
+        child.type === "array" ||
         (child.children && child.children.length > 0)
       ) {
         return collectLeaves(child, prefix ? `${prefix}.${child.name}` : child.name)
@@ -110,21 +157,97 @@ function collectLeaves(
   return [{ path: prefix || node.name, node }]
 }
 
+export function fieldOptionsToMappings(fields: WriteFieldOption[]): ValueMappingModel[] {
+  const byKey = new Map<string, ValueMappingModel>()
+  for (const field of fields ?? []) {
+    const callerField = field.callerField?.trim() || (field.source === "mapped" ? "value" : "value")
+    for (const option of field.options ?? []) {
+      const mappingValue = option.mappingValue?.trim() || option.optionValue?.trim()
+      if (!mappingValue || !field.field) {
+        continue
+      }
+      const groupKey = `${callerField}\0${mappingValue}`
+      if (!byKey.has(groupKey)) {
+        byKey.set(groupKey, {
+          mappingValue,
+          callerField,
+          description: option.description ?? "",
+          target: "PATCH_FIELDS",
+          patches: [],
+        })
+      }
+      byKey.get(groupKey)!.patches!.push({ path: field.field, value: option.optionValue })
+    }
+  }
+  return [...byKey.values()]
+}
+
+export function mergeMappingsIntoFields(
+  fields: WriteFieldOption[],
+  mappings: ValueMappingModel[]
+): WriteFieldOption[] {
+  if (!mappings?.length) {
+    return fields
+  }
+  const next = fields.map((field) => ({ ...field, options: [...(field.options ?? [])] }))
+  const reset = new Set<string>()
+  for (const mapping of mappings) {
+    for (const patch of mapping.patches ?? []) {
+      const path = patch.path?.trim()
+      if (!path) {
+        continue
+      }
+      let field = next.find((item) => item.field === path)
+      if (!field) {
+        field = {
+          field: path,
+          description: "",
+          accessDataType: "string",
+          transformDataType: "string",
+          ignoreRequest: true,
+          options: [],
+          format: "none",
+          source: "mapped",
+          callerField: mapping.callerField?.trim() || "value",
+        }
+        next.push(field)
+      }
+      if (!reset.has(path)) {
+        field.options = []
+        reset.add(path)
+      }
+      field.source = "mapped"
+      field.ignoreRequest = true
+      field.callerField = mapping.callerField?.trim() || field.callerField || "value"
+      field.options = [
+        ...(field.options ?? []),
+        {
+          optionValue: String(patch.value ?? ""),
+          mappingValue: mapping.mappingValue,
+          description: mapping.description ?? "",
+        },
+      ]
+    }
+  }
+  return next
+}
+
 export function valueOptionsToMappings(
   options: ValueOption[],
   fields: WriteFieldOption[]
 ): ValueMappingModel[] {
-  const callerField =
-    fields.find((f) => !f.valueGenerator && f.field)?.field ??
-    fields[0]?.field ??
-    "command"
+  const mapped =
+    fields.find((item) => item.source === "mapped" && item.field)
+  const mappedField = mapped?.field ?? fields.find((item) => !item.valueGenerator && item.field)?.field ?? fields[0]?.field ?? "command"
+  const callerField = mapped?.callerField?.trim() || "value"
   return (options ?? [])
-    .filter((o) => o.optionValue?.trim())
-    .map((o) => ({
-      mappingValue: o.mappingValue?.trim() || o.optionValue.trim(),
-      description: o.description ?? "",
+    .filter((item) => item.optionValue?.trim())
+    .map((item) => ({
+      mappingValue: item.mappingValue?.trim() || item.optionValue.trim(),
+      callerField,
+      description: item.description ?? "",
       target: "PATCH_FIELDS" as const,
-      patches: [{ path: callerField, value: o.optionValue.trim() }],
+      patches: [{ path: mappedField, value: item.optionValue.trim() }],
     }))
 }
 
@@ -156,6 +279,9 @@ export function normalizeFieldNode(raw: FieldNodeModel | null | undefined): Fiel
     element: raw.element ? normalizeChildNode(raw.element) : null,
     choices: raw.choices ?? [],
     description: raw.description ?? "",
+    callerField: raw.callerField,
+    byteLength: raw.byteLength,
+    byteOrder: raw.byteOrder,
   }
 }
 
@@ -171,6 +297,9 @@ function normalizeChildNode(node: FieldNodeModel): FieldNodeModel {
     element: node.element ? normalizeChildNode(node.element) : null,
     choices: node.choices ?? [],
     description: node.description ?? "",
+    callerField: node.callerField,
+    byteLength: node.byteLength,
+    byteOrder: node.byteOrder,
   }
 }
 
@@ -185,15 +314,19 @@ export function emptyFieldNode(name = "field"): FieldNodeModel {
     children: [],
     choices: [],
     description: "",
+    callerField: undefined,
+    byteLength: undefined,
+    byteOrder: undefined,
   }
 }
 
-export function emptyValueMapping(): ValueMappingModel {
+export function emptyValueMapping(defaultPath = ""): ValueMappingModel {
   return {
     mappingValue: "",
+    callerField: "value",
     description: "",
     target: "PATCH_FIELDS",
-    patches: [{ path: "command", value: "" }],
+    patches: [{ path: defaultPath, value: "" }],
   }
 }
 
@@ -202,6 +335,7 @@ export function filterValidMappings(rows: ValueMappingModel[]): ValueMappingMode
     .filter((row) => row.mappingValue?.trim())
     .map((row) => ({
       mappingValue: row.mappingValue.trim(),
+      callerField: row.callerField?.trim() || "value",
       description: row.description?.trim() || "",
       target: row.target || "PATCH_FIELDS",
       rootValue: row.rootValue,

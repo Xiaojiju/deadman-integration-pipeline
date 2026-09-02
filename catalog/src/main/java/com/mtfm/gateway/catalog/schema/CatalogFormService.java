@@ -1,5 +1,6 @@
 package com.mtfm.gateway.catalog.schema;
 
+import com.mtfm.gateway.catalog.apply.CatalogApplyService;
 import com.mtfm.gateway.catalog.dto.ChannelView;
 import com.mtfm.gateway.catalog.dto.ChannelWriteRequest;
 import com.mtfm.gateway.catalog.dto.DeviceCommandRequest;
@@ -33,8 +34,10 @@ import com.mtfm.gateway.spi.model.FunctionTemplate;
 import com.mtfm.gateway.spi.model.SchemaField;
 import com.mtfm.gateway.spi.model.SchemaForms;
 import com.mtfm.gateway.spi.model.SchemaValidator;
-import com.mtfm.gateway.catalog.payload.PayloadCodec;
 import com.mtfm.gateway.catalog.payload.PayloadDefinitionResolver;
+import com.mtfm.gateway.spi.payload.FieldSource;
+import com.mtfm.gateway.spi.payload.PayloadEncoding;
+import com.mtfm.gateway.spi.payload.PayloadMode;
 import com.mtfm.gateway.spi.payload.TopicCatalog;
 import com.mtfm.gateway.spi.payload.TopicRouteResolver;
 import com.mtfm.gateway.spi.property.PropertyItem;
@@ -42,6 +45,7 @@ import com.mtfm.gateway.spi.property.PropertySchemas;
 import com.mtfm.gateway.spi.property.ValueAccessType;
 import com.mtfm.gateway.spi.property.ValueOption;
 import com.mtfm.gateway.spi.property.WriteFieldOption;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -59,10 +63,15 @@ public class CatalogFormService {
 
     private final CatalogStore store;
     private final CapabilityRegistrar registrar;
+    private final ObjectProvider<CatalogApplyService> applyService;
 
-    public CatalogFormService(CatalogStore store, @Autowired(required = false) CapabilityRegistrar registrar) {
+    public CatalogFormService(
+            CatalogStore store,
+            @Autowired(required = false) CapabilityRegistrar registrar,
+            ObjectProvider<CatalogApplyService> applyService) {
         this.store = store;
         this.registrar = registrar;
+        this.applyService = applyService;
     }
 
     public List<CapabilityDescriptor> listCapabilities() {
@@ -258,8 +267,12 @@ public class CatalogFormService {
 
     private ProductFunctionEntity createFunctionFromTemplate(
             String productId, String capabilityType, FunctionTemplate template) {
+        CapabilityDescriptor descriptor = requireCapability(capabilityType);
         List<PropertyItem> properties = PropertySchemas.toPropertyItems(template.parameters());
-        List<WriteFieldOption> writeFields = templateWriteFields(template);
+        List<WriteFieldOption> writeFields = descriptor.contractedParameters()
+                ? bindContractFields(template, null, PayloadMode.STRUCT)
+                : templateWriteFields(template);
+        boolean read = "READ".equalsIgnoreCase(template.accessType());
         return createFunction(productId, new ProductFunctionWriteRequest(
                 template.functionId(),
                 template.accessType(),
@@ -268,12 +281,11 @@ public class CatalogFormService {
                 ValueAccessType.STRUCT.name(),
                 properties,
                 null,
-                writeFields,
-                null,
+                read ? null : writeFields,
+                read ? writeFields : null,
                 null,
                 0,
                 template.description(),
-                null,
                 null,
                 null,
                 null,
@@ -299,7 +311,7 @@ public class CatalogFormService {
         }
         if (!descriptor.fixedFunctions() && template.isEmpty()
                 && (request.accessType() == null || request.accessType().isBlank())) {
-            throw new IllegalArgumentException("OPEN 能力自定义功能须指定 accessType（READ/WRITE）");
+            throw new IllegalArgumentException("自定义功能须指定 accessType（READ/WRITE）");
         }
         boolean openLockedEmpty = isOpenLockedEmptyTemplate(descriptor, template);
         if (openLockedEmpty) {
@@ -328,12 +340,23 @@ public class CatalogFormService {
             writeFields = List.of();
             writeValueOptions = List.of();
             readFields = List.of();
+        } else if (descriptor.contractedParameters()) {
+            writeAccess = resolveWriteAccess(request);
+            String access = request.accessType() != null && !request.accessType().isBlank()
+                    ? request.accessType()
+                    : template.map(FunctionTemplate::accessType).orElse("WRITE");
+            FunctionTemplate contract = requireContractTemplate(descriptor, access);
+            PayloadMode mode = writeAccess == ValueAccessType.VALUE ? PayloadMode.VALUE : PayloadMode.STRUCT;
+            boolean isRead = "READ".equalsIgnoreCase(access);
+            writeFields = isRead ? List.of() : bindContractFields(contract, request.writeFields(), mode);
+            readFields = isRead ? bindContractFields(contract, request.readFields(), mode) : List.of();
+            writeValueOptions = request.writeValueOptions() == null ? List.of() : request.writeValueOptions();
         } else {
-            writeAccess = ValueAccessType.STRUCT;
-            writeValueOptions = List.of();
+            writeAccess = resolveWriteAccess(request);
             boolean isRead = "READ".equalsIgnoreCase(request.accessType());
             writeFields = isRead ? List.of() : nullSafeFields(request.writeFields());
             readFields = isRead ? nullSafeFields(request.readFields()) : List.of();
+            writeValueOptions = request.writeValueOptions() == null ? List.of() : request.writeValueOptions();
         }
         List<ValueOption> readValueOptions = request.readValueOptions() == null
                 ? List.of()
@@ -376,6 +399,7 @@ public class CatalogFormService {
         if (request.subscribeTopicSlot() != null) {
             entity.setSubscribeTopicSlot(request.subscribeTopicSlot());
         }
+        entity.setPayloadEncoding(PayloadEncoding.from(request.payloadEncoding()).wire());
         ProductFunctionEntity saved = store.saveFunction(entity);
         store.properties().replaceFunctionProperties(saved.getId(), items);
         store.properties().replaceWriteOptions(saved.getId(), writeAccess, writeValueOptions, writeFields);
@@ -443,17 +467,37 @@ public class CatalogFormService {
                 writeAccess = ValueAccessType.STRUCT;
                 fields = List.of();
                 writeOpts = List.of();
+            } else if (descriptor.contractedParameters()) {
+                writeAccess = resolveWriteAccess(request);
+                String access = request.accessType() != null && !request.accessType().isBlank()
+                        ? request.accessType()
+                        : entity.getAccessType();
+                FunctionTemplate contract = requireContractTemplate(descriptor, access);
+                PayloadMode mode = writeAccess == ValueAccessType.VALUE ? PayloadMode.VALUE : PayloadMode.STRUCT;
+                boolean isRead = "READ".equalsIgnoreCase(access);
+                fields = isRead ? List.of() : bindContractFields(contract, request.writeFields(), mode);
+                writeOpts = request.writeValueOptions() == null ? List.of() : request.writeValueOptions();
+                if (isRead) {
+                    store.properties().replaceReadFields(entity.getId(),
+                            bindContractFields(contract, request.readFields(), mode));
+                } else {
+                    store.properties().replaceReadFields(entity.getId(), List.of());
+                }
             } else {
-                writeAccess = ValueAccessType.STRUCT;
-                writeOpts = List.of();
+                writeAccess = resolveWriteAccess(request);
                 boolean isRead = "READ".equalsIgnoreCase(
                         request.accessType() != null ? request.accessType() : entity.getAccessType());
                 fields = isRead ? List.of() : nullSafeFields(request.writeFields());
+                writeOpts = request.writeValueOptions() == null ? List.of() : request.writeValueOptions();
+                if (isRead && request.readFields() != null) {
+                    store.properties().replaceReadFields(entity.getId(), nullSafeFields(request.readFields()));
+                }
             }
             entity.setWriteAccessType(writeAccess.name());
             store.properties().replaceWriteOptions(entity.getId(), writeAccess, writeOpts, fields);
         }
-        if (request.readFields() != null && !descriptor.fixedFunctions() && !openLockedEmpty) {
+        if (request.readFields() != null && !descriptor.fixedFunctions() && !openLockedEmpty
+                && !descriptor.contractedParameters()) {
             store.properties().replaceReadFields(entity.getId(), nullSafeFields(request.readFields()));
         }
         if (request.publishTopicSlot() != null) {
@@ -461,6 +505,9 @@ public class CatalogFormService {
         }
         if (request.subscribeTopicSlot() != null) {
             entity.setSubscribeTopicSlot(request.subscribeTopicSlot());
+        }
+        if (request.payloadEncoding() != null && !request.payloadEncoding().isBlank()) {
+            entity.setPayloadEncoding(PayloadEncoding.from(request.payloadEncoding()).wire());
         }
         if (request.writeFields() != null || request.readFields() != null || request.writeValueOptions() != null
                 || PayloadDefinitionResolver.hasDirectPayload(request)) {
@@ -514,6 +561,18 @@ public class CatalogFormService {
 
     private static List<WriteFieldOption> nullSafeFields(List<WriteFieldOption> fields) {
         return fields == null ? List.of() : fields;
+    }
+
+    private static ValueAccessType resolveWriteAccess(ProductFunctionWriteRequest request) {
+        if (request.payloadMode() != null && !request.payloadMode().isBlank()) {
+            return PayloadMode.from(request.payloadMode()) == PayloadMode.VALUE
+                    ? ValueAccessType.VALUE
+                    : ValueAccessType.STRUCT;
+        }
+        if (request.writeAccessType() != null && !request.writeAccessType().isBlank()) {
+            return ValueAccessType.from(request.writeAccessType());
+        }
+        return ValueAccessType.STRUCT;
     }
 
     private List<PropertyItem> resolveFunctionProperties(
@@ -573,6 +632,98 @@ public class CatalogFormService {
                     false,
                     PropertySchemas.choicesToValueOptions(field),
                     field.format().code()));
+        }
+        return List.copyOf(fields);
+    }
+
+    private static FunctionTemplate requireContractTemplate(CapabilityDescriptor descriptor, String accessType) {
+        return descriptor.functionTemplateByAccessType(accessType)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "能力未定义 " + accessType + " 参数契约: " + descriptor.capabilityType()));
+    }
+
+    /**
+     * CONTRACT：字段名锁死为模板 parameters，只合并来源/常量/映射。
+     * 寻址字段默认 constant（取模板 defaultValue）；value 在 VALUE 模式下 mapped，否则 caller。
+     */
+    private static List<WriteFieldOption> bindContractFields(
+            FunctionTemplate template,
+            List<WriteFieldOption> requested,
+            PayloadMode mode) {
+        List<WriteFieldOption> seeded = seedContractFields(template, mode);
+        if (requested == null || requested.isEmpty()) {
+            return seeded;
+        }
+        Map<String, WriteFieldOption> byField = new LinkedHashMap<>();
+        for (WriteFieldOption field : requested) {
+            byField.put(field.field(), field);
+        }
+        List<WriteFieldOption> result = new ArrayList<>();
+        for (WriteFieldOption seed : seeded) {
+            WriteFieldOption req = byField.remove(seed.field());
+            if (req == null) {
+                result.add(seed);
+                continue;
+            }
+            FieldSource source = FieldSource.from(req.source());
+            if (source == FieldSource.MAPPED && !"value".equals(seed.field())) {
+                throw new IllegalArgumentException("契约字段 " + seed.field() + " 不允许 mapped，仅 value 可映射");
+            }
+            String constant = req.constant();
+            if (source == FieldSource.CONSTANT && (constant == null || constant.isBlank())) {
+                constant = seed.constant();
+            }
+            List<ValueOption> options = seed.options();
+            if ("value".equals(seed.field()) && req.options() != null && !req.options().isEmpty()) {
+                options = req.options();
+            } else if (req.options() != null && !req.options().isEmpty() && !seed.options().isEmpty()) {
+                options = mergeFixedFieldOptions(req.options(), seed.options());
+            }
+            result.add(new WriteFieldOption(
+                    seed.field(),
+                    req.description() != null && !req.description().isBlank() ? req.description() : seed.description(),
+                    seed.accessDataType(),
+                    seed.transformDataType(),
+                    source != FieldSource.CALLER,
+                    options,
+                    seed.format(),
+                    req.valueGenerator(),
+                    source.wire(),
+                    constant,
+                    source == FieldSource.MAPPED
+                            ? (req.callerField() == null || req.callerField().isBlank() ? "value" : req.callerField())
+                            : req.callerField()));
+        }
+        if (!byField.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "CONTRACT 功能不允许自定义字段: " + byField.keySet() + "（功能 " + template.functionId() + "）");
+        }
+        return List.copyOf(result);
+    }
+
+    private static List<WriteFieldOption> seedContractFields(FunctionTemplate template, PayloadMode mode) {
+        List<WriteFieldOption> fields = new ArrayList<>();
+        for (SchemaField field : template.parameters()) {
+            boolean valueField = "value".equals(field.name());
+            boolean valueMode = mode == PayloadMode.VALUE;
+            FieldSource source = valueField
+                    ? (valueMode ? FieldSource.MAPPED : FieldSource.CALLER)
+                    : FieldSource.CONSTANT;
+            String constant = valueField || field.defaultValue() == null
+                    ? null
+                    : String.valueOf(field.defaultValue());
+            fields.add(new WriteFieldOption(
+                    field.name(),
+                    field.description(),
+                    field.type().code(),
+                    field.type().code(),
+                    source != FieldSource.CALLER,
+                    PropertySchemas.choicesToValueOptions(field),
+                    field.format().code(),
+                    null,
+                    source.wire(),
+                    constant,
+                    source == FieldSource.MAPPED ? "value" : null));
         }
         return List.copyOf(fields);
     }
@@ -852,6 +1003,9 @@ public class CatalogFormService {
         Map<String, Object> payload = PayloadDefinitionResolver.assemble(definition, caller, deviceFieldOverrides);
 
         Map<String, Object> deliveryHints = new LinkedHashMap<>();
+        if (function.getAccessType() != null && !function.getAccessType().isBlank()) {
+            deliveryHints.put("accessType", function.getAccessType());
+        }
         if ("MQTT".equalsIgnoreCase(function.getCapabilityType())) {
             var endpoints = store.findEndpoints(device.getDeviceCode());
             if (!endpoints.isEmpty()) {
@@ -941,8 +1095,7 @@ public class CatalogFormService {
                 function.getPublishTopicSlot(),
                 function.getSubscribeTopicSlot(),
                 function.getPayloadMode(),
-                PayloadCodec.readFieldNode(function.getStructSchema()),
-                PayloadCodec.readMappings(function.getValueMappings()));
+                function.getPayloadEncoding());
     }
 
     public Map<String, Object> deviceFieldOverrides(String deviceCode, String functionId) {
@@ -985,6 +1138,8 @@ public class CatalogFormService {
     }
 
     public DeviceView toDeviceView(DeviceEntity entity) {
+        CatalogApplyService apply = applyService == null ? null : applyService.getIfAvailable();
+        boolean loaded = apply != null && apply.isLoaded(entity.getDeviceCode());
         return new DeviceView(
                 entity.getId(),
                 entity.getDeviceCode(),
@@ -993,7 +1148,8 @@ public class CatalogFormService {
                 store.loadAllDeviceOverrides(entity),
                 entity.getEnabled(),
                 entity.getCreatedAt(),
-                entity.getUpdatedAt());
+                entity.getUpdatedAt(),
+                loaded);
     }
 
     public DeviceEndpointView toEndpointView(DeviceEndpointEntity entity) {
@@ -1037,7 +1193,11 @@ public class CatalogFormService {
                 : store.properties().listWriteFields(function.getId());
         List<SchemaField> schema = inferSchema(values);
         Optional<FunctionTemplate> template = findTemplate(function.getCapabilityType(), function.getFunctionId());
-        if (template.isPresent()) {
+        boolean contracted = registrar != null && function.getCapabilityType() != null
+                && registrar.find(function.getCapabilityType()).map(CapabilityDescriptor::contractedParameters).orElse(false);
+        if (contracted && !structFields.isEmpty()) {
+            schema = schemaFromWriteFields(structFields, true);
+        } else if (template.isPresent()) {
             schema = template.get().parameters();
         } else if (!structFields.isEmpty()) {
             schema = schemaFromWriteFields(structFields, true);
@@ -1045,10 +1205,10 @@ public class CatalogFormService {
         List<FormField> fields = SchemaForms.bind(schema, values);
         List<ValueOption> writeOptions = store.properties().listWriteValueOptions(function.getId());
         boolean openStructForm = template.isEmpty() && !structFields.isEmpty();
-        if (writeOptions.isEmpty() && !openStructForm) {
+        if (!contracted && writeOptions.isEmpty() && !openStructForm) {
             writeOptions = flattenWriteFieldOptions(structFields);
         }
-        if (writeOptions.isEmpty() && template.isPresent()) {
+        if (!contracted && writeOptions.isEmpty() && template.isPresent()) {
             writeOptions = flattenChoiceOptions(PropertySchemas.choiceOptionsByField(template.get().parameters()));
         }
         return new FunctionFormView(
@@ -1077,40 +1237,76 @@ public class CatalogFormService {
         return com.mtfm.gateway.spi.payload.PayloadMode.STRUCT.wire();
     }
 
-    /** STRUCT/READ 字段 → 下发表单 SchemaField（含 type / format / choices）。 */
+    /** STRUCT/READ 字段 → 下发表单 SchemaField。callerOnly 时只暴露调用方需要填的字段。 */
     private static List<SchemaField> schemaFromWriteFields(List<WriteFieldOption> writeFields, boolean callerOnly) {
         if (writeFields == null || writeFields.isEmpty()) {
             return List.of();
         }
-        List<SchemaField> result = new ArrayList<>();
+        Map<String, SchemaField> byName = new LinkedHashMap<>();
         for (WriteFieldOption field : writeFields) {
             if (field == null || field.field() == null || field.field().isBlank()) {
                 continue;
             }
-            if (callerOnly && field.platformGenerated()) {
+            FieldSource source = FieldSource.from(field.source());
+            if (callerOnly) {
+                if (source == FieldSource.PLATFORM || source == FieldSource.DEVICE || source == FieldSource.CONSTANT) {
+                    continue;
+                }
+                if (field.platformGenerated()) {
+                    continue;
+                }
+            }
+            boolean mapped = source == FieldSource.MAPPED;
+            String name = mapped
+                    ? (field.callerField() == null || field.callerField().isBlank()
+                            ? "value"
+                            : field.callerField())
+                    : field.field();
+            List<String> choices = field.options() == null
+                    ? List.of()
+                    : field.options().stream()
+                            .map(option -> mapped
+                                    ? (option.mappingValue() == null || option.mappingValue().isBlank()
+                                            ? option.optionValue()
+                                            : option.mappingValue())
+                                    : option.optionValue())
+                            .filter(v -> v != null && !v.isBlank())
+                            .toList();
+            SchemaField existing = byName.get(name);
+            if (existing != null) {
+                List<String> merged = new ArrayList<>(existing.choices() == null ? List.of() : existing.choices());
+                for (String choice : choices) {
+                    if (!merged.contains(choice)) {
+                        merged.add(choice);
+                    }
+                }
+                byName.put(name, new SchemaField(
+                        existing.name(),
+                        existing.type(),
+                        existing.required(),
+                        existing.description(),
+                        existing.label(),
+                        existing.defaultValue(),
+                        existing.secret(),
+                        List.copyOf(merged),
+                        existing.format()));
                 continue;
             }
             FieldType type = FieldType.from(field.accessDataType());
             FieldFormat format = FieldFormat.from(field.format());
-            List<String> choices = field.options() == null
-                    ? List.of()
-                    : field.options().stream()
-                            .map(option -> option.optionValue())
-                            .filter(v -> v != null && !v.isBlank())
-                            .toList();
             String description = field.description() == null ? "" : field.description();
-            result.add(new SchemaField(
-                    field.field(),
+            byName.put(name, new SchemaField(
+                    name,
                     type,
-                    false,
+                    mapped,
                     description,
-                    field.field(),
+                    name,
                     null,
                     type == FieldType.PASSWORD,
                     choices,
                     format));
         }
-        return List.copyOf(result);
+        return List.copyOf(byName.values());
     }
 
     private String resolveDescription(ProductFunctionEntity function) {

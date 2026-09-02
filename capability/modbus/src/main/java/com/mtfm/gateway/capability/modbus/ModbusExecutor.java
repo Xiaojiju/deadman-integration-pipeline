@@ -79,14 +79,10 @@ public final class ModbusExecutor implements FunctionExecutor {
                     Failure.executorError(capabilityType(), "未绑定端点: " + command.deviceId(), false));
         }
         try {
-            if (ModbusCapability.FN_READ.equals(command.functionId())) {
-                return read(command, endpoint);
-            }
-            if (ModbusCapability.FN_WRITE.equals(command.functionId())) {
+            if (isWrite(command)) {
                 return write(command, endpoint);
             }
-            return ExecutionResult.failed(command,
-                    Failure.executorError(capabilityType(), "不支持的功能: " + command.functionId(), false));
+            return read(command, endpoint);
         } catch (RuntimeException ex) {
             return ExecutionResult.failed(command,
                     Failure.executorError(capabilityType(), String.valueOf(ex.getMessage()), true));
@@ -128,6 +124,23 @@ public final class ModbusExecutor implements FunctionExecutor {
         }
         return ExecutionResult.success(command.requestId(), command.deviceId(), command.functionId(),
                 Map.of("written", raw, "unitId", endpoint.unitId()));
+    }
+
+    private static boolean isWrite(FunctionCommand command) {
+        String access = command.deliveryHints().get("accessType").map(String::valueOf).orElse("");
+        if ("WRITE".equalsIgnoreCase(access)) {
+            return true;
+        }
+        if ("READ".equalsIgnoreCase(access)) {
+            return false;
+        }
+        if (ModbusCapability.FN_WRITE.equals(command.functionId())) {
+            return true;
+        }
+        if (ModbusCapability.FN_READ.equals(command.functionId())) {
+            return false;
+        }
+        return command.arguments().get(ModbusCapability.ARG_VALUE).isPresent();
     }
 
     private static String string(Attributes attributes, String key) {

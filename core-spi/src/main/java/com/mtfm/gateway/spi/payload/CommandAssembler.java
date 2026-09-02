@@ -34,6 +34,64 @@ public final class CommandAssembler {
         }
     }
 
+    /**
+     * 按映射上的 callerField 取调用方参数。
+     * {@code value}（默认）仍兼容 {@code lock} / {@code command.lock} / 单键兜底。
+     */
+    public static Object resolveCallerValue(Map<String, Object> caller, String callerField) {
+        if (caller == null || caller.isEmpty()) {
+            return null;
+        }
+        String field = (callerField == null || callerField.isBlank()) ? CALLER_VALUE_KEY : callerField.trim();
+        Object direct = caller.get(field);
+        if (direct != null) {
+            return direct;
+        }
+        if (!CALLER_VALUE_KEY.equals(field)) {
+            return null;
+        }
+        Object extracted = extractCallerValue(caller);
+        if (extracted != null) {
+            return extracted;
+        }
+        if (caller.size() == 1) {
+            return caller.values().iterator().next();
+        }
+        return null;
+    }
+
+    /** @deprecated 使用 {@link #resolveCallerValue(Map, String)} */
+    public static Map<String, Object> normalizeCallerArguments(PayloadMode mode, Map<String, Object> caller) {
+        if (caller == null || caller.isEmpty()) {
+            return Map.of();
+        }
+        if (mode != PayloadMode.VALUE) {
+            return Map.copyOf(caller);
+        }
+        Object extracted = resolveCallerValue(caller, CALLER_VALUE_KEY);
+        if (extracted == null || caller.containsKey(CALLER_VALUE_KEY)) {
+            return Map.copyOf(caller);
+        }
+        Map<String, Object> next = new LinkedHashMap<>(caller);
+        next.put(CALLER_VALUE_KEY, extracted);
+        return Map.copyOf(next);
+    }
+
+    private static Object extractCallerValue(Map<String, Object> caller) {
+        Object lock = caller.get("lock");
+        if (lock != null) {
+            return lock;
+        }
+        Object command = caller.get("command");
+        if (command instanceof Map<?, ?> map) {
+            Object nested = map.get("lock");
+            if (nested != null) {
+                return nested;
+            }
+        }
+        return null;
+    }
+
     public static Map<String, Object> assemble(Request request) {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(request.structRoot(), "structRoot");
@@ -51,7 +109,7 @@ public final class CommandAssembler {
         for (FieldTreePaths.LeafBinding leaf : leaves) {
             FieldNode node = leaf.node();
             if (node.source() == FieldSource.CONSTANT && node.constant() != null) {
-                FieldTreePaths.setFlat(flat, leaf.path(), node.constant());
+                FieldTreePaths.setFlat(flat, leaf.path(), JsonLiterals.coerceConstant(node.constant(), node.isArray()));
             }
         }
 
@@ -92,11 +150,14 @@ public final class CommandAssembler {
             if (node.source() == FieldSource.PLATFORM
                     || FieldValueGenerators.isPlatformGenerated(node.valueGenerator())) {
                 FieldTreePaths.setFlat(
-                        flat, leaf.path(), FieldValueGenerators.generate(node.valueGenerator()));
+                        flat, leaf.path(), FieldValueGenerators.generate(node.valueGenerator(), node.type()));
             }
         }
 
-        Map<String, Object> nested = FieldTreePaths.toNested(flat);
+        return unwrapRoot(FieldTreePaths.toNested(request.structRoot(), flat));
+    }
+
+    private static Map<String, Object> unwrapRoot(Map<String, Object> nested) {
         if (nested.size() == 1 && nested.containsKey("root")) {
             Object inner = nested.get("root");
             if (inner instanceof Map<?, ?> map) {
@@ -109,60 +170,53 @@ public final class CommandAssembler {
     }
 
     private static Map<String, Object> assembleValueMode(Request request) {
-        Object raw = request.callerArguments().get(CALLER_VALUE_KEY);
-        if (raw == null) {
-            return null;
-        }
-        String key = String.valueOf(raw);
         for (ValueMapping mapping : request.valueMappings()) {
-            if (!mapping.mappingValue().equals(key)) {
+            if (mapping.target() != MappingTarget.FILL_ROOT) {
                 continue;
             }
-            if (mapping.target() == MappingTarget.FILL_ROOT) {
-                if (mapping.rootValue() instanceof Map<?, ?> map) {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> cast = (Map<String, Object>) map;
-                    return new LinkedHashMap<>(cast);
-                }
-                return Map.of("_value", mapping.rootValue());
+            Object raw = resolveCallerValue(request.callerArguments(), mapping.callerField());
+            if (raw == null || !mappingMatches(mapping, raw)) {
+                continue;
             }
-            break;
+            if (mapping.rootValue() instanceof Map<?, ?> map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> cast = (Map<String, Object>) map;
+                return new LinkedHashMap<>(cast);
+            }
+            return Map.of("_value", mapping.rootValue());
         }
         return null;
     }
 
     private static void applyValuePatches(Request request, Map<String, Object> flat) {
-        Object raw = request.callerArguments().get(CALLER_VALUE_KEY);
-        if (raw == null) {
-            return;
-        }
-        String key = String.valueOf(raw);
+        LinkedHashMap<String, Boolean> applied = new LinkedHashMap<>();
         for (ValueMapping mapping : request.valueMappings()) {
-            if (!mapping.mappingValue().equals(key)) {
+            if (mapping.target() == MappingTarget.FILL_ROOT) {
                 continue;
             }
-            if (mapping.target() == MappingTarget.FILL_ROOT) {
-                return;
+            String callerField = mapping.callerField();
+            if (applied.containsKey(callerField)) {
+                continue;
+            }
+            Object raw = resolveCallerValue(request.callerArguments(), callerField);
+            if (raw == null) {
+                continue;
+            }
+            if (!mappingMatches(mapping, raw)) {
+                continue;
             }
             for (FieldPatch patch : mapping.patches()) {
                 FieldTreePaths.setFlat(flat, patch.path(), patch.value());
             }
-            return;
+            applied.put(callerField, Boolean.TRUE);
         }
     }
 
+    private static boolean mappingMatches(ValueMapping mapping, Object raw) {
+        return mapping.mappingValue().equals(String.valueOf(raw));
+    }
+
     private static List<FieldTreePaths.LeafBinding> leavesOf(FieldNode root) {
-        if ("root".equals(root.name()) && root.isObject()) {
-            List<FieldTreePaths.LeafBinding> merged = new java.util.ArrayList<>();
-            for (FieldNode child : root.children()) {
-                if (child.isObject() && !child.children().isEmpty()) {
-                    merged.addAll(FieldTreePaths.collectLeaves(child, child.name()));
-                } else {
-                    merged.add(new FieldTreePaths.LeafBinding(child.name(), child));
-                }
-            }
-            return List.copyOf(merged);
-        }
         return FieldTreePaths.collectLeaves(root, null);
     }
 }

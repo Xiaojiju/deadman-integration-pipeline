@@ -24,5 +24,6 @@ class GatewayApplicationTest {
                 .anyMatch(field -> "host".equals(field.name()) && field.required()));
         assertTrue(pipeline.find("MODBUS").orElseThrow().addressSchema().stream()
                 .anyMatch(field -> "slaveId".equals(field.name()) && field.required()));
+        assertTrue(pipeline.find("MODBUS").orElseThrow().contractedParameters());
     }
 }

@@ -2,6 +2,7 @@ package com.mtfm.gateway.capability.modbus;
 
 import com.mtfm.gateway.spi.model.CapabilityDescriptor;
 import com.mtfm.gateway.spi.model.FieldType;
+import com.mtfm.gateway.spi.model.FunctionCatalogMode;
 import com.mtfm.gateway.spi.model.FunctionTemplate;
 import com.mtfm.gateway.spi.model.SchemaField;
 
@@ -11,6 +12,7 @@ import java.util.List;
  * 南向 Modbus 能力常量与登记描述符。
  *
  * <p>Channel（connection）承载 TCP 连接参数 host/port；Address 承载从站号 slaveId。
+ * 产品功能可自定义业务 functionId，参数名锁死为 area/offset/quantity/dataType/value。
  * 多设备共享同一 host:port 时复用 {@link ModbusChannel}，由 {@link ModbusExecutor} retain/release 管理生命周期。
  *
  * @see ModbusExecutor
@@ -51,7 +53,8 @@ public final class ModbusCapability {
                             SchemaField.choice(ARG_DATA_TYPE, "数据类型", false, "INT16",
                                     List.of("INT16", "BOOLEAN"))
                     ))
-            )
+            ),
+            FunctionCatalogMode.CONTRACT
     );
 
     private ModbusCapability() {

@@ -22,6 +22,7 @@ import com.mtfm.gateway.spi.model.DeviceBinding;
 import com.mtfm.gateway.spi.model.DeviceEndpointBinding;
 import com.mtfm.gateway.spi.model.FunctionDef;
 import com.mtfm.gateway.spi.option.Option;
+import com.mtfm.gateway.spi.payload.PayloadEncoding;
 import com.mtfm.gateway.spi.option.OptionTrees;
 import com.mtfm.gateway.spi.property.PropertyItem;
 import com.mtfm.gateway.spi.property.PropertySchemas;
@@ -168,7 +169,8 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
                 writeValues,
                 writeFields,
                 readFields,
-                readValues));
+                readValues,
+                PayloadEncoding.from(function.getPayloadEncoding())));
     }
 
     @Override

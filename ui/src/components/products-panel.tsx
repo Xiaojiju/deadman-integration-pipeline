@@ -17,6 +17,11 @@ import {
   schemaToFixedWriteFields,
 } from "@/components/fixed-write-field-editor"
 import { filterValidValueOptions } from "@/components/value-option-list-editor"
+import {
+  ContractFieldEditor,
+  mergeContractFields,
+  schemaToContractFields,
+} from "@/components/contract-field-editor"
 import { FieldNodeTreeEditor } from "@/components/field-node-tree-editor"
 import { ValueMappingEditor, filterValidMappings } from "@/components/value-mapping-editor"
 import { ListPagination } from "@/components/list-pagination"
@@ -61,6 +66,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ConfigExample, CodeSample } from "@/components/config-example"
 import { catalogApi } from "@/lib/api"
 import type {
   CapabilityDescriptor,
@@ -75,7 +81,9 @@ import type { FieldNodeModel, ValueMappingModel } from "@/lib/payload-form"
 import {
   emptyObjectRoot,
   fieldNodeToWriteFields,
-  normalizeFieldNode,
+  fieldOptionsToMappings,
+  mergeMappingsIntoFields,
+  mappingsToValueOptions,
   resolvePayloadMode,
   valueOptionsToMappings,
   writeFieldsToFieldNode,
@@ -129,19 +137,31 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
   const [publishTopicSlot, setPublishTopicSlot] = useState("")
   const [subscribeTopicSlot, setSubscribeTopicSlot] = useState("")
   const [payloadMode, setPayloadMode] = useState<"VALUE" | "STRUCT">("STRUCT")
+  const [payloadEncoding, setPayloadEncoding] = useState<"JSON" | "HEX" | "BINARY">("JSON")
   const [structRoot, setStructRoot] = useState<FieldNodeModel>(() => emptyObjectRoot())
   const [valueMappings, setValueMappings] = useState<ValueMappingModel[]>([])
 
   const selectedCapability = capabilities.find((item) => item.capabilityType === capabilityType)
   const templates = selectedCapability?.functionTemplates ?? []
   const isFixed = selectedCapability?.functionMode === "FIXED"
+  const isContracted = selectedCapability?.functionMode === "CONTRACT"
   const selectedTemplate = templates.find((item) => item.functionId === functionId)
-  /** OPEN 能力下命中预置模板的功能（如 MQTT publish/subscribe）结构锁定 */
-  const isCapabilityDefaultFn = Boolean(!isFixed && selectedTemplate)
+  /** OPEN 能力下无参预置功能（如 MQTT publish/subscribe）结构锁定 */
+  const isCapabilityDefaultFn = Boolean(
+    !isFixed &&
+      !isContracted &&
+      selectedTemplate &&
+      (selectedTemplate.parameters?.length ?? 0) === 0
+  )
   const structureLocked = isFixed || isCapabilityDefaultFn
+  const contractTemplate = templates.find((item) => item.accessType === accessType)
+  const contractSchema: SchemaField[] = useMemo(
+    () => contractTemplate?.parameters ?? [],
+    [contractTemplate]
+  )
   const paramSchema: SchemaField[] = useMemo(
-    () => selectedTemplate?.parameters ?? [],
-    [selectedTemplate]
+    () => (isContracted ? contractSchema : selectedTemplate?.parameters ?? []),
+    [isContracted, contractSchema, selectedTemplate]
   )
   const templateFixedProperties = useMemo(
     () => schemaToFixedProperties(paramSchema),
@@ -282,24 +302,33 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
     }
   }
 
+  function seedContractedFields(cap: CapabilityDescriptor | undefined, access: string) {
+    const tpl = cap?.functionTemplates.find((item) => item.accessType === access)
+    return schemaToContractFields(tpl?.parameters ?? [])
+  }
+
   function openCreateFunction(forProduct?: ProductEntity) {
     const target = forProduct ?? viewProduct
+    const firstCap = capabilities[0]
+    const contracted = firstCap?.functionMode === "CONTRACT"
     setFnMode("create")
     setEditingFunction(null)
     setProductId(target?.id ?? productOptions[0]?.id ?? "")
-    setCapabilityType(capabilities[0]?.capabilityType ?? "")
+    setCapabilityType(firstCap?.capabilityType ?? "")
     setFunctionId("")
     setAccessType("WRITE")
     setSortIndex("0")
     setCustomProperties([])
     setWriteValueOptions([])
-    setWriteFields([])
+    const seeded = contracted ? seedContractedFields(firstCap, "WRITE") : []
+    setWriteFields(seeded)
     setReadFields([])
     setReadValueOptions([])
     setFnDescription("")
     setPublishTopicSlot("")
     setSubscribeTopicSlot("")
-    setPayloadMode("STRUCT")
+    setPayloadMode(contracted ? "VALUE" : "STRUCT")
+    setPayloadEncoding("JSON")
     setStructRoot(emptyObjectRoot())
     setValueMappings([])
     setFnOpen(true)
@@ -323,16 +352,15 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
     setSubscribeTopicSlot(fn.subscribeTopicSlot ?? "")
     const mode = resolvePayloadMode(fn)
     setPayloadMode(mode)
-    if (fn.structSchema) {
-      setStructRoot(normalizeFieldNode(fn.structSchema))
-    } else {
-      setStructRoot(writeFieldsToFieldNode(fn.writeFields ?? []))
-    }
-    if (fn.valueMappings && fn.valueMappings.length > 0) {
-      setValueMappings(fn.valueMappings)
-    } else {
-      setValueMappings(valueOptionsToMappings(fn.writeValueOptions ?? [], fn.writeFields ?? []))
-    }
+    const encoding = (fn.payloadEncoding || "JSON").toUpperCase()
+    setPayloadEncoding(encoding === "HEX" || encoding === "BINARY" ? encoding : "JSON")
+    setStructRoot(writeFieldsToFieldNode(fn.writeFields ?? []))
+    const fromFields = fieldOptionsToMappings(fn.writeFields ?? [])
+    setValueMappings(
+      fromFields.length > 0
+        ? fromFields
+        : valueOptionsToMappings(fn.writeValueOptions ?? [], fn.writeFields ?? [])
+    )
     setFnOpen(true)
   }
 
@@ -354,6 +382,7 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
     setWriteValueOptions([])
     setReadValueOptions([])
     setPayloadMode("STRUCT")
+    setPayloadEncoding("JSON")
     setValueMappings([])
   }
 
@@ -361,9 +390,39 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
     setCapabilityType(nextCapability)
     setFunctionId(nextFunctionId)
     const cap = capabilities.find((item) => item.capabilityType === nextCapability)
+    if (cap?.functionMode === "CONTRACT") {
+      if (fnMode === "create") {
+        const access = accessType || "WRITE"
+        const seeded = seedContractedFields(cap, access)
+        if (access === "READ") {
+          setReadFields(seeded)
+          setWriteFields([])
+        } else {
+          setWriteFields(seeded)
+          setReadFields([])
+        }
+        setPayloadMode("VALUE")
+        setPayloadEncoding("JSON")
+        setStructRoot(emptyObjectRoot())
+        setValueMappings([])
+      }
+      return
+    }
     const template = cap?.functionTemplates.find((item) => item.functionId === nextFunctionId)
     if (fnMode === "create") {
-      seedOptionsFromTemplate(template)
+      if (template) {
+        seedOptionsFromTemplate(template)
+      } else {
+        setWriteFields([])
+        setReadFields([])
+        setStructRoot(emptyObjectRoot())
+        setPayloadMode("STRUCT")
+        setPayloadEncoding("JSON")
+        setValueMappings([])
+        setWriteValueOptions([])
+        setReadValueOptions([])
+        setCustomProperties([])
+      }
     }
   }
 
@@ -379,18 +438,42 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
     const lockedOpenDefault = isCapabilityDefaultFn
     const properties = isFixed ? displayFixedProperties : undefined
     const fixedFields = isFixed ? displayFixedWriteFields : []
-    const writeOpts = isFixed || lockedOpenDefault ? [] : []
+    const mappings = !isFixed && !lockedOpenDefault && payloadMode === "VALUE"
+      ? filterValidMappings(valueMappings).map((row) =>
+          isContracted
+            ? {
+                ...row,
+                patches: (row.patches ?? []).map((patch) => ({
+                  ...patch,
+                  path: patch.path?.trim() || "value",
+                })),
+              }
+            : row
+        )
+      : []
+    const contractBound = isContracted
+      ? mergeContractFields(
+          schemaToContractFields(contractSchema),
+          accessType === "READ" ? readFields : writeFields
+        )
+      : []
+    const contractWithMaps = isContracted && payloadMode === "VALUE"
+      ? mergeMappingsIntoFields(contractBound, mappings)
+      : contractBound
     const writeStructFields = isFixed
       ? fixedFields
       : lockedOpenDefault
         ? []
         : accessType === "WRITE"
-          ? fieldNodeToWriteFields(structRoot)
+          ? (isContracted ? contractWithMaps : mergeMappingsIntoFields(fieldNodeToWriteFields(structRoot), mappings))
           : []
+    const writeOpts = isFixed || lockedOpenDefault
+      ? []
+      : mappingsToValueOptions(mappings)
     const readStructFields = isFixed || lockedOpenDefault
       ? []
       : accessType === "READ"
-        ? filterValidWriteFields(readFields)
+        ? (isContracted ? filterValidWriteFields(contractBound) : filterValidWriteFields(readFields))
         : []
     const readOpts = isFixed && !lockedOpenDefault ? filterValidValueOptions(readValueOptions) : []
 
@@ -408,15 +491,8 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
         description: fnDescription.trim() || undefined,
         publishTopicSlot: capabilityType === "MQTT" ? publishTopicSlot.trim() || undefined : undefined,
         subscribeTopicSlot: capabilityType === "MQTT" ? subscribeTopicSlot.trim() || undefined : undefined,
-        payloadMode: !isFixed && !lockedOpenDefault && accessType === "WRITE" ? payloadMode : undefined,
-        structSchema:
-          !isFixed && !lockedOpenDefault && accessType === "WRITE"
-            ? normalizeFieldNode(structRoot)
-            : undefined,
-        valueMappings:
-          !isFixed && !lockedOpenDefault && accessType === "WRITE" && payloadMode === "VALUE"
-            ? filterValidMappings(valueMappings)
-            : undefined,
+        payloadMode: isFixed || lockedOpenDefault ? undefined : payloadMode,
+        payloadEncoding: isFixed || lockedOpenDefault || isContracted ? undefined : payloadEncoding,
       }
       if (fnMode === "edit" && editingFunction) {
         await catalogApi.updateProductFunction(productId, editingFunction.functionId, body)
@@ -489,7 +565,7 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
         <div className="flex flex-col gap-1.5">
           <CardTitle>产品</CardTitle>
           <CardDescription>
-            同质设备模板。可创建/编辑产品与功能；FIXED 能力可一键导入，OPEN 能力可自定义功能参数。
+            同质设备模板。FIXED 一键导入封闭 API；CONTRACT（如 Modbus）自定义业务 functionId、参数名锁死；OPEN 可自定义协议字段。
           </CardDescription>
         </div>
         <div className="flex gap-2">
@@ -624,7 +700,11 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                       {capabilities.map((item) => (
                         <SelectItem key={item.capabilityType} value={item.capabilityType}>
                           {item.capabilityType}
-                          {item.functionMode === "FIXED" ? " · FIXED" : " · OPEN"}
+                          {item.functionMode === "FIXED"
+                            ? " · FIXED"
+                            : item.functionMode === "CONTRACT"
+                              ? " · CONTRACT"
+                              : " · OPEN"}
                         </SelectItem>
                       ))}
                     </SelectGroup>
@@ -652,8 +732,12 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
               {fnMode === "edit"
                 ? structureLocked
                   ? "预置功能结构不可改，仅可维护说明与排序。"
-                  : "FIXED：默认参数与写字段的 field/取值不可改，可改说明；OPEN：读/写均可配置字段类型与约束。"
-                : "FIXED：从预置模板选择。OPEN：自定义 functionId，读/写均可配置每个字段的 FieldType 与 format。"}
+                  : isContracted
+                    ? "CONTRACT：functionId 自定义，area/offset 等参数名锁死，只配来源与取值。"
+                    : "FIXED：默认参数与写字段的 field/取值不可改，可改说明；OPEN：读/写均可配置字段类型与约束。"
+                : isContracted
+                  ? "自定义业务 functionId（如 light.switch）。参数名由能力契约锁死。"
+                  : "FIXED 从预置模板选功能。OPEN（如 MQTT）自定义 functionId，并配置协议字段与调用方式。"}
             </DialogDescription>
           </DialogHeader>
           <FieldGroup>
@@ -693,14 +777,18 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                     {capabilities.map((item) => (
                       <SelectItem key={item.capabilityType} value={item.capabilityType}>
                         {item.capabilityType}
-                        {item.functionMode === "FIXED" ? " · FIXED" : " · OPEN"}
+                        {item.functionMode === "FIXED"
+                          ? " · FIXED"
+                          : item.functionMode === "CONTRACT"
+                            ? " · CONTRACT"
+                            : " · OPEN"}
                       </SelectItem>
                     ))}
                   </SelectGroup>
                 </SelectContent>
               </Select>
             </Field>
-            {fnMode === "create" && (isFixed || templates.length > 0) ? (
+            {fnMode === "create" && (isFixed || (templates.length > 0 && !isContracted)) ? (
               <Field>
                 <FieldLabel>功能（模板）</FieldLabel>
                 <Select
@@ -730,7 +818,7 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                   id="customFn"
                   value={functionId}
                   onChange={(e) => setFunctionId(e.target.value)}
-                  placeholder="例如 pump.readTemp"
+                  placeholder={isContracted ? "例如 light.switch" : "例如 pump.readTemp"}
                 />
               </Field>
             ) : null}
@@ -753,7 +841,24 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
               <FieldLabel>accessType</FieldLabel>
               <Select
                 value={accessType}
-                onValueChange={setAccessType}
+                onValueChange={(next) => {
+                  setAccessType(next)
+                  if (!isContracted) {
+                    return
+                  }
+                  const tpl = templates.find((item) => item.accessType === next)
+                  const seeded = mergeContractFields(
+                    schemaToContractFields(tpl?.parameters ?? []),
+                    next === "READ" ? readFields : writeFields
+                  )
+                  if (next === "READ") {
+                    setReadFields(seeded)
+                    setWriteFields([])
+                  } else {
+                    setWriteFields(seeded)
+                    setReadFields([])
+                  }
+                }}
                 disabled={structureLocked}
               >
                 <SelectTrigger>
@@ -767,10 +872,50 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                 </SelectContent>
               </Select>
             </Field>
-            {!structureLocked ? (
+            {!structureLocked && !isContracted ? (
               <p className="text-sm text-muted-foreground">
-                按 accessType 配置字段：WRITE 用 writeFields，READ 用 readFields；平台生成字段（如 seq、at）执行时自动填充。
+                WRITE 配置下发协议 JSON；READ 配置解析上报字段。platform / device / constant 来源的字段调用方不用传。
               </p>
+            ) : isContracted ? (
+              <p className="text-sm text-muted-foreground">
+                参数名由 Modbus 契约锁死。寻址字段配常量或设备覆盖；写入值用 mapped，调用方只传业务简值。
+              </p>
+            ) : null}
+            {!isFixed && !isCapabilityDefaultFn && !isContracted ? (
+              <Field>
+                <FieldLabel>载荷编码 payloadEncoding</FieldLabel>
+                <Select
+                  value={payloadEncoding}
+                  onValueChange={(v) => setPayloadEncoding(v as "JSON" | "HEX" | "BINARY")}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="JSON">JSON — 对象/数组报文</SelectItem>
+                      <SelectItem value="HEX">HEX — 按字段顺序紧排成空格分隔 hex</SelectItem>
+                      <SelectItem value="BINARY">BINARY — 按字段顺序紧排成原始字节</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                {payloadEncoding === "HEX" ? (
+                  <ConfigExample title="示例 · Modbus 透传 hex 帧">
+                    <p>
+                      字段顺序即帧布局：area 1 字节、func 1 字节、offset 2 字节、quantity 2 字节。
+                    </p>
+                    <p>
+                      值 0,0,0,1 打包为{" "}
+                      <CodeSample>00 00 00 00 00 01</CodeSample>
+                      ，MQTT 原样发布该字符串。
+                    </p>
+                  </ConfigExample>
+                ) : payloadEncoding === "BINARY" ? (
+                  <p className="text-xs text-muted-foreground">
+                    与 HEX 相同按字段紧排，发布原始字节而不是 hex 文本。
+                  </p>
+                ) : null}
+              </Field>
             ) : null}
             {isFixed ? (
               <>
@@ -811,12 +956,78 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                   </Field>
                 )}
               </>
-            ) : isCapabilityDefaultFn ? null : accessType === "READ" ? (
+            ) : isCapabilityDefaultFn ? null : isContracted ? (
+              <>
+                {accessType === "WRITE" ? (
+                  <Field>
+                    <FieldLabel>载荷模式 payloadMode</FieldLabel>
+                    <Select
+                      value={payloadMode}
+                      onValueChange={(v) => {
+                        const next = v as "VALUE" | "STRUCT"
+                        setPayloadMode(next)
+                        setWriteFields((prev) =>
+                          prev.map((row) =>
+                            row.field === "value"
+                              ? {
+                                  ...row,
+                                  source: next === "VALUE" ? "mapped" : "caller",
+                                  ignoreRequest: next === "VALUE",
+                                  callerField: next === "VALUE" ? row.callerField || "value" : undefined,
+                                }
+                              : row
+                          )
+                        )
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="STRUCT">STRUCT — 调用方按契约字段填</SelectItem>
+                          <SelectItem value="VALUE">VALUE — 调用方只传业务简值</SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <ConfigExample title="示例 · 开灯">
+                      <p>
+                        functionId 填 <CodeSample>light.switch</CodeSample>，area=COIL、offset=10 配常量，
+                        value 设 mapped。调用方传{" "}
+                        <CodeSample>{`{ "value": "on" }`}</CodeSample>
+                        。
+                      </p>
+                    </ConfigExample>
+                  </Field>
+                ) : null}
+                <ContractFieldEditor
+                  label={accessType === "READ" ? "读点位契约" : "写点位契约"}
+                  description="字段名不可改。area/offset/dataType 建议 constant 或 device；WRITE 的 value 建议 mapped。"
+                  schema={contractSchema}
+                  value={accessType === "READ" ? readFields : writeFields}
+                  onChange={accessType === "READ" ? setReadFields : setWriteFields}
+                />
+                {accessType === "WRITE" && payloadMode === "VALUE" ? (
+                  <ValueMappingEditor
+                    label="VALUE 映射"
+                    description="调用方简值 → 写入寄存器/线圈的协议值，例如 on→true。patch path 填 value。"
+                    value={valueMappings}
+                    onChange={setValueMappings}
+                    defaultPatchPath="value"
+                  />
+                ) : null}
+              </>
+            ) : accessType === "READ" ? (
               <WriteFieldListEditor
                 label="读字段 readFields"
-                description="READ 功能字段：type / format / 平台生成器"
+                description={
+                  payloadEncoding === "JSON"
+                    ? "从设备上报 JSON 里取哪些 path。字段名与协议 path 一致，如 temp、status.door。"
+                    : "按字段顺序从 hex/二进制帧切片。每个叶子配置 byteLength，顺序即帧布局。"
+                }
                 value={readFields}
                 onChange={setReadFields}
+                showByteLayout={payloadEncoding !== "JSON"}
               />
             ) : (
               <>
@@ -831,22 +1042,52 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
-                        <SelectItem value="STRUCT">STRUCT — 按字段填表下发</SelectItem>
+                        <SelectItem value="STRUCT">STRUCT — 调用方按协议字段填</SelectItem>
                         <SelectItem value="VALUE">VALUE — 调用方只传业务简值</SelectItem>
                       </SelectGroup>
                     </SelectContent>
                   </Select>
+                  {payloadMode === "VALUE" ? (
+                    <ConfigExample title="示例 · VALUE 远程控门">
+                      <p>
+                        调用方传{" "}
+                        <CodeSample>{`{ "lock": "open" }`}</CodeSample>
+                        ，需要两个参数时传{" "}
+                        <CodeSample>{`{ "lock": "open", "mode": "night" }`}</CodeSample>
+                        。
+                      </p>
+                      <p>
+                        协议里 <CodeSample>params.0</CodeSample> 设为 mapped，调用方字段填{" "}
+                        <CodeSample>lock</CodeSample>；下方映射把业务值 open 写成协议值 open。
+                      </p>
+                      <p>at / seq 用 platform 生成，devId 用 device 覆盖，密码用 constant，都不必出现在调用参数里。</p>
+                    </ConfigExample>
+                  ) : (
+                    <ConfigExample title="示例 · STRUCT 直接填字段">
+                      <p>
+                        调用方按协议字段名传值，例如{" "}
+                        <CodeSample>{`{ "command": "open" }`}</CodeSample>
+                        。
+                      </p>
+                      <p>source=caller 的叶子来自请求；platform / device / constant 执行时自动填。</p>
+                    </ConfigExample>
+                  )}
                 </Field>
                 <FieldNodeTreeEditor
-                  label="协议字段树 structSchema"
-                  description="构建完整 JSON；platform/device 字段执行时自动填充"
+                  label="协议字段"
+                  description={
+                    payloadEncoding === "JSON"
+                      ? "对应下发 JSON 的结构。数组用子字段名 0、1、2…，落库 path 为 params.0。"
+                      : "按从上到下的字段顺序紧排成帧。每个叶子配置 byteLength；MQTT 发布组装后的 hex/二进制。"
+                  }
                   value={structRoot}
                   onChange={setStructRoot}
+                  showByteLayout={payloadEncoding !== "JSON"}
                 />
                 {payloadMode === "VALUE" ? (
                   <ValueMappingEditor
-                    label="VALUE 映射 valueMappings"
-                    description='业务值（如 open）→ patch 到字段树；下发时传 { value: "open" }'
+                    label="VALUE 映射"
+                    description="调用方字段 + 业务值 → 写入协议 path。同一 callerField 的多条映射就是该参数的枚举。"
                     value={valueMappings}
                     onChange={setValueMappings}
                   />
@@ -876,8 +1117,15 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                   />
                 </Field>
                 <p className="text-sm text-muted-foreground">
-                  Topic 实际路径在设备 Address 中配置（default_pub / default_sub / topics JSON）。
+                  Topic 实际路径在设备 Address 里配（default_pub / default_sub / topics JSON）。这里只填 slot 名。
                 </p>
+                <ConfigExample title="示例 · MQTT Topic">
+                  <p>
+                    发布 slot 可填 <CodeSample>ydlink.FFFA25101101.thing.action.execute</CodeSample>
+                    ，或留空使用设备的 default_pub。
+                  </p>
+                  <p>READ 功能填订阅 slot；WRITE 功能填发布 slot。</p>
+                </ConfigExample>
               </>
             ) : null}
             <Field>

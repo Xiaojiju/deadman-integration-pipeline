@@ -8,6 +8,8 @@ import java.util.Map;
 
 /**
  * 设备对外视图：覆盖按 functionId → PropertyItem[]。
+ *
+ * @param loaded 是否已绑定到运行时（POST /devices/{code}/load）
  */
 public record DeviceView(
         String id,
@@ -17,6 +19,25 @@ public record DeviceView(
         Map<String, List<PropertyItem>> functionOverrides,
         Boolean enabled,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        boolean loaded
 ) {
+
+    /** 兼容旧 8 参（未加载）。 */
+    public DeviceView(
+            String id,
+            String deviceCode,
+            String productId,
+            String name,
+            Map<String, List<PropertyItem>> functionOverrides,
+            Boolean enabled,
+            Instant createdAt,
+            Instant updatedAt) {
+        this(id, deviceCode, productId, name, functionOverrides, enabled, createdAt, updatedAt, false);
+    }
+
+    public DeviceView withLoaded(boolean loaded) {
+        return new DeviceView(
+                id, deviceCode, productId, name, functionOverrides, enabled, createdAt, updatedAt, loaded);
+    }
 }

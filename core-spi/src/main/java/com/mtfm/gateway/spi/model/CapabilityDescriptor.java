@@ -13,14 +13,14 @@ import java.util.Optional;
  *         List.of(SchemaField.required("host", "string", "Modbus 主机")),
  *         List.of(SchemaField.required("slaveId", "int", "从站号")),
  *         List.of(FunctionTemplate.of("fn.read", "READ", readParams)),
- *         FunctionCatalogMode.OPEN);
+ *         FunctionCatalogMode.CONTRACT);
  * }</pre>
  *
  * @param capabilityType     能力类型标识
  * @param connectionSchema   通道连接参数字段
  * @param addressSchema      设备地址片字段
  * @param functionTemplates  预置功能模板
- * @param functionMode       功能目录模式：FIXED 封闭 / OPEN 可扩展
+ * @param functionMode       功能目录模式：FIXED 封闭 / CONTRACT 锁参数名 / OPEN 可扩展
  */
 public record CapabilityDescriptor(
         String capabilityType,
@@ -59,6 +59,11 @@ public record CapabilityDescriptor(
         return functionMode == FunctionCatalogMode.FIXED;
     }
 
+    /** 是否锁死参数名、放开业务 functionId（如 Modbus）。 */
+    public boolean contractedParameters() {
+        return functionMode == FunctionCatalogMode.CONTRACT;
+    }
+
     /** 按功能 ID 查找预置模板。 */
     public Optional<FunctionTemplate> functionTemplate(String functionId) {
         if (functionId == null) {
@@ -66,6 +71,16 @@ public record CapabilityDescriptor(
         }
         return functionTemplates.stream()
                 .filter(item -> functionId.equals(item.functionId()))
+                .findFirst();
+    }
+
+    /** 按访问类型取参数契约模板（CONTRACT 能力：READ / WRITE 各一套）。 */
+    public Optional<FunctionTemplate> functionTemplateByAccessType(String accessType) {
+        if (accessType == null || accessType.isBlank()) {
+            return Optional.empty();
+        }
+        return functionTemplates.stream()
+                .filter(item -> accessType.equalsIgnoreCase(item.accessType()))
                 .findFirst();
     }
 }

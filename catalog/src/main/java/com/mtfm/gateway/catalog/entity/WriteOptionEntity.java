@@ -18,6 +18,18 @@ public class WriteOptionEntity {
     private String format;
     /** 平台值生成器 wire code。 */
     private String valueGenerator;
+    /** 值来源：caller / platform / device / constant / mapped。 */
+    private String fieldSource;
+    /** source=constant 时的固定值。 */
+    private String constantValue;
+    /** MAPPED 时调用方传入的字段名。 */
+    private String callerField;
+    /** 协议字段顺序，按配置传入顺序保存。 */
+    private Integer sortIndex;
+    /** HEX/BINARY 字段占用字节数。 */
+    private Integer byteLength;
+    /** 字节序 big / little。 */
+    private String byteOrder;
 
     public String getId() {
         return id;
@@ -89,5 +101,53 @@ public class WriteOptionEntity {
 
     public void setValueGenerator(String valueGenerator) {
         this.valueGenerator = valueGenerator;
+    }
+
+    public String getFieldSource() {
+        return fieldSource;
+    }
+
+    public void setFieldSource(String fieldSource) {
+        this.fieldSource = fieldSource;
+    }
+
+    public String getConstantValue() {
+        return constantValue;
+    }
+
+    public void setConstantValue(String constantValue) {
+        this.constantValue = constantValue;
+    }
+
+    public String getCallerField() {
+        return callerField;
+    }
+
+    public void setCallerField(String callerField) {
+        this.callerField = callerField;
+    }
+
+    public Integer getSortIndex() {
+        return sortIndex;
+    }
+
+    public void setSortIndex(Integer sortIndex) {
+        this.sortIndex = sortIndex;
+    }
+
+    public Integer getByteLength() {
+        return byteLength;
+    }
+
+    public void setByteLength(Integer byteLength) {
+        this.byteLength = byteLength;
+    }
+
+    public String getByteOrder() {
+        return byteOrder;
+    }
+
+    public void setByteOrder(String byteOrder) {
+        this.byteOrder = byteOrder;
     }
 }

@@ -1,7 +1,5 @@
 package com.mtfm.gateway.catalog.dto;
 
-import com.mtfm.gateway.spi.payload.FieldNode;
-import com.mtfm.gateway.spi.payload.ValueMapping;
 import com.mtfm.gateway.spi.property.PropertyItem;
 import com.mtfm.gateway.spi.property.ValueOption;
 import com.mtfm.gateway.spi.property.WriteFieldOption;
@@ -15,14 +13,16 @@ import java.util.List;
  * @param accessType        访问类型 READ / WRITE
  * @param accessPermission  权限位
  * @param capabilityType    南向能力类型
- * @param writeAccessType   VALUE / STRUCT（OPEN 推荐 STRUCT）
+ * @param writeAccessType   VALUE / STRUCT（可由 payloadMode 代替）
  * @param properties        FIXED 能力默认参数（EAV）
- * @param writeValueOptions VALUE 写下发枚举
- * @param writeFields       WRITE 功能字段（type / format / 平台生成器）
- * @param readFields        READ 功能字段（type / format / 平台生成器）
+ * @param writeValueOptions VALUE 枚举（也可落在 writeFields.options）
+ * @param writeFields       扁平写字段（path / source / constant）
+ * @param readFields        READ 扁平字段
  * @param readValueOptions  读值映射枚举（可选）
  * @param sortIndex         排序
  * @param description       功能说明
+ * @param payloadMode       VALUE / STRUCT
+ * @param payloadEncoding   JSON / HEX / BINARY
  */
 public record ProductFunctionWriteRequest(
         String functionId,
@@ -40,6 +40,5 @@ public record ProductFunctionWriteRequest(
         String publishTopicSlot,
         String subscribeTopicSlot,
         String payloadMode,
-        FieldNode structSchema,
-        List<ValueMapping> valueMappings) {
+        String payloadEncoding) {
 }

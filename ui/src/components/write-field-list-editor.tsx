@@ -1,5 +1,8 @@
 import { PlusIcon, Trash2Icon } from "lucide-react"
+import { useState, type MouseEvent } from "react"
 
+import { ConfigExample, CodeSample } from "@/components/config-example"
+import { ReorderControls } from "@/components/reorder-controls"
 import {
   ValueOptionListEditor,
   filterValidValueOptions,
@@ -15,7 +18,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { isReorderClick, moveBy, swapAt } from "@/lib/reorder"
 import type { WriteFieldOption } from "@/lib/types"
+import { cn } from "@/lib/utils"
 
 type Props = {
   label: string
@@ -24,6 +29,8 @@ type Props = {
   onChange: (next: WriteFieldOption[]) => void
   /** 只读：不可增删改字段结构 */
   readOnly?: boolean
+  /** HEX/BINARY 时展示字节宽度与字节序 */
+  showByteLayout?: boolean
 }
 
 const FIELD_TYPES = ["string", "int", "boolean", "select", "password", "json", "array"] as const
@@ -32,6 +39,7 @@ const VALUE_GENERATORS = [
   { value: "__caller__", label: "调用方提供" },
   { value: "random_alnum_32", label: "32 位随机字符（seq）" },
   { value: "timestamp_millis", label: "当前毫秒时间戳（at）" },
+  { value: "timestamp_seconds", label: "当前秒级时间戳（at）" },
   { value: "uuid", label: "UUID" },
 ] as const
 
@@ -53,7 +61,32 @@ export function WriteFieldListEditor({
   value,
   onChange,
   readOnly = false,
+  showByteLayout = false,
 }: Props) {
+  const [pickedIndex, setPickedIndex] = useState<number | null>(null)
+
+  function reorder(next: WriteFieldOption[]) {
+    setPickedIndex(null)
+    onChange(next)
+  }
+
+  function pickField(index: number) {
+    if (readOnly) return
+    if (pickedIndex == null) {
+      setPickedIndex(index)
+      return
+    }
+    if (pickedIndex === index) {
+      setPickedIndex(null)
+      return
+    }
+    reorder(swapAt(value, pickedIndex, index))
+  }
+
+  function handleCardClick(index: number, event: MouseEvent<HTMLDivElement>) {
+    if (readOnly || !isReorderClick(event.target)) return
+    pickField(index)
+  }
   function updateField(index: number, patch: Partial<WriteFieldOption>) {
     if (readOnly) {
       return
@@ -84,6 +117,11 @@ export function WriteFieldListEditor({
           {description ? (
             <p className="text-xs text-muted-foreground">{description}</p>
           ) : null}
+          {!readOnly ? (
+            <p className="text-xs text-muted-foreground">
+              点选一张卡片，再点另一张即可交换顺序；也可点上下箭头逐格移动。
+            </p>
+          ) : null}
         </div>
         {!readOnly ? (
           <Button
@@ -97,6 +135,13 @@ export function WriteFieldListEditor({
           </Button>
         ) : null}
       </div>
+      <ConfigExample title="示例 · 读温度">
+        <p>
+          字段名填协议 JSON path，如 <CodeSample>temp</CodeSample> 或{" "}
+          <CodeSample>nested.door</CodeSample>，type 选 int / string。
+        </p>
+        <p>上报报文里对应路径的值会解析成该点位。</p>
+      </ConfigExample>
       {value.length === 0 ? (
         <p className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
           {readOnly ? "无字段" : "添加字段并配置 type / format / 平台生成器"}
@@ -104,18 +149,40 @@ export function WriteFieldListEditor({
       ) : (
         <div className="flex flex-col gap-4">
           {value.map((row, index) => (
-            <div key={index} className="rounded-md border p-3">
+            <div
+              key={index}
+              className={cn(
+                "rounded-md border p-3",
+                !readOnly && "cursor-pointer",
+                pickedIndex === index && "bg-muted/40 ring-2 ring-primary"
+              )}
+              onClick={(event) => handleCardClick(index, event)}
+            >
               <div className="mb-3 flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">字段 {index + 1}</span>
+                <span className="text-xs font-medium text-muted-foreground">
+                  字段 {index + 1}
+                  {pickedIndex === index ? " · 已选中，再点另一张交换" : ""}
+                </span>
                 {!readOnly ? (
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => onChange(value.filter((_, i) => i !== index))}
-                  >
-                    <Trash2Icon className="size-4" />
-                  </Button>
+                  <div className="flex items-center">
+                    <ReorderControls
+                      canMoveUp={index > 0}
+                      canMoveDown={index < value.length - 1}
+                      onMoveUp={() => reorder(moveBy(value, index, -1))}
+                      onMoveDown={() => reorder(moveBy(value, index, 1))}
+                    />
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => {
+                        setPickedIndex(null)
+                        onChange(value.filter((_, i) => i !== index))
+                      }}
+                    >
+                      <Trash2Icon className="size-4" />
+                    </Button>
+                  </div>
                 ) : null}
               </div>
               <div className="mb-3 grid gap-3 sm:grid-cols-2">
@@ -181,6 +248,44 @@ export function WriteFieldListEditor({
                     </SelectContent>
                   </Select>
                 </div>
+                {showByteLayout ? (
+                  <>
+                    <div className="flex flex-col gap-1.5">
+                      <FieldLabel>字节数 byteLength</FieldLabel>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={32}
+                        placeholder="1"
+                        value={row.byteLength ?? ""}
+                        disabled={readOnly}
+                        onChange={(e) =>
+                          updateField(index, {
+                            byteLength: e.target.value ? Number(e.target.value) : undefined,
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <FieldLabel>字节序</FieldLabel>
+                      <Select
+                        value={row.byteOrder || "big"}
+                        disabled={readOnly}
+                        onValueChange={(next) => updateField(index, { byteOrder: next })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value="big">大端 big</SelectItem>
+                            <SelectItem value="little">小端 little</SelectItem>
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </>
+                ) : null}
                 <div className="flex flex-col gap-1.5 sm:col-span-2">
                   <FieldLabel>值来源 valueGenerator</FieldLabel>
                   <Select
@@ -239,6 +344,11 @@ export function filterValidWriteFields(rows: WriteFieldOption[]): WriteFieldOpti
         options: platform ? [] : filterValidValueOptions(row.options ?? []),
         format: row.format || "none",
         valueGenerator: row.valueGenerator || undefined,
+        source: row.source || (platform ? "platform" : "caller"),
+        constant: row.constant || undefined,
+        callerField: row.callerField || undefined,
+        byteLength: row.byteLength || undefined,
+        byteOrder: row.byteOrder || undefined,
       }
     })
 }

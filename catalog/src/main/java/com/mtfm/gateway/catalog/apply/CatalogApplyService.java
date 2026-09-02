@@ -106,6 +106,11 @@ public class CatalogApplyService {
         registry.unregister(deviceCode);
     }
 
+    /** 设备是否已 load 到运行时。 */
+    public boolean isLoaded(String deviceCode) {
+        return registry != null && registry.isRegistered(deviceCode);
+    }
+
     /**
      * 手动向已加载设备下发产品功能指令。
      */
@@ -115,7 +120,7 @@ public class CatalogApplyService {
             throw new IllegalStateException("命令端口尚未装配，无法手动下发");
         }
         FunctionCommand command = forms.getObject().buildCommand(deviceCode, request);
-        if (store.findDevice(deviceCode).isEmpty()) {
+        if (!isLoaded(deviceCode)) {
             throw new IllegalStateException("设备未加载到运行时，请先 POST /catalog/devices/" + deviceCode + "/load");
         }
         return port.submit(command);

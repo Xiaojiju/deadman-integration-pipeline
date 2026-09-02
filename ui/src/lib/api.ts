@@ -1,4 +1,3 @@
-import type { FieldNodeModel, ValueMappingModel } from "@/lib/payload-form"
 import type {
   CapabilityDescriptor,
   ChannelEntity,
@@ -139,8 +138,7 @@ export const catalogApi = {
       publishTopicSlot?: string
       subscribeTopicSlot?: string
       payloadMode?: string
-      structSchema?: FieldNodeModel
-      valueMappings?: ValueMappingModel[]
+      payloadEncoding?: string
     }
   ) =>
     request(
@@ -255,8 +253,7 @@ export const catalogApi = {
       publishTopicSlot?: string
       subscribeTopicSlot?: string
       payloadMode?: string
-      structSchema?: FieldNodeModel
-      valueMappings?: ValueMappingModel[]
+      payloadEncoding?: string
     }
   ) =>
     request(`/catalog/products/${encodeURIComponent(productId)}/functions`, {

@@ -1,0 +1,2 @@
+ALTER TABLE gw_write_option ADD COLUMN IF NOT EXISTS caller_field VARCHAR(64) NULL;
+ALTER TABLE gw_read_field ADD COLUMN IF NOT EXISTS caller_field VARCHAR(64) NULL;

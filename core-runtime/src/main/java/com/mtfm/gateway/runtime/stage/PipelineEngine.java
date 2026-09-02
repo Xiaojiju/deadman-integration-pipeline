@@ -135,6 +135,13 @@ public final class PipelineEngine {
         if (executor.isEmpty() || !executor.get().support(command)) {
             return ExecutionResult.rejected(command, Failure.noExecutor(capabilityType));
         }
+        LOG.info("即将执行指令 requestId={} deviceId={} functionId={} capability={} arguments={} hints={}",
+                command.requestId(),
+                command.deviceId(),
+                command.functionId(),
+                capabilityType,
+                command.arguments().values(),
+                command.deliveryHints().values());
         try {
             return executor.get().execute(command);
         } catch (RuntimeException ex) {

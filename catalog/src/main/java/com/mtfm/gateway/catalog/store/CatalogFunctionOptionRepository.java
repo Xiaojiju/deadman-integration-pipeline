@@ -55,7 +55,8 @@ public class CatalogFunctionOptionRepository {
     public List<WriteFieldOption> listWriteFields(String productFunctionId) {
         List<WriteOptionEntity> fields = writeOptions.selectList(new QueryWrapper<WriteOptionEntity>()
                 .eq("product_function_id", productFunctionId)
-                .orderByAsc("field"));
+                .orderByAsc("sort_index")
+                .orderByAsc("id"));
         List<WriteFieldOption> result = new ArrayList<>();
         for (WriteOptionEntity field : fields) {
             List<ValueOption> options = listWriteValueOptionsByParent(field.getId());
@@ -67,7 +68,8 @@ public class CatalogFunctionOptionRepository {
     public List<WriteFieldOption> listReadFields(String productFunctionId) {
         List<ReadFieldEntity> fields = readFields.selectList(new QueryWrapper<ReadFieldEntity>()
                 .eq("product_function_id", productFunctionId)
-                .orderByAsc("field"));
+                .orderByAsc("sort_index")
+                .orderByAsc("id"));
         List<WriteFieldOption> result = new ArrayList<>();
         for (ReadFieldEntity field : fields) {
             List<ValueOption> options = listReadFieldValueOptionsByParent(field.getId());
@@ -91,19 +93,19 @@ public class CatalogFunctionOptionRepository {
             List<ValueOption> valueOptions,
             List<WriteFieldOption> writeFields) {
         deleteWriteOptions(productFunctionId);
-        ValueAccessType mode = accessType == null ? ValueAccessType.VALUE : accessType;
-        if (mode == ValueAccessType.STRUCT) {
-            if (writeFields == null) {
-                return;
-            }
-            for (WriteFieldOption field : writeFields) {
+        if (writeFields != null) {
+            for (int i = 0; i < writeFields.size(); i++) {
+                WriteFieldOption field = writeFields.get(i);
                 WriteOptionEntity row = FieldOptionSupport.newWriteField(productFunctionId, field);
+                row.setSortIndex(i);
                 writeOptions.insert(row);
                 insertWriteValueOptions(row.getId(), field.options());
             }
-            return;
         }
-        insertWriteValueOptions(productFunctionId, valueOptions);
+        ValueAccessType mode = accessType == null ? ValueAccessType.VALUE : accessType;
+        if (mode == ValueAccessType.VALUE) {
+            insertWriteValueOptions(productFunctionId, valueOptions);
+        }
     }
 
     public void replaceReadFields(String productFunctionId, List<WriteFieldOption> readFieldsList) {
@@ -111,8 +113,10 @@ public class CatalogFunctionOptionRepository {
         if (readFieldsList == null || readFieldsList.isEmpty()) {
             return;
         }
-        for (WriteFieldOption field : readFieldsList) {
+        for (int i = 0; i < readFieldsList.size(); i++) {
+            WriteFieldOption field = readFieldsList.get(i);
             ReadFieldEntity row = FieldOptionSupport.newReadField(productFunctionId, field);
+            row.setSortIndex(i);
             readFields.insert(row);
             insertReadFieldValueOptions(row.getId(), field.options());
         }

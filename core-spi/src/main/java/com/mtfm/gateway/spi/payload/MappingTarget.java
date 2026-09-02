@@ -9,7 +9,7 @@ public enum MappingTarget {
     FILL_ROOT,
     PATCH_FIELDS;
 
-    @JsonCreator
+    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static MappingTarget from(String raw) {
         if (raw == null || raw.isBlank()) {
             return PATCH_FIELDS;

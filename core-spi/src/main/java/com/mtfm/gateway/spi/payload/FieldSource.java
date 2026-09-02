@@ -14,12 +14,16 @@ public enum FieldSource {
     CONSTANT,
     MAPPED;
 
-    @JsonCreator
+    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static FieldSource from(String raw) {
         if (raw == null || raw.isBlank()) {
             return CALLER;
         }
-        return FieldSource.valueOf(raw.trim().toUpperCase());
+        try {
+            return FieldSource.valueOf(raw.trim().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            return CALLER;
+        }
     }
 
     @JsonValue

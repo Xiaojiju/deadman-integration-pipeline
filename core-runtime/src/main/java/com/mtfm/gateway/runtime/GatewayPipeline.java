@@ -293,6 +293,11 @@ public final class GatewayPipeline implements PipelineIngress, PipelineCommandPo
     }
 
     @Override
+    public boolean isRegistered(String deviceId) {
+        return registries.isRegistered(deviceId);
+    }
+
+    @Override
     public boolean register(InboundPlugin plugin) {
         return registries.register(plugin);
     }

@@ -1,6 +1,7 @@
 package com.mtfm.gateway.spi.model;
 
 import com.mtfm.gateway.spi.option.Option;
+import com.mtfm.gateway.spi.payload.PayloadEncoding;
 import com.mtfm.gateway.spi.property.PropertyItem;
 import com.mtfm.gateway.spi.property.ValueAccessType;
 import com.mtfm.gateway.spi.property.ValueOption;
@@ -21,6 +22,7 @@ import java.util.List;
  * @param writeFields        STRUCT 模式写字段
  * @param readFields         READ 功能字段
  * @param readValueOptions   读值映射
+ * @param payloadEncoding    南向载荷编码，默认 JSON
  */
 public record FunctionDef(
         String functionId,
@@ -32,7 +34,8 @@ public record FunctionDef(
         List<ValueOption> writeValueOptions,
         List<WriteFieldOption> writeFields,
         List<WriteFieldOption> readFields,
-        List<ValueOption> readValueOptions
+        List<ValueOption> readValueOptions,
+        PayloadEncoding payloadEncoding
 ) {
 
     public FunctionDef {
@@ -48,6 +51,23 @@ public record FunctionDef(
         writeFields = writeFields == null ? List.of() : List.copyOf(writeFields);
         readFields = readFields == null ? List.of() : List.copyOf(readFields);
         readValueOptions = readValueOptions == null ? List.of() : List.copyOf(readValueOptions);
+        payloadEncoding = payloadEncoding == null ? PayloadEncoding.JSON : payloadEncoding;
+    }
+
+    /** 兼容旧 10 参构造（无 payloadEncoding）。 */
+    public FunctionDef(
+            String functionId,
+            String accessType,
+            int accessPermission,
+            Option optionSchema,
+            List<PropertyItem> properties,
+            ValueAccessType writeAccessType,
+            List<ValueOption> writeValueOptions,
+            List<WriteFieldOption> writeFields,
+            List<WriteFieldOption> readFields,
+            List<ValueOption> readValueOptions) {
+        this(functionId, accessType, accessPermission, optionSchema, properties, writeAccessType,
+                writeValueOptions, writeFields, readFields, readValueOptions, PayloadEncoding.JSON);
     }
 
     /** 兼容旧四参构造。 */

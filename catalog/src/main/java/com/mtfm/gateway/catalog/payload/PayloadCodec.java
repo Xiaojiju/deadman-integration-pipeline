@@ -1,7 +1,10 @@
 package com.mtfm.gateway.catalog.payload;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.mtfm.gateway.spi.payload.FieldNode;
 import com.mtfm.gateway.spi.payload.ValueMapping;
 
@@ -10,7 +13,11 @@ import java.util.List;
 /** FieldNode / ValueMapping JSON 编解码。 */
 public final class PayloadCodec {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = JsonMapper.builder()
+            .findAndAddModules()
+            .enable(MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS)
+            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+            .build();
     private static final TypeReference<List<ValueMapping>> MAPPINGS_TYPE = new TypeReference<>() {
     };
 
@@ -33,7 +40,7 @@ public final class PayloadCodec {
             return null;
         }
         try {
-            return MAPPER.readValue(json, FieldNode.class);
+            return MAPPER.readValue(json.trim(), FieldNode.class);
         } catch (Exception ex) {
             throw new IllegalArgumentException("structSchema 反序列化失败", ex);
         }
@@ -55,7 +62,8 @@ public final class PayloadCodec {
             return List.of();
         }
         try {
-            return MAPPER.readValue(json, MAPPINGS_TYPE);
+            List<ValueMapping> mappings = MAPPER.readValue(json.trim(), MAPPINGS_TYPE);
+            return mappings == null ? List.of() : mappings;
         } catch (Exception ex) {
             throw new IllegalArgumentException("valueMappings 反序列化失败", ex);
         }

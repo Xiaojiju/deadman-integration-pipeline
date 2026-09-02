@@ -68,6 +68,16 @@ export type WriteFieldOption = {
   format?: string
   /** 平台值生成器（FieldValueGenerator wire）；空=调用方提供 */
   valueGenerator?: string
+  /** caller / platform / device / constant / mapped */
+  source?: string
+  /** source=constant 时的固定值 */
+  constant?: string
+  /** source=mapped 时调用方传入的字段名，默认 value */
+  callerField?: string
+  /** HEX/BINARY 占用字节数 */
+  byteLength?: number | null
+  /** 字节序 big / little */
+  byteOrder?: string | null
 }
 
 export type FunctionTemplate = {
@@ -78,7 +88,7 @@ export type FunctionTemplate = {
   parameters: SchemaField[]
 }
 
-export type FunctionCatalogMode = "FIXED" | "OPEN"
+export type FunctionCatalogMode = "FIXED" | "CONTRACT" | "OPEN"
 
 export type CapabilityDescriptor = {
   capabilityType: string
@@ -131,8 +141,8 @@ export type ProductFunctionEntity = {
   publishTopicSlot?: string
   subscribeTopicSlot?: string
   payloadMode?: string
-  structSchema?: import("@/lib/payload-form").FieldNodeModel
-  valueMappings?: import("@/lib/payload-form").ValueMappingModel[]
+  /** JSON / HEX / BINARY */
+  payloadEncoding?: string
 }
 
 export type ChannelEntity = {
@@ -154,6 +164,8 @@ export type DeviceEntity = {
   /** @deprecated 兼容旧字段 */
   optionOverrides?: Record<string, unknown> | string
   enabled?: boolean
+  /** 是否已 load 到网关运行时 */
+  loaded?: boolean
 }
 
 export type FunctionFormView = {

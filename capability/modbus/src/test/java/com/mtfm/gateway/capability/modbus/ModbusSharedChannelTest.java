@@ -46,6 +46,28 @@ class ModbusSharedChannelTest {
         assertFalse(executor.unbind("A"));
     }
 
+    @Test
+    void customFunctionIdDispatchesByAccessTypeHint() {
+        InMemoryModbusBus bus = new InMemoryModbusBus();
+        ModbusExecutor executor = new ModbusExecutor(bus);
+        executor.bind(endpoint("A", "gw-1", 1));
+
+        ExecutionResult written = executor.execute(FunctionCommand.of(
+                "A",
+                "light.switch",
+                Map.of("area", "COIL", "offset", 10, "value", true),
+                Map.of("accessType", "WRITE")));
+        assertEquals(ExecutionStatus.SUCCESS, written.status());
+
+        ExecutionResult read = executor.execute(FunctionCommand.of(
+                "A",
+                "temp.read",
+                Map.of("area", "COIL", "offset", 10, "quantity", 1),
+                Map.of("accessType", "READ")));
+        assertEquals(ExecutionStatus.SUCCESS, read.status());
+        assertEquals(true, ((List<?>) read.data().values().get("values")).get(0));
+    }
+
     private static DeviceEndpointBinding endpoint(String deviceId, String channelId, int unitId) {
         return new DeviceEndpointBinding(
                 deviceId,

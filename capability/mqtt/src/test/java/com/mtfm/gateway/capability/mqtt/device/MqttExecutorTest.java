@@ -43,6 +43,15 @@ class MqttExecutorTest {
     }
 
     @Test
+    void fillRootValuePublishesRawString() {
+        InMemoryMqttTransport transport = new InMemoryMqttTransport();
+        MqttExecutor executor = new MqttExecutor(transport);
+        executor.bind(binding("A", "ch-1", address("dev/A/cmd", null)));
+        executor.execute(FunctionCommand.of("A", "modbus.read", Map.of("_value", "00 00 00 00 00 01")));
+        assertTrue(transport.snapshot().contains("ch-1|dev/A/cmd|00 00 00 00 00 01"));
+    }
+
+    @Test
     void emptyArgsPublishEmptyPayload() {
         InMemoryMqttTransport transport = new InMemoryMqttTransport();
         MqttExecutor executor = new MqttExecutor(transport);

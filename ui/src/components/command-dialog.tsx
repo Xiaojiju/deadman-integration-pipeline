@@ -105,11 +105,24 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
       setSelectedOptionValue("")
       return
     }
-    setValues(toFieldStringMap(selected.values ?? {}))
     const options = selected.writeValueOptions ?? []
     const preferred =
-      options.find((item) => item.isDefault)?.optionValue ?? options[0]?.optionValue ?? ""
+      options.find((item) => item.isDefault)?.mappingValue
+      ?? options.find((item) => item.isDefault)?.optionValue
+      ?? options[0]?.mappingValue
+      ?? options[0]?.optionValue
+      ?? ""
     setSelectedOptionValue(preferred)
+    const next = toFieldStringMap(selected.values ?? {})
+    for (const field of selected.parameters ?? []) {
+      if (!next[field.name]) {
+        const choice = field.choices?.[0]
+        if (choice != null) {
+          next[field.name] = String(choice)
+        }
+      }
+    }
+    setValues(next)
   }, [selected])
 
   async function submit() {
@@ -120,14 +133,40 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
     setPending(true)
     try {
       const args: Record<string, unknown> = {}
-      if (writeOptions.length > 0) {
+      if (isValueMode && callerFields.length > 0) {
+        for (const field of callerFields) {
+          const raw = values[field.name] ?? ""
+          if (raw === "" && !field.required) {
+            continue
+          }
+          if (raw === "") {
+            toast.error(`请填写 ${field.label || field.name}`)
+            setPending(false)
+            return
+          }
+          args[field.name] = parseFieldValue(field, raw)
+        }
+      } else if (callerFields.length > 0) {
+        for (const field of callerFields) {
+          const raw = values[field.name] ?? ""
+          if (raw === "" && !field.required) {
+            continue
+          }
+          args[field.name] = parseFieldValue(field, raw)
+        }
+      } else if (writeOptions.length > 0) {
         if (!selectedOptionValue) {
           toast.error("请选择写选项")
           setPending(false)
           return
         }
+        const selectedOpt = writeOptions.find(
+          (item) =>
+            item.optionValue === selectedOptionValue || item.mappingValue === selectedOptionValue
+        )
+        const mapped = selectedOpt?.mappingValue || selectedOptionValue
         if (isValueMode) {
-          args.value = selectedOptionValue
+          args.value = mapped
         } else {
           const target = callerFields.length === 1 ? callerFields[0].name : "command"
           args[target] = selectedOptionValue
@@ -159,7 +198,9 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
     !pending &&
     !loading &&
     !!functionId &&
-    (writeOptions.length === 0 || !!selectedOptionValue)
+    (isValueMode && callerFields.length > 0
+      ? callerFields.every((field) => !field.required || Boolean(values[field.name]))
+      : writeOptions.length === 0 || !!selectedOptionValue)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -198,26 +239,42 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
                 </SelectContent>
               </Select>
             </Field>
-            {writeOptions.length > 0 ? (
-              <Field>
-                <FieldLabel>{isValueMode ? "业务值" : "写选项"}</FieldLabel>
-                <div className="flex flex-wrap gap-2">
-                  {writeOptions.map((option) => (
-                    <Button
-                      key={option.optionValue}
-                      type="button"
-                      variant={
-                        selectedOptionValue === option.optionValue ? "default" : "outline"
+            {isValueMode && callerFields.length > 0 ? (
+              callerFields.map((field) => (
+                <Field key={field.name}>
+                  <FieldLabel htmlFor={`cmd-${field.name}`}>
+                    {field.label || field.name}
+                    {field.required ? " *" : ""}
+                  </FieldLabel>
+                  {(field.choices ?? []).length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {(field.choices ?? []).map((choice) => (
+                        <Button
+                          key={choice}
+                          type="button"
+                          variant={values[field.name] === String(choice) ? "default" : "outline"}
+                          disabled={pending}
+                          onClick={() =>
+                            setValues((prev) => ({ ...prev, [field.name]: String(choice) }))
+                          }
+                        >
+                          {choice}
+                        </Button>
+                      ))}
+                    </div>
+                  ) : (
+                    <SchemaFieldControl
+                      field={field}
+                      value={values[field.name] ?? ""}
+                      idPrefix="cmd"
+                      onChange={(next) =>
+                        setValues((prev) => ({ ...prev, [field.name]: next }))
                       }
-                      disabled={pending}
-                      onClick={() => setSelectedOptionValue(option.optionValue)}
-                    >
-                      {option.description || option.optionValue}
-                    </Button>
-                  ))}
-                </div>
-              </Field>
-            ) : (
+                    />
+                  )}
+                </Field>
+              ))
+            ) : callerFields.length > 0 ? (
               callerFields.map((field) => (
                 <Field key={field.name}>
                   <FieldLabel htmlFor={`cmd-${field.name}`}>
@@ -234,7 +291,31 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
                   />
                 </Field>
               ))
-            )}
+            ) : writeOptions.length > 0 ? (
+              <Field>
+                <FieldLabel>{isValueMode ? "业务值" : "写选项"}</FieldLabel>
+                <div className="flex flex-wrap gap-2">
+                  {writeOptions.map((option) => {
+                    const key = option.mappingValue || option.optionValue
+                    return (
+                    <Button
+                      key={option.optionValue}
+                      type="button"
+                      variant={
+                        selectedOptionValue === key || selectedOptionValue === option.optionValue
+                          ? "default"
+                          : "outline"
+                      }
+                      disabled={pending}
+                      onClick={() => setSelectedOptionValue(key)}
+                    >
+                      {option.description || option.optionValue}
+                    </Button>
+                    )
+                  })}
+                </div>
+              </Field>
+            ) : null}
           </FieldGroup>
         )}
         <DialogFooter>

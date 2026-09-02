@@ -32,7 +32,7 @@ export function CapabilitiesPanel({ capabilities }: Props) {
       <CardHeader>
         <CardTitle>能力</CardTitle>
         <CardDescription>
-          FIXED：封闭 API 集，配通道即可。OPEN：协议原语，产品可独立定义功能。
+          FIXED：封闭 API 集，配通道即可。CONTRACT：业务 functionId 可自定义，参数名锁死。OPEN：协议字段结构可自定义。
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -50,7 +50,11 @@ export function CapabilitiesPanel({ capabilities }: Props) {
                 <div className="flex items-center gap-2">
                   <h3 className="font-medium">{cap.capabilityType}</h3>
                   <Badge variant="secondary">
-                    {cap.functionMode === "FIXED" ? "FIXED" : "OPEN"}
+                    {cap.functionMode === "FIXED"
+                      ? "FIXED"
+                      : cap.functionMode === "CONTRACT"
+                        ? "CONTRACT"
+                        : "OPEN"}
                   </Badge>
                   <Badge variant="outline">
                     {cap.functionTemplates?.length ?? 0} 功能

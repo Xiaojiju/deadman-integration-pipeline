@@ -78,6 +78,7 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
   const [overrideDevice, setOverrideDevice] = useState<DeviceEntity | null>(null)
   const [busyCode, setBusyCode] = useState<string | null>(null)
   const [editDevice, setEditDevice] = useState<DeviceEntity | null>(null)
+  const [deleteDevice, setDeleteDevice] = useState<DeviceEntity | null>(null)
   const [editName, setEditName] = useState("")
   const [editEnabled, setEditEnabled] = useState(true)
   const [editOverridesText, setEditOverridesText] = useState("")
@@ -154,10 +155,13 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
       } else {
         await catalogApi.deleteDevice(deviceCode)
         toast.success(`${deviceCode} 已删除`)
+        setDeleteDevice(null)
         const nextPage = devices.length <= 1 && page > 1 ? page - 1 : page
         setPage(nextPage)
         await load(nextPage)
+        return
       }
+      await load(page)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "操作失败")
     } finally {
@@ -204,6 +208,7 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
                 <TableHead>名称</TableHead>
                 <TableHead>产品</TableHead>
                 <TableHead>状态</TableHead>
+                <TableHead>运行时</TableHead>
                 <TableHead className="text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
@@ -211,6 +216,7 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
               {devices.map((device) => {
                 const product = productMap.get(device.productId)
                 const busy = busyCode === device.deviceCode
+                const loaded = Boolean(device.loaded)
                 return (
                   <TableRow key={device.id}>
                     <TableCell className="font-mono text-sm">{device.deviceCode}</TableCell>
@@ -219,6 +225,11 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
                     <TableCell>
                       <Badge variant={device.enabled === false ? "secondary" : "outline"}>
                         {device.enabled === false ? "禁用" : "启用"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={device.loaded ? "default" : "secondary"}>
+                        {device.loaded ? "已加载" : "未加载"}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -237,12 +248,12 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
                           disabled={busy}
                           onClick={() => setOverrideDevice(device)}
                         >
-                          覆盖
+                          设备参数
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={busy}
+                          disabled={busy || !loaded}
                           onClick={() => setCommandDevice(device.deviceCode)}
                         >
                           <PlayIcon data-icon="inline-start" />
@@ -251,7 +262,7 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={busy}
+                          disabled={busy || loaded}
                           onClick={() => void runAction(device.deviceCode, "load")}
                         >
                           <PowerIcon data-icon="inline-start" />
@@ -260,7 +271,7 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={busy}
+                          disabled={busy || !loaded}
                           onClick={() => void runAction(device.deviceCode, "unload")}
                         >
                           <PowerOffIcon data-icon="inline-start" />
@@ -270,7 +281,7 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
                           size="sm"
                           variant="destructive"
                           disabled={busy}
-                          onClick={() => void runAction(device.deviceCode, "delete")}
+                          onClick={() => setDeleteDevice(device)}
                         >
                           <Trash2Icon data-icon="inline-start" />
                           删除
@@ -340,6 +351,45 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
             </Button>
             <Button onClick={() => void saveDevice()} disabled={editPending}>
               保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={deleteDevice != null}
+        onOpenChange={(next) => {
+          if (!next && busyCode == null) {
+            setDeleteDevice(null)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认删除设备</DialogTitle>
+            <DialogDescription>
+              将卸载运行时并删除设备 {deleteDevice?.deviceCode}
+              {deleteDevice?.name ? `（${deleteDevice.name}）` : ""} 的配置，此操作不可恢复。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={busyCode != null}
+              onClick={() => setDeleteDevice(null)}
+            >
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={busyCode != null || deleteDevice == null}
+              onClick={() => {
+                if (deleteDevice) {
+                  void runAction(deleteDevice.deviceCode, "delete")
+                }
+              }}
+            >
+              {busyCode != null ? "删除中…" : "确认删除"}
             </Button>
           </DialogFooter>
         </DialogContent>

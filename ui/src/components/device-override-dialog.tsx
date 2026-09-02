@@ -1,5 +1,5 @@
-import { Loader2Icon, PlusIcon, Trash2Icon } from "lucide-react"
-import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react"
+import { Loader2Icon, Trash2Icon } from "lucide-react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -22,9 +22,15 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { catalogApi } from "@/lib/api"
-import type { DeviceEntity, ProductEntity, ProductFunctionEntity } from "@/lib/types"
+import type { DeviceEntity, ProductEntity, ProductFunctionEntity, WriteFieldOption } from "@/lib/types"
 
-type KeyValueRow = { key: string; value: string }
+type FieldRow = {
+  key: string
+  label: string
+  hint?: string
+  value: string
+  fromSchema: boolean
+}
 
 type Props = {
   open: boolean
@@ -33,56 +39,130 @@ type Props = {
   product?: ProductEntity
 }
 
-function rowsFromRecord(record: Record<string, unknown> | Record<string, string>): KeyValueRow[] {
-  return Object.entries(record).map(([key, value]) => ({
-    key,
-    value: typeof value === "string" ? value : JSON.stringify(value),
-  }))
+function stringifyValue(value: unknown): string {
+  if (value == null) {
+    return ""
+  }
+  if (typeof value === "string") {
+    return value
+  }
+  return JSON.stringify(value)
 }
 
-function recordFromRows(rows: KeyValueRow[]): Record<string, string> {
-  const result: Record<string, string> = {}
-  for (const row of rows) {
-    const key = row.key.trim()
-    const value = row.value.trim()
-    if (!key || !value) {
-      continue
-    }
-    result[key] = value
+function parseValue(raw: string): unknown {
+  const text = raw.trim()
+  if (!text) {
+    return ""
   }
-  return result
+  if (text.startsWith("{") || text.startsWith("[") || text === "true" || text === "false") {
+    try {
+      return JSON.parse(text)
+    } catch {
+      return text
+    }
+  }
+  if (/^-?\d+$/.test(text)) {
+    return Number(text)
+  }
+  return text
 }
 
-function objectRecordFromRows(rows: KeyValueRow[]): Record<string, unknown> {
-  const result: Record<string, unknown> = {}
-  for (const row of rows) {
-    const key = row.key.trim()
-    const raw = row.value.trim()
-    if (!key || !raw) {
-      continue
-    }
-    if (raw.startsWith("{") || raw.startsWith("[") || raw === "true" || raw === "false") {
-      try {
-        result[key] = JSON.parse(raw)
-        continue
-      } catch {
-        // fall through
-      }
-    }
-    if (/^-?\d+$/.test(raw)) {
-      result[key] = Number(raw)
-      continue
-    }
-    result[key] = raw
+function deviceSourceFields(fn: ProductFunctionEntity | undefined): WriteFieldOption[] {
+  if (!fn) {
+    return []
   }
-  return result
+  const fields = fn.accessType?.toUpperCase() === "READ" ? fn.readFields : fn.writeFields
+  return (fields ?? []).filter((item) => (item.source ?? "").toLowerCase() === "device")
+}
+
+function topicSlotsOf(fn: ProductFunctionEntity | undefined): Array<{ key: string; label: string }> {
+  if (!fn) {
+    return []
+  }
+  const slots: Array<{ key: string; label: string }> = []
+  const seen = new Set<string>()
+  function add(key: string | undefined, label: string) {
+    const slot = key?.trim()
+    if (!slot || seen.has(slot)) {
+      return
+    }
+    seen.add(slot)
+    slots.push({ key: slot, label })
+  }
+  add(fn.publishTopicSlot, "发布 Topic")
+  add(fn.subscribeTopicSlot, "订阅 Topic")
+  if (fn.capabilityType === "MQTT") {
+    if (!fn.publishTopicSlot?.trim() && fn.accessType?.toUpperCase() !== "READ") {
+      add("default_pub", "默认发布 Topic")
+    }
+    if (!fn.subscribeTopicSlot?.trim() && fn.accessType?.toUpperCase() !== "WRITE") {
+      add("default_sub", "默认订阅 Topic")
+    }
+  }
+  return slots
+}
+
+function mergeFieldRows(
+  schema: WriteFieldOption[],
+  saved: Record<string, unknown>
+): FieldRow[] {
+  const remain = { ...saved }
+  const rows: FieldRow[] = schema.map((field) => {
+    const value = remain[field.field]
+    delete remain[field.field]
+    return {
+      key: field.field,
+      label: field.description?.trim() || field.field,
+      hint: field.field,
+      value: stringifyValue(value),
+      fromSchema: true,
+    }
+  })
+  for (const [key, value] of Object.entries(remain)) {
+    rows.push({
+      key,
+      label: key,
+      hint: "功能定义中已无此项",
+      value: stringifyValue(value),
+      fromSchema: false,
+    })
+  }
+  return rows
+}
+
+function mergeTopicRows(
+  schema: Array<{ key: string; label: string }>,
+  saved: Record<string, string>
+): FieldRow[] {
+  const remain = { ...saved }
+  const rows: FieldRow[] = schema.map((slot) => {
+    const value = remain[slot.key]
+    delete remain[slot.key]
+    return {
+      key: slot.key,
+      label: slot.label,
+      hint: slot.key,
+      value: value ?? "",
+      fromSchema: true,
+    }
+  })
+  for (const [key, value] of Object.entries(remain)) {
+    rows.push({
+      key,
+      label: key,
+      hint: "功能定义中已无此项",
+      value: value ?? "",
+      fromSchema: false,
+    })
+  }
+  return rows
 }
 
 export function DeviceOverrideDialog({ open, onOpenChange, device, product }: Props) {
   const [functions, setFunctions] = useState<ProductFunctionEntity[]>([])
   const [functionId, setFunctionId] = useState("")
-  const [fieldRows, setFieldRows] = useState<KeyValueRow[]>([])
-  const [topicRows, setTopicRows] = useState<KeyValueRow[]>([])
+  const [fieldRows, setFieldRows] = useState<FieldRow[]>([])
+  const [topicRows, setTopicRows] = useState<FieldRow[]>([])
   const [loading, setLoading] = useState(false)
   const [pending, setPending] = useState(false)
 
@@ -91,13 +171,13 @@ export function DeviceOverrideDialog({ open, onOpenChange, device, product }: Pr
     [functions, functionId]
   )
 
-  const loadOverrides = useCallback(async (code: string, fnId: string) => {
+  const loadOverrides = useCallback(async (code: string, fn: ProductFunctionEntity) => {
     const [fields, topics] = await Promise.all([
-      catalogApi.deviceFieldOverrides(code, fnId),
-      catalogApi.deviceTopicOverrides(code, fnId),
+      catalogApi.deviceFieldOverrides(code, fn.functionId),
+      catalogApi.deviceTopicOverrides(code, fn.functionId),
     ])
-    setFieldRows(rowsFromRecord(fields))
-    setTopicRows(rowsFromRecord(topics))
+    setFieldRows(mergeFieldRows(deviceSourceFields(fn), fields))
+    setTopicRows(mergeTopicRows(topicSlotsOf(fn), topics))
   }, [])
 
   useEffect(() => {
@@ -109,8 +189,7 @@ export function DeviceOverrideDialog({ open, onOpenChange, device, product }: Pr
       .listProductFunctions(device.productId)
       .then((items) => {
         setFunctions(items)
-        const first = items[0]?.functionId ?? ""
-        setFunctionId(first)
+        setFunctionId(items[0]?.functionId ?? "")
       })
       .catch((error) => toast.error(error instanceof Error ? error.message : "加载产品功能失败"))
       .finally(() => setLoading(false))
@@ -122,18 +201,19 @@ export function DeviceOverrideDialog({ open, onOpenChange, device, product }: Pr
       setTopicRows([])
       return
     }
+    const fn = functions.find((item) => item.functionId === functionId)
+    if (!fn) {
+      return
+    }
     setLoading(true)
-    loadOverrides(device.deviceCode, functionId)
-      .catch((error) => toast.error(error instanceof Error ? error.message : "加载覆盖失败"))
+    loadOverrides(device.deviceCode, fn)
+      .catch((error) => toast.error(error instanceof Error ? error.message : "加载设备参数失败"))
       .finally(() => setLoading(false))
-  }, [open, device?.deviceCode, functionId, loadOverrides])
+  }, [open, device?.deviceCode, functionId, functions, loadOverrides])
 
-  function updateRow(
-    setter: Dispatch<SetStateAction<KeyValueRow[]>>,
-    index: number,
-    patch: Partial<KeyValueRow>
-  ) {
-    setter((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
+  function updateValue(kind: "field" | "topic", index: number, value: string) {
+    const setter = kind === "field" ? setFieldRows : setTopicRows
+    setter((prev) => prev.map((row, i) => (i === index ? { ...row, value } : row)))
   }
 
   async function save() {
@@ -142,17 +222,23 @@ export function DeviceOverrideDialog({ open, onOpenChange, device, product }: Pr
     }
     setPending(true)
     try {
-      await catalogApi.replaceDeviceFieldOverrides(
-        device.deviceCode,
-        functionId,
-        objectRecordFromRows(fieldRows)
-      )
-      await catalogApi.replaceDeviceTopicOverrides(
-        device.deviceCode,
-        functionId,
-        recordFromRows(topicRows)
-      )
-      toast.success(`${functionId} 覆盖已保存`)
+      const fieldOverrides: Record<string, unknown> = {}
+      for (const row of fieldRows) {
+        if (!row.value.trim()) {
+          continue
+        }
+        fieldOverrides[row.key] = parseValue(row.value)
+      }
+      const topicOverrides: Record<string, string> = {}
+      for (const row of topicRows) {
+        if (!row.value.trim()) {
+          continue
+        }
+        topicOverrides[row.key] = row.value.trim()
+      }
+      await catalogApi.replaceDeviceFieldOverrides(device.deviceCode, functionId, fieldOverrides)
+      await catalogApi.replaceDeviceTopicOverrides(device.deviceCode, functionId, topicOverrides)
+      toast.success(`${functionId} 设备参数已保存`)
       onOpenChange(false)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "保存失败")
@@ -167,9 +253,9 @@ export function DeviceOverrideDialog({ open, onOpenChange, device, product }: Pr
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>设备覆盖 · {device?.deviceCode}</DialogTitle>
+          <DialogTitle>设备参数 · {device?.deviceCode}</DialogTitle>
           <DialogDescription>
-            按功能配置字段 path 覆盖（如 deviceId）与 MQTT topic slot 覆盖；下发时自动合并。
+            下列字段来自产品功能里需要按设备填写的项，只需填本设备的值。
             {product ? ` 产品：${product.name || product.code}` : null}
           </DialogDescription>
         </DialogHeader>
@@ -201,90 +287,84 @@ export function DeviceOverrideDialog({ open, onOpenChange, device, product }: Pr
                 </SelectContent>
               </Select>
             </Field>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <FieldLabel>字段覆盖 field path → value</FieldLabel>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setFieldRows((prev) => [...prev, { key: "", value: "" }])}
-                >
-                  <PlusIcon data-icon="inline-start" />
-                  添加
-                </Button>
-              </div>
+            <div className="space-y-3">
+              <FieldLabel>设备字段</FieldLabel>
               {fieldRows.length === 0 ? (
-                <p className="text-sm text-muted-foreground">无字段覆盖；可添加如 deviceId → MFG-A-001。</p>
+                <p className="text-sm text-muted-foreground">
+                  该功能没有 source=device 的字段，下发时不需要在这里填值。
+                </p>
               ) : (
                 fieldRows.map((row, index) => (
-                  <div key={`field-${index}`} className="flex gap-2">
-                    <Input
-                      placeholder="path，如 deviceId"
-                      value={row.key}
-                      onChange={(e) => updateRow(setFieldRows, index, { key: e.target.value })}
-                      className="font-mono text-sm"
-                    />
-                    <Input
-                      placeholder="覆盖值"
-                      value={row.value}
-                      onChange={(e) => updateRow(setFieldRows, index, { value: e.target.value })}
-                      className="font-mono text-sm"
-                    />
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => setFieldRows((prev) => prev.filter((_, i) => i !== index))}
-                    >
-                      <Trash2Icon className="size-4" />
-                    </Button>
-                  </div>
+                  <Field key={`field-${row.key}-${index}`}>
+                    <FieldLabel htmlFor={`dev-field-${index}`}>
+                      {row.label}
+                      {row.hint && row.hint !== row.label ? (
+                        <span className="ml-2 font-mono text-xs font-normal text-muted-foreground">
+                          {row.hint}
+                        </span>
+                      ) : null}
+                    </FieldLabel>
+                    <div className="flex gap-2">
+                      <Input
+                        id={`dev-field-${index}`}
+                        placeholder="本设备的值"
+                        value={row.value}
+                        onChange={(e) => updateValue("field", index, e.target.value)}
+                      />
+                      {!row.fromSchema ? (
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => setFieldRows((prev) => prev.filter((_, i) => i !== index))}
+                        >
+                          <Trash2Icon className="size-4" />
+                        </Button>
+                      ) : null}
+                    </div>
+                  </Field>
                 ))
               )}
             </div>
             {isMqtt ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <FieldLabel>Topic Slot 覆盖 slot → topic</FieldLabel>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setTopicRows((prev) => [...prev, { key: "", value: "" }])}
-                  >
-                    <PlusIcon data-icon="inline-start" />
-                    添加
-                  </Button>
-                </div>
+              <div className="space-y-3">
+                <FieldLabel>本设备 Topic</FieldLabel>
                 {topicRows.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
-                    无 topic 覆盖；可填 default_pub 或 topics 中的 slot 名。
+                    该功能未配置 topic slot，一般使用设备 Address 里的 default_pub / default_sub。
                   </p>
                 ) : (
                   topicRows.map((row, index) => (
-                    <div key={`topic-${index}`} className="flex gap-2">
-                      <Input
-                        placeholder="slot，如 default_pub"
-                        value={row.key}
-                        onChange={(e) => updateRow(setTopicRows, index, { key: e.target.value })}
-                        className="font-mono text-sm"
-                      />
-                      <Input
-                        placeholder="实际 topic"
-                        value={row.value}
-                        onChange={(e) => updateRow(setTopicRows, index, { value: e.target.value })}
-                        className="font-mono text-sm"
-                      />
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => setTopicRows((prev) => prev.filter((_, i) => i !== index))}
-                      >
-                        <Trash2Icon className="size-4" />
-                      </Button>
-                    </div>
+                    <Field key={`topic-${row.key}-${index}`}>
+                      <FieldLabel htmlFor={`dev-topic-${index}`}>
+                        {row.label}
+                        {row.hint && row.hint !== row.label ? (
+                          <span className="ml-2 font-mono text-xs font-normal text-muted-foreground">
+                            {row.hint}
+                          </span>
+                        ) : null}
+                      </FieldLabel>
+                      <div className="flex gap-2">
+                        <Input
+                          id={`dev-topic-${index}`}
+                          placeholder="本设备实际 topic"
+                          value={row.value}
+                          onChange={(e) => updateValue("topic", index, e.target.value)}
+                        />
+                        {!row.fromSchema ? (
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            onClick={() =>
+                              setTopicRows((prev) => prev.filter((_, i) => i !== index))
+                            }
+                          >
+                            <Trash2Icon className="size-4" />
+                          </Button>
+                        ) : null}
+                      </div>
+                    </Field>
                   ))
                 )}
               </div>

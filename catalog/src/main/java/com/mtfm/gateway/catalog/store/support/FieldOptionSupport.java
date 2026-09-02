@@ -22,6 +22,11 @@ public final class FieldOptionSupport {
             Boolean ignoreRequest,
             String format,
             String valueGenerator,
+            String fieldSource,
+            String constantValue,
+            String callerField,
+            Integer byteLength,
+            String byteOrder,
             List<ValueOption> options) {
         return new WriteFieldOption(
                 field,
@@ -31,7 +36,12 @@ public final class FieldOptionSupport {
                 Boolean.TRUE.equals(ignoreRequest),
                 options,
                 format,
-                valueGenerator);
+                valueGenerator,
+                fieldSource,
+                constantValue,
+                callerField,
+                byteLength,
+                byteOrder);
     }
 
     public static WriteFieldOption from(WriteOptionEntity field, List<ValueOption> options) {
@@ -43,6 +53,11 @@ public final class FieldOptionSupport {
                 field.getIgnoreRequest(),
                 field.getFormat(),
                 field.getValueGenerator(),
+                field.getFieldSource(),
+                field.getConstantValue(),
+                field.getCallerField(),
+                field.getByteLength(),
+                field.getByteOrder(),
                 options);
     }
 
@@ -55,6 +70,11 @@ public final class FieldOptionSupport {
                 field.getIgnoreRequest(),
                 field.getFormat(),
                 field.getValueGenerator(),
+                field.getFieldSource(),
+                field.getConstantValue(),
+                field.getCallerField(),
+                field.getByteLength(),
+                field.getByteOrder(),
                 options);
     }
 
@@ -82,6 +102,11 @@ public final class FieldOptionSupport {
         row.setIgnoreRequest(field.ignoreRequest());
         row.setFormat(field.format());
         row.setValueGenerator(field.valueGenerator());
+        row.setFieldSource(field.source());
+        row.setConstantValue(field.constant());
+        row.setCallerField(field.callerField());
+        row.setByteLength(field.byteLength());
+        row.setByteOrder(field.byteOrder());
     }
 
     private static void applyReadField(ReadFieldEntity row, WriteFieldOption field) {
@@ -92,5 +117,10 @@ public final class FieldOptionSupport {
         row.setIgnoreRequest(field.ignoreRequest());
         row.setFormat(field.format());
         row.setValueGenerator(field.valueGenerator());
+        row.setFieldSource(field.source());
+        row.setConstantValue(field.constant());
+        row.setCallerField(field.callerField());
+        row.setByteLength(field.byteLength());
+        row.setByteOrder(field.byteOrder());
     }
 }

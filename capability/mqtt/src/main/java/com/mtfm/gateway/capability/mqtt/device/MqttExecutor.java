@@ -11,6 +11,8 @@ import com.mtfm.gateway.spi.payload.TopicRouteResolver;
 import com.mtfm.gateway.spi.port.MqttSubscribeRoute;
 import com.mtfm.gateway.spi.port.MqttSubscribeRouteCatalog;
 import com.mtfm.gateway.spi.port.PipelineIngress;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -27,6 +29,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * execute 使用 {@link TopicRouteResolver#MQTT_PUBLISH_TOPIC_HINT}，READ 无发布 topic 时为 subscribe-only。
  */
 public final class MqttExecutor implements FunctionExecutor {
+
+    private static final Logger LOG = LoggerFactory.getLogger(MqttExecutor.class);
 
     private final MqttTransport transport;
     private volatile PipelineIngress ingress;
@@ -95,6 +99,8 @@ public final class MqttExecutor implements FunctionExecutor {
         if (command.deliveryHints().get("mqtt.subscribeOnly")
                 .map(value -> "true".equalsIgnoreCase(String.valueOf(value)))
                 .orElse(false)) {
+            LOG.info("MQTT 订阅只读，跳过发布 deviceId={} functionId={} hints={}",
+                    command.deviceId(), command.functionId(), command.deliveryHints().values());
             return ExecutionResult.success(command.requestId(), command.deviceId(), command.functionId(),
                     Map.of("mode", "subscribe-only"));
         }
@@ -104,6 +110,8 @@ public final class MqttExecutor implements FunctionExecutor {
                 .filter(value -> !value.isBlank())
                 .orElseGet(() -> bound.catalog().resolvePublish(null));
         String payload = toPayload(command.arguments().values());
+        LOG.info("MQTT 发布 deviceId={} functionId={} channelId={} topic={} payload={}",
+                command.deviceId(), command.functionId(), bound.channelId(), topic, payload);
         transport.publish(bound.channelId(), topic, payload);
         return ExecutionResult.success(command.requestId(), command.deviceId(), command.functionId(),
                 Map.of("topic", topic));

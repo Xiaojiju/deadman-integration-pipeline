@@ -1,7 +1,5 @@
 package com.mtfm.gateway.catalog.dto;
 
-import com.mtfm.gateway.spi.payload.FieldNode;
-import com.mtfm.gateway.spi.payload.ValueMapping;
 import com.mtfm.gateway.spi.property.PropertyItem;
 import com.mtfm.gateway.spi.property.ValueOption;
 import com.mtfm.gateway.spi.property.WriteFieldOption;
@@ -29,6 +27,5 @@ public record ProductFunctionView(
         String publishTopicSlot,
         String subscribeTopicSlot,
         String payloadMode,
-        FieldNode structSchema,
-        List<ValueMapping> valueMappings) {
+        String payloadEncoding) {
 }
