@@ -12,7 +12,6 @@ final class MqttPayloadJson {
     private MqttPayloadJson() {
     }
 
-    @SuppressWarnings("unchecked")
     static Map<String, Object> parseObject(String text) {
         if (text == null || text.isBlank()) {
             return Map.of();

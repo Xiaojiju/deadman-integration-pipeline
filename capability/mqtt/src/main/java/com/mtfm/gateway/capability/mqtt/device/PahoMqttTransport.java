@@ -62,7 +62,8 @@ public final class PahoMqttTransport implements MqttTransport {
             throw new IllegalStateException("MQTT 通道未连接: " + channelId);
         }
         try {
-            MqttMessage message = new MqttMessage(payload == null ? new byte[0] : payload.getBytes(StandardCharsets.UTF_8));
+            MqttMessage message = new MqttMessage(
+                    payload == null ? new byte[0] : payload.getBytes(StandardCharsets.UTF_8));
             message.setQos(QOS);
             session.client.publish(topic, message);
         } catch (MqttException ex) {
@@ -96,9 +97,14 @@ public final class PahoMqttTransport implements MqttTransport {
             conn = new MqttBrokerConnection("localhost", 1883, null, null);
             session.connection = conn;
         }
+        String clientId = "gateway-" + sanitizeClientId(session.channelId);
+        MqttClient client;
         try {
-            String clientId = "gateway-" + sanitizeClientId(session.channelId);
-            MqttClient client = new MqttClient(conn.serverUri(), clientId, new MemoryPersistence());
+            client = new MqttClient(conn.serverUri(), clientId, new MemoryPersistence());
+        } catch (MqttException ex) {
+            throw new IllegalStateException("MQTT 客户端创建失败 channel=" + session.channelId, ex);
+        }
+        try {
             MqttConnectOptions options = new MqttConnectOptions();
             options.setAutomaticReconnect(true);
             options.setCleanSession(true);
@@ -113,7 +119,8 @@ public final class PahoMqttTransport implements MqttTransport {
             client.setCallback(new MqttCallback() {
                 @Override
                 public void connectionLost(Throwable cause) {
-                    LOG.warn("MQTT 连接断开 channel={}: {}", session.channelId, cause == null ? "unknown" : cause.getMessage());
+                    LOG.warn("MQTT 连接断开 channel={}: {}", session.channelId,
+                            cause == null ? "unknown" : cause.getMessage());
                 }
 
                 @Override
@@ -126,21 +133,28 @@ public final class PahoMqttTransport implements MqttTransport {
                 }
             });
             client.connect(options);
-            session.client = client;
             for (String topic : session.topicHandlers.keySet()) {
-                subscribeTopic(session, topic);
+                subscribeTopic(client, session.channelId, topic);
             }
+            session.client = client;
+            client = null;
             LOG.info("MQTT 已连接 channel={} uri={}", session.channelId, conn.serverUri());
         } catch (MqttException ex) {
             throw new IllegalStateException("MQTT 连接失败 channel=" + session.channelId, ex);
+        } finally {
+            closeClientQuietly(client);
         }
     }
 
     private void subscribeTopic(ChannelSession session, String topic) {
+        subscribeTopic(session.client, session.channelId, topic);
+    }
+
+    private static void subscribeTopic(MqttClient client, String channelId, String topic) {
         try {
-            session.client.subscribe(topic, QOS);
+            client.subscribe(topic, QOS);
         } catch (MqttException ex) {
-            throw new IllegalStateException("MQTT 订阅失败 channel=" + session.channelId + " topic=" + topic, ex);
+            throw new IllegalStateException("MQTT 订阅失败 channel=" + channelId + " topic=" + topic, ex);
         }
     }
 
@@ -153,9 +167,7 @@ public final class PahoMqttTransport implements MqttTransport {
         handlers.forEach(handler -> handler.accept(topic, payload));
     }
 
-    private static void disconnect(ChannelSession session) {
-        MqttClient client = session.client;
-        session.client = null;
+    private static void closeClientQuietly(MqttClient client) {
         if (client == null) {
             return;
         }
@@ -164,10 +176,19 @@ public final class PahoMqttTransport implements MqttTransport {
                 client.disconnect();
             }
             client.close();
-            LOG.info("MQTT 已断开 channel={}", session.channelId);
         } catch (MqttException ex) {
-            LOG.warn("MQTT 断开异常 channel={}: {}", session.channelId, ex.getMessage());
+            LOG.warn("MQTT 客户端关闭异常: {}", ex.getMessage());
         }
+    }
+
+    private static void disconnect(ChannelSession session) {
+        MqttClient client = session.client;
+        session.client = null;
+        if (client == null) {
+            return;
+        }
+        closeClientQuietly(client);
+        LOG.info("MQTT 已断开 channel={}", session.channelId);
     }
 
     private static String sanitizeClientId(String channelId) {
@@ -179,8 +200,7 @@ public final class PahoMqttTransport implements MqttTransport {
         private final AtomicInteger refs = new AtomicInteger();
         private volatile MqttBrokerConnection connection;
         private volatile MqttClient client;
-        private final ConcurrentHashMap<String, CopyOnWriteArrayList<BiConsumer<String, String>>> topicHandlers =
-                new ConcurrentHashMap<>();
+        private final ConcurrentHashMap<String, CopyOnWriteArrayList<BiConsumer<String, String>>> topicHandlers = new ConcurrentHashMap<>();
 
         private ChannelSession(String channelId) {
             this.channelId = channelId;

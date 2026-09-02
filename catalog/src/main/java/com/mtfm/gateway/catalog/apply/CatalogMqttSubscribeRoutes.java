@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 /** 从产品功能 + 设备 address 解析 MQTT READ 订阅路由。 */
 @Service
@@ -37,7 +38,7 @@ public class CatalogMqttSubscribeRoutes implements MqttSubscribeRouteCatalog {
                 .filter(function -> CAPABILITY_MQTT.equalsIgnoreCase(function.getCapabilityType()))
                 .filter(function -> "READ".equalsIgnoreCase(function.getAccessType()))
                 .map(function -> toRoute(device.get(), function, catalog))
-                .flatMap(Optional::stream)
+                .flatMap(route -> route.map(Stream::of).orElseGet(Stream::empty))
                 .toList();
     }
 
