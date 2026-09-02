@@ -49,7 +49,7 @@ import org.springframework.context.annotation.Primary;
  * }</pre>
  */
 @Configuration
-@EnableConfigurationProperties(GatewayMqttProperties.class)
+@EnableConfigurationProperties(GatewayProperties.class)
 public class GatewayAssembly {
 
     @Bean
@@ -63,8 +63,8 @@ public class GatewayAssembly {
     }
 
     @Bean(destroyMethod = "close")
-    public MqttTransport mqttTransport(GatewayMqttProperties mqttProperties) {
-        if ("memory".equalsIgnoreCase(mqttProperties.getTransport())) {
+    public MqttTransport mqttTransport(GatewayProperties gatewayProperties) {
+        if ("memory".equalsIgnoreCase(gatewayProperties.getMqtt().getTransport())) {
             return new InMemoryMqttTransport();
         }
         return new PahoMqttTransport();

@@ -1,0 +1,25 @@
+{
+  "groups": [
+    {
+      "name": "gateway",
+      "type": "com.mtfm.gateway.app.GatewayProperties",
+      "description": "网关宿主配置。"
+    },
+    {
+      "name": "gateway.mqtt",
+      "type": "com.mtfm.gateway.app.GatewayProperties$Mqtt",
+      "sourceType": "com.mtfm.gateway.app.GatewayProperties",
+      "sourceMethod": "getMqtt()",
+      "description": "MQTT 传输配置。"
+    }
+  ],
+  "properties": [
+    {
+      "name": "gateway.mqtt.transport",
+      "type": "java.lang.String",
+      "description": "传输实现：paho（真实 Broker）或 memory（进程内回环）。",
+      "defaultValue": "paho",
+      "sourceType": "com.mtfm.gateway.app.GatewayProperties$Mqtt"
+    }
+  ]
+}

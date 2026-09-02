@@ -3,8 +3,6 @@ package com.mtfm.gateway.catalog.schema;
 import com.mtfm.gateway.spi.payload.CommandAssembler;
 import com.mtfm.gateway.spi.payload.FieldNode;
 import com.mtfm.gateway.spi.payload.PayloadMode;
-import com.mtfm.gateway.spi.payload.ValueMapping;
-import com.mtfm.gateway.spi.property.WriteFieldOption;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -19,10 +17,14 @@ class CatalogFormServiceCommandAssemblyTest {
     @Test
     void mergesCallerArgsAndPlatformGenerators() {
         FieldNode root = FieldNode.objectRoot("root", List.of(
-                FieldNode.leaf("command", "string", com.mtfm.gateway.spi.payload.FieldSource.CALLER, "none", null, null, ""),
-                FieldNode.leaf("deviceId", "string", com.mtfm.gateway.spi.payload.FieldSource.DEVICE, "none", null, null, ""),
-                FieldNode.leaf("seq", "string", com.mtfm.gateway.spi.payload.FieldSource.PLATFORM, "none", "random_alnum_32", null, ""),
-                FieldNode.leaf("at", "int", com.mtfm.gateway.spi.payload.FieldSource.PLATFORM, "none", "timestamp_millis", null, "")));
+                FieldNode.leaf("command", "string", com.mtfm.gateway.spi.payload.FieldSource.CALLER, "none", null, null,
+                        ""),
+                FieldNode.leaf("deviceId", "string", com.mtfm.gateway.spi.payload.FieldSource.DEVICE, "none", null,
+                        null, ""),
+                FieldNode.leaf("seq", "string", com.mtfm.gateway.spi.payload.FieldSource.PLATFORM, "none",
+                        "random_alnum_32", null, ""),
+                FieldNode.leaf("at", "int", com.mtfm.gateway.spi.payload.FieldSource.PLATFORM, "none",
+                        "timestamp_millis", null, "")));
 
         Map<String, Object> merged = CommandAssembler.assemble(new CommandAssembler.Request(
                 PayloadMode.STRUCT,
@@ -40,7 +42,8 @@ class CatalogFormServiceCommandAssemblyTest {
     @Test
     void ignoresCallerValueForPlatformField() {
         FieldNode root = FieldNode.objectRoot("root", List.of(
-                FieldNode.leaf("seq", "string", com.mtfm.gateway.spi.payload.FieldSource.PLATFORM, "none", "random_alnum_32", null, "")));
+                FieldNode.leaf("seq", "string", com.mtfm.gateway.spi.payload.FieldSource.PLATFORM, "none",
+                        "random_alnum_32", null, "")));
 
         Map<String, Object> merged = CommandAssembler.assemble(new CommandAssembler.Request(
                 PayloadMode.STRUCT,
