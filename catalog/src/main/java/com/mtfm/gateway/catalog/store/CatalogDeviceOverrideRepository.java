@@ -35,9 +35,9 @@ public class CatalogDeviceOverrideRepository {
 
     public List<PropertyItem> listFunctionOverrides(String deviceId, String functionId) {
         return functionOverrides.selectList(new QueryWrapper<DeviceFunctionOverrideEntity>()
-                        .eq("device_id", deviceId)
-                        .eq("function_id", functionId)
-                        .orderByAsc("attribute"))
+                .eq("device_id", deviceId)
+                .eq("function_id", functionId)
+                .orderByAsc("attribute"))
                 .stream()
                 .map(EavPropertySupport::toItem)
                 .toList();
@@ -95,11 +95,11 @@ public class CatalogDeviceOverrideRepository {
 
     public Map<String, Object> listFieldOverrides(String deviceId, String functionId) {
         return fieldOverrides.selectList(new QueryWrapper<DeviceFieldOverrideEntity>()
-                        .eq("device_id", deviceId)
-                        .eq("function_id", functionId))
+                .eq("device_id", deviceId)
+                .eq("function_id", functionId))
                 .stream()
                 .collect(Collectors.toMap(
-                        DeviceFieldOverrideEntity::getFieldPath,
+                        override -> override.getFieldPath(),
                         row -> parseJsonValue(row.getFieldValue()),
                         (a, b) -> b,
                         LinkedHashMap::new));
@@ -107,12 +107,12 @@ public class CatalogDeviceOverrideRepository {
 
     public Map<String, String> listTopicOverrides(String deviceId, String functionId) {
         return topicOverrides.selectList(new QueryWrapper<DeviceTopicOverrideEntity>()
-                        .eq("device_id", deviceId)
-                        .eq("function_id", functionId))
+                .eq("device_id", deviceId)
+                .eq("function_id", functionId))
                 .stream()
                 .collect(Collectors.toMap(
-                        DeviceTopicOverrideEntity::getTopicSlot,
-                        DeviceTopicOverrideEntity::getTopicValue,
+                        override -> override.getTopicSlot(),
+                        override -> override.getTopicValue(),
                         (a, b) -> b,
                         LinkedHashMap::new));
     }
