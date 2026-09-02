@@ -37,7 +37,6 @@ import com.mtfm.gateway.catalog.payload.PayloadCodec;
 import com.mtfm.gateway.catalog.payload.PayloadDefinitionResolver;
 import com.mtfm.gateway.spi.payload.TopicCatalog;
 import com.mtfm.gateway.spi.payload.TopicRouteResolver;
-import com.mtfm.gateway.spi.property.FieldValueGenerators;
 import com.mtfm.gateway.spi.property.PropertyItem;
 import com.mtfm.gateway.spi.property.PropertySchemas;
 import com.mtfm.gateway.spi.property.ValueAccessType;
@@ -196,7 +195,8 @@ public class CatalogFormService {
         if (request != null) {
             if (request.properties() != null || request.connection() != null) {
                 List<PropertyItem> items = resolveProperties(request.properties(), request.connection());
-                SchemaValidator.require(descriptor.connectionSchema(), PropertySchemas.toValueMap(items), "通道 connection");
+                SchemaValidator.require(descriptor.connectionSchema(), PropertySchemas.toValueMap(items),
+                        "通道 connection");
                 entity.setConnection(JsonMaps.write(PropertySchemas.toValueMap(items)));
                 store.properties().replaceChannelProperties(entity.getId(), items);
             }
@@ -524,16 +524,6 @@ public class CatalogFormService {
         return template.map(item -> PropertySchemas.toPropertyItems(item.parameters())).orElse(List.of());
     }
 
-    private List<ValueOption> resolveWriteValueOptions(
-            ProductFunctionWriteRequest request, Optional<FunctionTemplate> template) {
-        if (request.writeValueOptions() != null) {
-            return request.writeValueOptions();
-        }
-        return template
-                .map(item -> flattenChoiceOptions(PropertySchemas.choiceOptionsByField(item.parameters())))
-                .orElse(List.of());
-    }
-
     /**
      * FIXED：属性名必须落在模板 parameters 内；带 choices 的字段取值必须是规定枚举。
      */
@@ -599,7 +589,8 @@ public class CatalogFormService {
     }
 
     /**
-     * FIXED：writeFields 的 field 必须 ⊆ 模板 parameters；options 取值 ⊆ choices；可改 description。
+     * FIXED：writeFields 的 field 必须 ⊆ 模板 parameters；options 取值 ⊆ choices；可改
+     * description。
      */
     private static List<WriteFieldOption> constrainFixedWriteFields(
             List<WriteFieldOption> requested, FunctionTemplate template) {
@@ -849,7 +840,8 @@ public class CatalogFormService {
                         "功能未配置到产品: " + device.getProductId() + "/" + request.functionId()));
         Map<String, Object> caller = request.arguments() == null ? Map.of() : request.arguments();
 
-        PayloadDefinitionResolver.Definition definition = PayloadDefinitionResolver.resolve(function, store.properties());
+        PayloadDefinitionResolver.Definition definition = PayloadDefinitionResolver.resolve(function,
+                store.properties());
         Map<String, Object> legacyOverrides = PropertySchemas.toValueMap(
                 store.loadDeviceOverrides(device, function.getFunctionId()));
         Map<String, Object> pathOverrides = store.properties().listDeviceFieldOverrides(
@@ -889,30 +881,6 @@ public class CatalogFormService {
                 function.getFunctionId(),
                 payload,
                 deliveryHints);
-    }
-
-    /** @deprecated 使用 {@link PayloadDefinitionResolver} + {@link com.mtfm.gateway.spi.payload.CommandAssembler} */
-    @Deprecated
-    static Map<String, Object> assembleFieldArguments(
-            List<WriteFieldOption> fields, Map<String, Object> caller) {
-        Map<String, Object> merged = new LinkedHashMap<>();
-        for (WriteFieldOption field : fields) {
-            if (field.platformGenerated()) {
-                merged.put(field.field(), FieldValueGenerators.generate(field.valueGenerator()));
-                continue;
-            }
-            if (caller.containsKey(field.field())) {
-                merged.put(field.field(), caller.get(field.field()));
-                continue;
-            }
-            if (field.options() != null) {
-                field.options().stream()
-                        .filter(ValueOption::isDefault)
-                        .findFirst()
-                        .ifPresent(option -> merged.put(field.field(), option.optionValue()));
-            }
-        }
-        return merged;
     }
 
     public List<FunctionFormView> productFunctions(String productId) {
@@ -1127,7 +1095,7 @@ public class CatalogFormService {
             List<String> choices = field.options() == null
                     ? List.of()
                     : field.options().stream()
-                            .map(ValueOption::optionValue)
+                            .map(option -> option.optionValue())
                             .filter(v -> v != null && !v.isBlank())
                             .toList();
             String description = field.description() == null ? "" : field.description();

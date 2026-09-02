@@ -58,12 +58,11 @@ public final class TopicCatalog {
     /**
      * 从设备 address 属性解析。
      * <ul>
-     *   <li>{@code topics} 对象</li>
-     *   <li>兼容 legacy 单字段 {@code topic} → default_pub</li>
-     *   <li>兼容 {@code default_pub} / {@code default_sub} 顶层字段</li>
+     * <li>{@code topics} 对象</li>
+     * <li>兼容 legacy 单字段 {@code topic} → default_pub</li>
+     * <li>兼容 {@code default_pub} / {@code default_sub} 顶层字段</li>
      * </ul>
      */
-    @SuppressWarnings("unchecked")
     public static TopicCatalog fromAddressMap(Map<String, Object> address) {
         if (address == null || address.isEmpty()) {
             throw new IllegalArgumentException("address 不能为空");
