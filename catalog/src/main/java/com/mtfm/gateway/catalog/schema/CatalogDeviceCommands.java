@@ -220,11 +220,21 @@ final class CatalogDeviceCommands {
             ProductFunctionEntity function, DeviceFunctionScheduleEntity override) {
         boolean productEnabled = Boolean.TRUE.equals(function.getScheduleEnabled());
         Long productInterval = function.getScheduleIntervalMs();
-        boolean overridden = override != null;
-        boolean enabled = overridden && override.getEnabled() != null
+        if (override == null) {
+            return new DeviceFunctionScheduleView(
+                    function.getFunctionId(),
+                    productEnabled,
+                    productInterval,
+                    productEnabled,
+                    productInterval,
+                    false,
+                    null,
+                    null);
+        }
+        boolean enabled = override.getEnabled() != null
                 ? Boolean.TRUE.equals(override.getEnabled())
                 : productEnabled;
-        Long interval = overridden && override.getIntervalMs() != null
+        Long interval = override.getIntervalMs() != null
                 ? override.getIntervalMs()
                 : productInterval;
         return new DeviceFunctionScheduleView(
@@ -233,8 +243,8 @@ final class CatalogDeviceCommands {
                 interval,
                 productEnabled,
                 productInterval,
-                overridden,
-                overridden ? override.getEnabled() : null,
-                overridden ? override.getIntervalMs() : null);
+                true,
+                override.getEnabled(),
+                override.getIntervalMs());
     }
 }

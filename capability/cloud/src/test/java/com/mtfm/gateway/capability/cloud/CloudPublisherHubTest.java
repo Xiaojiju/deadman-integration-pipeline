@@ -26,62 +26,66 @@ class CloudPublisherHubTest {
 
     @Test
     void snapshotStillWorksWithoutSinks() {
-        CloudPublisher hub = new CloudPublisher();
-        OutboundMessage message = response("req-1", "door-1");
-        assertInstanceOf(PublishResult.Success.class, hub.publish(message));
-        assertEquals(1, hub.responses().size());
-        assertEquals("req-1", hub.responses().get(0).requestId());
+        try (CloudPublisher hub = new CloudPublisher()) {
+            OutboundMessage message = response("req-1", "door-1");
+            assertInstanceOf(PublishResult.Success.class, hub.publish(message));
+            assertEquals(1, hub.responses().size());
+            assertEquals("req-1", hub.responses().get(0).requestId());
+        }
     }
 
     @Test
     void fanoutDoesNotFailPublishWhenSinkThrows() {
         AtomicInteger calls = new AtomicInteger();
-        CloudPublisher hub = new CloudPublisher(message -> {
+        try (CloudPublisher hub = new CloudPublisher(message -> {
             calls.incrementAndGet();
             throw new IllegalStateException("sink down");
-        });
-        assertInstanceOf(PublishResult.Success.class, hub.publish(response("req-2", "door-1")));
-        assertEquals(1, calls.get());
-        assertEquals(1, hub.snapshot().size());
+        })) {
+            assertInstanceOf(PublishResult.Success.class, hub.publish(response("req-2", "door-1")));
+            assertEquals(1, calls.get());
+            assertEquals(1, hub.snapshot().size());
+        }
     }
 
     @Test
     void mqttAndWebhookReceiveSameJsonShape() {
         InMemoryNorthboundMqttSession mqtt = new InMemoryNorthboundMqttSession();
         RecordingSink webhook = new RecordingSink();
-        CloudPublisher hub = new CloudPublisher(
+        try (CloudPublisher hub = new CloudPublisher(
                 new NorthboundMqttPublisher(mqtt),
-                webhook);
-        OutboundMessage response = response("req-3", "door-1");
-        OutboundMessage telemetry = telemetry("door-1");
-        hub.publish(response);
-        hub.publish(telemetry);
+                webhook)) {
+            OutboundMessage response = response("req-3", "door-1");
+            OutboundMessage telemetry = telemetry("door-1");
+            hub.publish(response);
+            hub.publish(telemetry);
 
-        assertEquals(1, hub.responses().size());
-        assertEquals(1, hub.telemetry().size());
-        assertEquals(2, mqtt.snapshot().size());
-        assertTrue(mqtt.snapshot().get(0).startsWith("gw/door-1/response|"));
-        assertTrue(mqtt.snapshot().get(0).contains("\"requestId\":\"req-3\""));
-        assertTrue(mqtt.snapshot().get(1).startsWith("gw/door-1/telemetry|"));
-        assertEquals(2, webhook.bodies.size());
-        assertTrue(webhook.bodies.get(0).contains("\"kind\":\"RESPONSE\""));
-        assertTrue(webhook.bodies.get(1).contains("\"kind\":\"TELEMETRY\""));
+            assertEquals(1, hub.responses().size());
+            assertEquals(1, hub.telemetry().size());
+            assertEquals(2, mqtt.snapshot().size());
+            assertTrue(mqtt.snapshot().get(0).startsWith("gw/door-1/response|"));
+            assertTrue(mqtt.snapshot().get(0).contains("\"requestId\":\"req-3\""));
+            assertTrue(mqtt.snapshot().get(1).startsWith("gw/door-1/telemetry|"));
+            assertEquals(2, webhook.bodies.size());
+            assertTrue(webhook.bodies.get(0).contains("\"kind\":\"RESPONSE\""));
+            assertTrue(webhook.bodies.get(1).contains("\"kind\":\"TELEMETRY\""));
+        }
     }
 
     @Test
     void inboundCommandUsesPortNotPipelineAccept() {
         List<NorthboundCommand> received = new CopyOnWriteArrayList<>();
         InMemoryNorthboundMqttSession session = new InMemoryNorthboundMqttSession();
-        NorthboundMqttIngress ingress = new NorthboundMqttIngress(
-                session, received::add, NorthboundTopics.DEFAULT_COMMAND);
-        ingress.start();
-        session.publish("gw/door-1/command",
-                "{\"requestId\":\"req-in\",\"functionId\":\"fn.open\",\"arguments\":{\"lock\":\"open\"}}");
-        assertEquals(1, received.size());
-        assertEquals("door-1", received.get(0).deviceId());
-        assertEquals("fn.open", received.get(0).functionId());
-        assertEquals("req-in", received.get(0).requestId());
-        assertEquals("open", received.get(0).arguments().get("lock"));
+        try (NorthboundMqttIngress ingress = new NorthboundMqttIngress(
+                session, received::add, NorthboundTopics.DEFAULT_COMMAND)) {
+            ingress.start();
+            session.publish("gw/door-1/command",
+                    "{\"requestId\":\"req-in\",\"functionId\":\"fn.open\",\"arguments\":{\"lock\":\"open\"}}");
+            assertEquals(1, received.size());
+            assertEquals("door-1", received.get(0).deviceId());
+            assertEquals("fn.open", received.get(0).functionId());
+            assertEquals("req-in", received.get(0).requestId());
+            assertEquals("open", received.get(0).arguments().get("lock"));
+        }
     }
 
     @Test

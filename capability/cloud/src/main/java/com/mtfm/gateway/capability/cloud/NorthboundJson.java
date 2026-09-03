@@ -97,7 +97,6 @@ public final class NorthboundJson {
         return value.isEmpty() || "null".equalsIgnoreCase(value) ? null : value;
     }
 
-    @SuppressWarnings("unchecked")
     private static Map<String, Object> argumentsOf(Object raw) {
         if (raw instanceof Map<?, ?> map) {
             Map<String, Object> copy = new LinkedHashMap<>();
