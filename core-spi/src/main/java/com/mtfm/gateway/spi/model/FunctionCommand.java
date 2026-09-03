@@ -51,8 +51,17 @@ public record FunctionCommand(
             String functionId,
             Map<String, ?> arguments,
             Map<String, ?> deliveryHints) {
+        return of(null, deviceId, functionId, arguments, deliveryHints);
+    }
+
+    public static FunctionCommand of(
+            String requestId,
+            String deviceId,
+            String functionId,
+            Map<String, ?> arguments,
+            Map<String, ?> deliveryHints) {
         return new FunctionCommand(
-                null,
+                requestId,
                 deviceId,
                 functionId,
                 null,

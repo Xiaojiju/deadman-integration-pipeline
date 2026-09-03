@@ -2,6 +2,7 @@ import type {
   CapabilityDescriptor,
   ChannelEntity,
   DeviceEntity,
+  DeviceFunctionScheduleView,
   ExecutionResult,
   FunctionFormView,
   FunctionTemplate,
@@ -14,6 +15,30 @@ import type {
   ValueOption,
   WriteFieldOption,
 } from "@/lib/types"
+
+export const MIN_SCHEDULE_MS = 1000
+
+type ProductFunctionWriteBody = {
+  accessType?: string
+  properties?: PropertyItem[]
+  writeAccessType?: string
+  writeValueOptions?: ValueOption[]
+  writeFields?: WriteFieldOption[]
+  readFields?: WriteFieldOption[]
+  readValueOptions?: ValueOption[]
+  sortIndex?: number
+  description?: string
+  publishTopicSlot?: string
+  subscribeTopicSlot?: string
+  payloadMode?: string
+  payloadEncoding?: string
+  replyTopicSlot?: string
+  correlationPath?: string
+  resultPath?: string
+  replyTimeoutMs?: number
+  scheduleIntervalMs?: number
+  scheduleEnabled?: boolean
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -125,21 +150,7 @@ export const catalogApi = {
   updateProductFunction: (
     productId: string,
     functionId: string,
-    body: {
-      accessType?: string
-      properties?: PropertyItem[]
-      writeAccessType?: string
-      writeValueOptions?: ValueOption[]
-      writeFields?: WriteFieldOption[]
-      readFields?: WriteFieldOption[]
-      readValueOptions?: ValueOption[]
-      sortIndex?: number
-      description?: string
-      publishTopicSlot?: string
-      subscribeTopicSlot?: string
-      payloadMode?: string
-      payloadEncoding?: string
-    }
+    body: ProductFunctionWriteBody
   ) =>
     request(
       `/catalog/products/${encodeURIComponent(productId)}/functions/${encodeURIComponent(functionId)}`,
@@ -180,6 +191,19 @@ export const catalogApi = {
     request<Record<string, string>>(
       `/catalog/devices/${encodeURIComponent(deviceCode)}/functions/${encodeURIComponent(functionId)}/topic-overrides`,
       { method: "PUT", body: JSON.stringify({ overrides }) }
+    ),
+  deviceSchedule: (deviceCode: string, functionId: string) =>
+    request<DeviceFunctionScheduleView>(
+      `/catalog/devices/${encodeURIComponent(deviceCode)}/functions/${encodeURIComponent(functionId)}/schedule`
+    ),
+  replaceDeviceSchedule: (
+    deviceCode: string,
+    functionId: string,
+    body: { enabled?: boolean | null; intervalMs?: number | null }
+  ) =>
+    request<DeviceFunctionScheduleView>(
+      `/catalog/devices/${encodeURIComponent(deviceCode)}/functions/${encodeURIComponent(functionId)}/schedule`,
+      { method: "PUT", body: JSON.stringify(body) }
     ),
   registerDevice: (body: {
     deviceCode: string
@@ -238,23 +262,7 @@ export const catalogApi = {
     }),
   createProductFunction: (
     productId: string,
-    body: {
-      functionId: string
-      capabilityType: string
-      accessType?: string
-      properties?: PropertyItem[]
-      writeAccessType?: string
-      writeValueOptions?: ValueOption[]
-      writeFields?: WriteFieldOption[]
-      readFields?: WriteFieldOption[]
-      readValueOptions?: ValueOption[]
-      sortIndex?: number
-      description?: string
-      publishTopicSlot?: string
-      subscribeTopicSlot?: string
-      payloadMode?: string
-      payloadEncoding?: string
-    }
+    body: { functionId: string; capabilityType: string } & ProductFunctionWriteBody
   ) =>
     request(`/catalog/products/${encodeURIComponent(productId)}/functions`, {
       method: "POST",

@@ -5,6 +5,8 @@ import com.mtfm.gateway.catalog.dto.ChannelWriteRequest;
 import com.mtfm.gateway.catalog.dto.DeviceCommandRequest;
 import com.mtfm.gateway.catalog.dto.DeviceEndpointView;
 import com.mtfm.gateway.catalog.dto.DeviceEndpointWriteRequest;
+import com.mtfm.gateway.catalog.dto.DeviceFunctionScheduleView;
+import com.mtfm.gateway.catalog.dto.DeviceFunctionScheduleWriteRequest;
 import com.mtfm.gateway.catalog.dto.DeviceRegisterRequest;
 import com.mtfm.gateway.catalog.dto.DeviceUpdateRequest;
 import com.mtfm.gateway.catalog.dto.DeviceView;
@@ -300,6 +302,16 @@ public class CatalogFormService {
     @Transactional
     public void replaceDeviceTopicOverrides(String deviceCode, String functionId, Map<String, String> overrides) {
         devices.replaceDeviceTopicOverrides(deviceCode, functionId, overrides);
+    }
+
+    public DeviceFunctionScheduleView deviceSchedule(String deviceCode, String functionId) {
+        return devices.deviceSchedule(deviceCode, functionId);
+    }
+
+    @Transactional
+    public DeviceFunctionScheduleView replaceDeviceSchedule(
+            String deviceCode, String functionId, DeviceFunctionScheduleWriteRequest request) {
+        return devices.replaceDeviceSchedule(deviceCode, functionId, request);
     }
 
     public List<DeviceEndpointView> deviceEndpoints(String deviceCode) {

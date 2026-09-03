@@ -23,7 +23,8 @@ public final class CommandAssembler {
             FieldNode structRoot,
             List<ValueMapping> valueMappings,
             Map<String, Object> callerArguments,
-            Map<String, Object> deviceFieldOverrides
+            Map<String, Object> deviceFieldOverrides,
+            String requestId
     ) {
 
         public Request {
@@ -31,6 +32,16 @@ public final class CommandAssembler {
             valueMappings = valueMappings == null ? List.of() : List.copyOf(valueMappings);
             callerArguments = callerArguments == null ? Map.of() : Map.copyOf(callerArguments);
             deviceFieldOverrides = deviceFieldOverrides == null ? Map.of() : Map.copyOf(deviceFieldOverrides);
+            requestId = requestId == null || requestId.isBlank() ? null : requestId.trim();
+        }
+
+        public Request(
+                PayloadMode payloadMode,
+                FieldNode structRoot,
+                List<ValueMapping> valueMappings,
+                Map<String, Object> callerArguments,
+                Map<String, Object> deviceFieldOverrides) {
+            this(payloadMode, structRoot, valueMappings, callerArguments, deviceFieldOverrides, null);
         }
     }
 
@@ -150,7 +161,8 @@ public final class CommandAssembler {
             if (node.source() == FieldSource.PLATFORM
                     || FieldValueGenerators.isPlatformGenerated(node.valueGenerator())) {
                 FieldTreePaths.setFlat(
-                        flat, leaf.path(), FieldValueGenerators.generate(node.valueGenerator(), node.type()));
+                        flat, leaf.path(),
+                        FieldValueGenerators.generate(node.valueGenerator(), node.type(), request.requestId()));
             }
         }
 

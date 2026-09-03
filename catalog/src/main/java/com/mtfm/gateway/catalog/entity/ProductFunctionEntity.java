@@ -74,6 +74,24 @@ public class ProductFunctionEntity {
     /** 载荷编码：JSON / HEX / BINARY。 */
     private String payloadEncoding;
 
+    /** MQTT 应答订阅 slot。 */
+    private String replyTopicSlot;
+
+    /** 回包关联号字段 path。 */
+    private String correlationPath;
+
+    /** 回包成败字段 path。 */
+    private String resultPath;
+
+    /** 等待设备应答毫秒。 */
+    private Integer replyTimeoutMs;
+
+    /** 定时下发间隔毫秒。 */
+    private Long scheduleIntervalMs;
+
+    /** 是否启用定时下发。 */
+    private Boolean scheduleEnabled;
+
     public String getId() {
         return id;
     }
@@ -192,5 +210,53 @@ public class ProductFunctionEntity {
 
     public void setPayloadEncoding(String payloadEncoding) {
         this.payloadEncoding = payloadEncoding;
+    }
+
+    public String getReplyTopicSlot() {
+        return replyTopicSlot;
+    }
+
+    public void setReplyTopicSlot(String replyTopicSlot) {
+        this.replyTopicSlot = replyTopicSlot;
+    }
+
+    public String getCorrelationPath() {
+        return correlationPath;
+    }
+
+    public void setCorrelationPath(String correlationPath) {
+        this.correlationPath = correlationPath;
+    }
+
+    public String getResultPath() {
+        return resultPath;
+    }
+
+    public void setResultPath(String resultPath) {
+        this.resultPath = resultPath;
+    }
+
+    public Integer getReplyTimeoutMs() {
+        return replyTimeoutMs;
+    }
+
+    public void setReplyTimeoutMs(Integer replyTimeoutMs) {
+        this.replyTimeoutMs = replyTimeoutMs;
+    }
+
+    public Long getScheduleIntervalMs() {
+        return scheduleIntervalMs;
+    }
+
+    public void setScheduleIntervalMs(Long scheduleIntervalMs) {
+        this.scheduleIntervalMs = scheduleIntervalMs;
+    }
+
+    public Boolean getScheduleEnabled() {
+        return scheduleEnabled;
+    }
+
+    public void setScheduleEnabled(Boolean scheduleEnabled) {
+        this.scheduleEnabled = scheduleEnabled;
     }
 }

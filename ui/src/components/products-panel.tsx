@@ -50,6 +50,7 @@ import {
 } from "@/components/ui/empty"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
 import {
   Select,
   SelectContent,
@@ -67,7 +68,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { ConfigExample, CodeSample } from "@/components/config-example"
-import { catalogApi } from "@/lib/api"
+import { catalogApi, MIN_SCHEDULE_MS } from "@/lib/api"
 import type {
   CapabilityDescriptor,
   ProductEntity,
@@ -136,6 +137,12 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
   const [fnDescription, setFnDescription] = useState("")
   const [publishTopicSlot, setPublishTopicSlot] = useState("")
   const [subscribeTopicSlot, setSubscribeTopicSlot] = useState("")
+  const [replyTopicSlot, setReplyTopicSlot] = useState("")
+  const [correlationPath, setCorrelationPath] = useState("")
+  const [resultPath, setResultPath] = useState("")
+  const [replyTimeoutMs, setReplyTimeoutMs] = useState("")
+  const [scheduleEnabled, setScheduleEnabled] = useState(false)
+  const [scheduleIntervalMs, setScheduleIntervalMs] = useState("")
   const [payloadMode, setPayloadMode] = useState<"VALUE" | "STRUCT">("STRUCT")
   const [payloadEncoding, setPayloadEncoding] = useState<"JSON" | "HEX" | "BINARY">("JSON")
   const [structRoot, setStructRoot] = useState<FieldNodeModel>(() => emptyObjectRoot())
@@ -327,6 +334,12 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
     setFnDescription("")
     setPublishTopicSlot("")
     setSubscribeTopicSlot("")
+    setReplyTopicSlot("")
+    setCorrelationPath("")
+    setResultPath("")
+    setReplyTimeoutMs("")
+    setScheduleEnabled(false)
+    setScheduleIntervalMs("")
     setPayloadMode(contracted ? "VALUE" : "STRUCT")
     setPayloadEncoding("JSON")
     setStructRoot(emptyObjectRoot())
@@ -350,6 +363,12 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
     setReadValueOptions(fn.readValueOptions ?? [])
     setPublishTopicSlot(fn.publishTopicSlot ?? "")
     setSubscribeTopicSlot(fn.subscribeTopicSlot ?? "")
+    setReplyTopicSlot(fn.replyTopicSlot ?? "")
+    setCorrelationPath(fn.correlationPath ?? "")
+    setResultPath(fn.resultPath ?? "")
+    setReplyTimeoutMs(fn.replyTimeoutMs != null ? String(fn.replyTimeoutMs) : "")
+    setScheduleEnabled(fn.scheduleEnabled === true)
+    setScheduleIntervalMs(fn.scheduleIntervalMs != null ? String(fn.scheduleIntervalMs) : "")
     const mode = resolvePayloadMode(fn)
     setPayloadMode(mode)
     const encoding = (fn.payloadEncoding || "JSON").toUpperCase()
@@ -477,6 +496,21 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
         : []
     const readOpts = isFixed && !lockedOpenDefault ? filterValidValueOptions(readValueOptions) : []
 
+    const intervalValue = scheduleIntervalMs.trim() === "" ? 0 : Number(scheduleIntervalMs)
+    if (scheduleIntervalMs.trim() && (!Number.isFinite(intervalValue) || intervalValue < MIN_SCHEDULE_MS)) {
+      toast.error(`定时间隔不能小于 ${MIN_SCHEDULE_MS} 毫秒`)
+      return
+    }
+    if (scheduleEnabled && intervalValue < MIN_SCHEDULE_MS) {
+      toast.error(`启用定时下发时须填写不少于 ${MIN_SCHEDULE_MS} 毫秒的间隔`)
+      return
+    }
+    const timeoutValue = replyTimeoutMs.trim() === "" ? 0 : Number(replyTimeoutMs)
+    if (capabilityType === "MQTT" && replyTimeoutMs.trim() && (!Number.isFinite(timeoutValue) || timeoutValue < 0)) {
+      toast.error("应答超时须为非负整数毫秒")
+      return
+    }
+
     setPending(true)
     try {
       const body = {
@@ -493,6 +527,12 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
         subscribeTopicSlot: capabilityType === "MQTT" ? subscribeTopicSlot.trim() || undefined : undefined,
         payloadMode: isFixed || lockedOpenDefault ? undefined : payloadMode,
         payloadEncoding: isFixed || lockedOpenDefault || isContracted ? undefined : payloadEncoding,
+        replyTopicSlot: capabilityType === "MQTT" ? replyTopicSlot.trim() : undefined,
+        correlationPath: capabilityType === "MQTT" ? correlationPath.trim() : undefined,
+        resultPath: capabilityType === "MQTT" ? resultPath.trim() : undefined,
+        replyTimeoutMs: capabilityType === "MQTT" ? timeoutValue : undefined,
+        scheduleEnabled,
+        scheduleIntervalMs: intervalValue,
       }
       if (fnMode === "edit" && editingFunction) {
         await catalogApi.updateProductFunction(productId, editingFunction.functionId, body)
@@ -1119,15 +1159,76 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                 <p className="text-sm text-muted-foreground">
                   Topic 实际路径在设备 Address 里配（default_pub / default_sub / topics JSON）。这里只填 slot 名。
                 </p>
-                <ConfigExample title="示例 · MQTT Topic">
+                <Field>
+                  <FieldLabel htmlFor="replyTopicSlot">应答 Topic Slot</FieldLabel>
+                  <Input
+                    id="replyTopicSlot"
+                    value={replyTopicSlot}
+                    onChange={(e) => setReplyTopicSlot(e.target.value)}
+                    placeholder="设备回包订阅 slot，如 default_sub 或 topics 中的名"
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="correlationPath">关联号 path</FieldLabel>
+                  <Input
+                    id="correlationPath"
+                    value={correlationPath}
+                    onChange={(e) => setCorrelationPath(e.target.value)}
+                    placeholder="回包里 requestId 的字段，如 seq"
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="resultPath">成败 path</FieldLabel>
+                  <Input
+                    id="resultPath"
+                    value={resultPath}
+                    onChange={(e) => setResultPath(e.target.value)}
+                    placeholder="回包里表示成功/失败的字段，如 ok"
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="replyTimeoutMs">应答超时（毫秒）</FieldLabel>
+                  <Input
+                    id="replyTimeoutMs"
+                    type="number"
+                    min={0}
+                    value={replyTimeoutMs}
+                    onChange={(e) => setReplyTimeoutMs(e.target.value)}
+                    placeholder="留空则用流水线默认"
+                  />
+                </Field>
+                <ConfigExample title="示例 · MQTT 应答闭环">
                   <p>
-                    发布 slot 可填 <CodeSample>ydlink.FFFA25101101.thing.action.execute</CodeSample>
-                    ，或留空使用设备的 default_pub。
+                    WRITE 发布 execute 后，把应答 slot 指到设备回包 topic。关联号 path 填
+                    <CodeSample>seq</CodeSample>
+                    ，与字段生成器 <CodeSample>request_id</CodeSample> 对应。
                   </p>
-                  <p>READ 功能填订阅 slot；WRITE 功能填发布 slot。</p>
+                  <p>READ 监听仍走订阅 slot；应答 slot 与订阅 slot 可以相同，未匹配的回包当遥测。</p>
                 </ConfigExample>
               </>
             ) : null}
+            <Field orientation="horizontal">
+              <FieldLabel htmlFor="scheduleEnabled">定时下发</FieldLabel>
+              <Switch
+                id="scheduleEnabled"
+                checked={scheduleEnabled}
+                onCheckedChange={setScheduleEnabled}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="scheduleIntervalMs">定时间隔（毫秒）</FieldLabel>
+              <Input
+                id="scheduleIntervalMs"
+                type="number"
+                min={MIN_SCHEDULE_MS}
+                value={scheduleIntervalMs}
+                onChange={(e) => setScheduleIntervalMs(e.target.value)}
+                placeholder={`最低 ${MIN_SCHEDULE_MS}，Modbus 轮询也走这里`}
+              />
+            </Field>
+            <p className="text-sm text-muted-foreground">
+              到期走现有下发队列。设备可再覆盖间隔或关掉。MQTT 有应答时，上一拍未完成会跳过本拍。
+            </p>
             <Field>
               <FieldLabel htmlFor="sortIndex">排序</FieldLabel>
               <Input

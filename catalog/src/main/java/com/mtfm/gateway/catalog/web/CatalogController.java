@@ -5,6 +5,8 @@ import com.mtfm.gateway.catalog.dto.ChannelView;
 import com.mtfm.gateway.catalog.dto.ChannelWriteRequest;
 import com.mtfm.gateway.catalog.dto.DeviceCommandRequest;
 import com.mtfm.gateway.catalog.dto.DeviceFieldOverridesWriteRequest;
+import com.mtfm.gateway.catalog.dto.DeviceFunctionScheduleView;
+import com.mtfm.gateway.catalog.dto.DeviceFunctionScheduleWriteRequest;
 import com.mtfm.gateway.catalog.dto.DeviceTopicOverridesWriteRequest;
 import com.mtfm.gateway.catalog.dto.DeviceEndpointView;
 import com.mtfm.gateway.catalog.dto.DeviceEndpointWriteRequest;
@@ -151,26 +153,33 @@ public class CatalogController {
     @PostMapping("/products/{productId}/functions")
     public ProductFunctionView createFunction(@PathVariable String productId,
             @RequestBody ProductFunctionWriteRequest request) {
-        return forms.toProductFunctionView(forms.createFunction(productId, request));
+        ProductFunctionView view = forms.toProductFunctionView(forms.createFunction(productId, request));
+        applyService.refreshSchedulesForProduct(productId);
+        return view;
     }
 
     @PostMapping("/products/{productId}/functions/import")
     public List<ProductFunctionView> importFunctions(@PathVariable String productId,
             @RequestParam String capabilityType) {
-        return forms.importCapabilityFunctions(productId, capabilityType).stream()
+        List<ProductFunctionView> views = forms.importCapabilityFunctions(productId, capabilityType).stream()
                 .map(forms::toProductFunctionView)
                 .toList();
+        applyService.refreshSchedulesForProduct(productId);
+        return views;
     }
 
     @PutMapping("/products/{productId}/functions/{functionId}")
     public ProductFunctionView updateFunction(@PathVariable String productId, @PathVariable String functionId,
             @RequestBody ProductFunctionWriteRequest request) {
-        return forms.toProductFunctionView(forms.updateFunction(productId, functionId, request));
+        ProductFunctionView view = forms.toProductFunctionView(forms.updateFunction(productId, functionId, request));
+        applyService.refreshSchedulesForProduct(productId);
+        return view;
     }
 
     @DeleteMapping("/products/{productId}/functions/{functionId}")
     public Map<String, Object> deleteFunction(@PathVariable String productId, @PathVariable String functionId) {
         boolean deleted = forms.deleteFunction(productId, functionId);
+        applyService.refreshSchedulesForProduct(productId);
         return Map.of("productId", productId, "functionId", functionId, "deleted", deleted);
     }
 
@@ -320,5 +329,21 @@ public class CatalogController {
         forms.replaceDeviceTopicOverrides(deviceCode, functionId,
                 request == null ? Map.of() : request.overrides());
         return forms.deviceTopicOverrides(deviceCode, functionId);
+    }
+
+    @GetMapping("/devices/{deviceCode}/functions/{functionId}/schedule")
+    public DeviceFunctionScheduleView deviceSchedule(
+            @PathVariable String deviceCode, @PathVariable String functionId) {
+        return forms.deviceSchedule(deviceCode, functionId);
+    }
+
+    @PutMapping("/devices/{deviceCode}/functions/{functionId}/schedule")
+    public DeviceFunctionScheduleView replaceDeviceSchedule(
+            @PathVariable String deviceCode,
+            @PathVariable String functionId,
+            @RequestBody(required = false) DeviceFunctionScheduleWriteRequest request) {
+        DeviceFunctionScheduleView view = forms.replaceDeviceSchedule(deviceCode, functionId, request);
+        applyService.refreshSchedule(deviceCode);
+        return view;
     }
 }

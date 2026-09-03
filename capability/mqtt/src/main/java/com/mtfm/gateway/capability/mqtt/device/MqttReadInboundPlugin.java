@@ -6,6 +6,7 @@ import com.mtfm.gateway.spi.model.EnvelopeDraft;
 import com.mtfm.gateway.spi.model.EnvelopeKind;
 import com.mtfm.gateway.spi.model.FunctionDef;
 import com.mtfm.gateway.spi.model.InboundApplyResult;
+import com.mtfm.gateway.spi.model.MessageHeaders;
 import com.mtfm.gateway.spi.payload.FramePacker;
 import com.mtfm.gateway.spi.payload.PayloadDisassembler;
 import com.mtfm.gateway.spi.payload.PayloadEncoding;
@@ -51,12 +52,23 @@ public final class MqttReadInboundPlugin implements InboundPlugin {
             return InboundApplyResult.continueWith(draft);
         }
         FunctionDef function = def.get();
+        MessageHeaders headers = draft.headers();
+        if (function.awaitsReply()) {
+            headers = headers.with("mqtt.reply", "true");
+            if (function.correlationPath() != null) {
+                headers = headers.with("mqtt.correlationPath", function.correlationPath());
+            }
+            if (function.resultPath() != null) {
+                headers = headers.with("mqtt.resultPath", function.resultPath());
+            }
+        }
         PayloadEncoding encoding = function.payloadEncoding();
         if (encoding != null && encoding.isFramed()) {
             String text = rawText(draft);
             Map<String, Object> points = FramePacker.unpack(text, function.readFields(), encoding);
             return InboundApplyResult.continueWith(
-                    draft.withPayload(Attributes.from(points)).appendTrace(name(), "unpack-" + encoding.wire()));
+                    draft.withPayload(Attributes.from(points)).withHeaders(headers)
+                            .appendTrace(name(), "unpack-" + encoding.wire()));
         }
         Map<String, Object> json = draft.payload().values();
         if (json.isEmpty() || json.containsKey("text")) {
@@ -66,7 +78,7 @@ public final class MqttReadInboundPlugin implements InboundPlugin {
         Map<String, Object> points = PayloadDisassembler.disassemble(json, function.readFields());
         Attributes payload = Attributes.from(points);
         return InboundApplyResult.continueWith(
-                draft.withPayload(payload).appendTrace(name(), "disassemble"));
+                draft.withPayload(payload).withHeaders(headers).appendTrace(name(), "disassemble"));
     }
 
     private static String rawText(EnvelopeDraft draft) {

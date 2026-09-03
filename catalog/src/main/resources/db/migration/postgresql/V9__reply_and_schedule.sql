@@ -1,0 +1,12 @@
+ALTER TABLE gw_product_function ADD COLUMN IF NOT EXISTS reply_topic_slot VARCHAR(64) NULL;
+ALTER TABLE gw_product_function ADD COLUMN IF NOT EXISTS correlation_path VARCHAR(128) NULL;
+ALTER TABLE gw_product_function ADD COLUMN IF NOT EXISTS result_path VARCHAR(128) NULL;
+ALTER TABLE gw_product_function ADD COLUMN IF NOT EXISTS reply_timeout_ms INTEGER NULL;
+ALTER TABLE gw_product_function ADD COLUMN IF NOT EXISTS schedule_interval_ms BIGINT NULL;
+ALTER TABLE gw_product_function ADD COLUMN IF NOT EXISTS schedule_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+COMMENT ON COLUMN gw_product_function.reply_topic_slot IS 'MQTT 应答订阅 slot';
+COMMENT ON COLUMN gw_product_function.correlation_path IS '回包关联号字段 path';
+COMMENT ON COLUMN gw_product_function.result_path IS '回包成败字段 path';
+COMMENT ON COLUMN gw_product_function.reply_timeout_ms IS '等待设备应答毫秒';
+COMMENT ON COLUMN gw_product_function.schedule_interval_ms IS '定时下发间隔毫秒';
+COMMENT ON COLUMN gw_product_function.schedule_enabled IS '是否启用定时下发';

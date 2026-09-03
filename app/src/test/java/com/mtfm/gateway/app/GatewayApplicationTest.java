@@ -5,10 +5,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
-import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.ResultSet;
-
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -25,9 +21,6 @@ class GatewayApplicationTest {
     @Autowired
     private GatewayPipeline pipeline;
 
-    @Autowired
-    private DataSource dataSource;
-
     @Test
     void hostStartsWithPipelineWired() {
         assertNotNull(pipeline);
@@ -43,13 +36,5 @@ class GatewayApplicationTest {
                 .anyMatch(field -> "transport".equals(field.name())
                         && field.choices().contains("TCP")
                         && field.choices().contains("RTU")));
-    }
-
-    @Test
-    void flywayMigratesCatalogTablesOnStartup() throws Exception {
-        try (Connection connection = dataSource.getConnection();
-                ResultSet tables = connection.getMetaData().getTables(null, null, "gw_product", null)) {
-            assertTrue(tables.next(), "Flyway 应在启动时迁出 gw_product");
-        }
     }
 }

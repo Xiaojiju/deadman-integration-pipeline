@@ -23,6 +23,8 @@ public interface GatewayMetrics {
     String DROP_DECODE = "decode";
     /** 遥测拒绝丢弃。 */
     String DROP_TELEMETRY_REJECT = "telemetry_reject";
+    /** 定时下发因应答未完成而跳过。 */
+    String SCHEDULE_SKIP_INFLIGHT = "inflight";
 
     /** Correlate 阶段回执状态计数。 */
     default void correlateResponse(ExecutionStatus status) {
@@ -42,5 +44,9 @@ public interface GatewayMetrics {
 
     /** 出站重试计数。 */
     default void egressRetry(String channel) {
+    }
+
+    /** 定时下发跳过计数。 */
+    default void scheduleSkip(String reason) {
     }
 }

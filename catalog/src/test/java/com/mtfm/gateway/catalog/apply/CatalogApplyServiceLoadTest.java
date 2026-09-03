@@ -5,6 +5,7 @@ import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.spi.capability.FunctionExecutor;
 import com.mtfm.gateway.spi.model.Attributes;
 import com.mtfm.gateway.spi.model.DeviceEndpointBinding;
+import com.mtfm.gateway.spi.port.DeviceScheduleRegistry;
 import com.mtfm.gateway.spi.port.DriverRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,6 +19,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -37,6 +39,10 @@ class CatalogApplyServiceLoadTest {
     private FunctionExecutor mqttExecutor;
     @Mock
     private FunctionExecutor modbusExecutor;
+    @Mock
+    private ObjectProvider<DeviceScheduleRegistry> scheduleProvider;
+    @Mock
+    private DeviceScheduleRegistry scheduleRegistry;
 
     @Test
     void rejectsMixedCapabilities() {
@@ -116,5 +122,58 @@ class CatalogApplyServiceLoadTest {
         apply.reloadAll();
 
         verify(registry).register("good", "MQTT");
+    }
+
+    @Test
+    void loadReplacesScheduleAndUnloadRemoves() {
+        when(scheduleProvider.getIfAvailable()).thenReturn(scheduleRegistry);
+        CatalogApplyService apply = new CatalogApplyService(store, forms, commandPort, null, scheduleProvider);
+        apply.attach(registry);
+        when(registry.findExecutor("MQTT")).thenReturn(Optional.of(mqttExecutor));
+
+        DeviceEntity device = new DeviceEntity();
+        device.setDeviceCode("lamp-1");
+        device.setEnabled(true);
+        when(store.resolveDevice("lamp-1")).thenReturn(Optional.of(device));
+        when(store.findEndpoints("lamp-1")).thenReturn(List.of(
+                new DeviceEndpointBinding("lamp-1", "mqtt-live", "MQTT", Attributes.empty(), Attributes.empty(), true)));
+        when(store.resolveSchedules(device)).thenReturn(List.of(
+                new DeviceScheduleRegistry.ScheduledFunction("fn.poll", 5000)));
+
+        apply.load("lamp-1");
+        verify(scheduleRegistry).replace(eq("lamp-1"), eq(List.of(
+                new DeviceScheduleRegistry.ScheduledFunction("fn.poll", 5000))));
+
+        apply.unload("lamp-1");
+        verify(scheduleRegistry).remove("lamp-1");
+    }
+
+    @Test
+    void refreshSchedulesForProductOnlyTouchesLoadedDevices() {
+        when(scheduleProvider.getIfAvailable()).thenReturn(scheduleRegistry);
+        CatalogApplyService apply = new CatalogApplyService(store, forms, commandPort, null, scheduleProvider);
+        apply.attach(registry);
+
+        DeviceEntity loaded = new DeviceEntity();
+        loaded.setDeviceCode("lamp-1");
+        loaded.setProductId("p1");
+        loaded.setEnabled(true);
+        DeviceEntity idle = new DeviceEntity();
+        idle.setDeviceCode("lamp-2");
+        idle.setProductId("p1");
+        idle.setEnabled(true);
+        when(store.listDevicesByProduct("p1")).thenReturn(List.of(loaded, idle));
+        when(registry.isRegistered("lamp-1")).thenReturn(true);
+        when(registry.isRegistered("lamp-2")).thenReturn(false);
+        when(store.resolveDevice("lamp-1")).thenReturn(Optional.of(loaded));
+        when(store.resolveSchedules(loaded)).thenReturn(List.of(
+                new DeviceScheduleRegistry.ScheduledFunction("fn.poll", 2000)));
+
+        apply.refreshSchedulesForProduct("p1");
+
+        verify(scheduleRegistry).replace(eq("lamp-1"), eq(List.of(
+                new DeviceScheduleRegistry.ScheduledFunction("fn.poll", 2000))));
+        verify(scheduleRegistry, never()).replace(eq("lamp-2"), any());
+        verify(scheduleRegistry, never()).remove("lamp-2");
     }
 }

@@ -6,5 +6,9 @@ package com.mtfm.gateway.spi.port;
  * @param topic      实际订阅 topic
  * @param functionId 功能 ID
  */
-public record MqttSubscribeRoute(String topic, String functionId) {
+public record MqttSubscribeRoute(String topic, String functionId, boolean reply) {
+
+    public MqttSubscribeRoute(String topic, String functionId) {
+        this(topic, functionId, false);
+    }
 }

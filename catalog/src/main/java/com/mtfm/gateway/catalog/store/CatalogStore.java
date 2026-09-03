@@ -7,11 +7,13 @@ import com.mtfm.gateway.catalog.entity.ChannelEntity;
 import com.mtfm.gateway.catalog.entity.DeviceEndpointEntity;
 import com.mtfm.gateway.catalog.entity.DeviceEntity;
 import com.mtfm.gateway.catalog.entity.DeviceFunctionOverrideEntity;
+import com.mtfm.gateway.catalog.entity.DeviceFunctionScheduleEntity;
 import com.mtfm.gateway.catalog.entity.ProductEntity;
 import com.mtfm.gateway.catalog.entity.ProductFunctionEntity;
 import com.mtfm.gateway.catalog.json.JsonMaps;
 import com.mtfm.gateway.catalog.mapper.ChannelMapper;
 import com.mtfm.gateway.catalog.mapper.DeviceEndpointMapper;
+import com.mtfm.gateway.catalog.mapper.DeviceFunctionScheduleMapper;
 import com.mtfm.gateway.catalog.mapper.DeviceMapper;
 import com.mtfm.gateway.catalog.mapper.ProductFunctionMapper;
 import com.mtfm.gateway.catalog.mapper.ProductMapper;
@@ -28,6 +30,7 @@ import com.mtfm.gateway.spi.property.PropertyItem;
 import com.mtfm.gateway.spi.property.PropertySchemas;
 import com.mtfm.gateway.spi.property.ValueAccessType;
 import com.mtfm.gateway.spi.secret.SecretCodec;
+import com.mtfm.gateway.spi.port.DeviceScheduleRegistry;
 import com.mtfm.gateway.catalog.id.SnowflakeIds;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DuplicateKeyException;
@@ -59,6 +62,7 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
     private final ChannelMapper channels;
     private final DeviceMapper devices;
     private final DeviceEndpointMapper endpoints;
+    private final DeviceFunctionScheduleMapper schedules;
     private final CatalogPropertyRepository properties;
     private final SecretCodec secretCodec;
     private final ConcurrentHashMap<String, Object> migrateLocks = new ConcurrentHashMap<>();
@@ -69,6 +73,7 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
             ChannelMapper channels,
             DeviceMapper devices,
             DeviceEndpointMapper endpoints,
+            DeviceFunctionScheduleMapper schedules,
             CatalogPropertyRepository properties,
             ObjectProvider<SecretCodec> secretCodec) {
         this.products = products;
@@ -76,6 +81,7 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
         this.channels = channels;
         this.devices = devices;
         this.endpoints = endpoints;
+        this.schedules = schedules;
         this.properties = properties;
         this.secretCodec = secretCodec == null
                 ? SecretCodec.identity()
@@ -195,7 +201,13 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
                 bundle.writeFields(),
                 bundle.readFields(),
                 bundle.readValueOptions(),
-                PayloadEncoding.from(function.getPayloadEncoding())));
+                PayloadEncoding.from(function.getPayloadEncoding()),
+                function.getReplyTopicSlot(),
+                function.getCorrelationPath(),
+                function.getResultPath(),
+                function.getReplyTimeoutMs(),
+                function.getScheduleIntervalMs(),
+                Boolean.TRUE.equals(function.getScheduleEnabled())));
     }
 
     @Override
@@ -546,6 +558,13 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
         return devices.selectCount(new QueryWrapper<DeviceEntity>().eq("product_id", productId));
     }
 
+    public List<DeviceEntity> listDevicesByProduct(String productId) {
+        if (productId == null || productId.isBlank()) {
+            return List.of();
+        }
+        return devices.selectList(new QueryWrapper<DeviceEntity>().eq("product_id", productId));
+    }
+
     public long countEndpointsByChannel(String channelPk) {
         return endpoints.selectCount(new QueryWrapper<DeviceEndpointEntity>().eq("channel_id", channelPk));
     }
@@ -577,6 +596,9 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
             return false;
         }
         properties.deleteAllForProductFunction(function.get().getId());
+        for (DeviceEntity device : listDevicesByProduct(productId)) {
+            deleteScheduleOverride(device.getId(), functionId);
+        }
         return functions.deleteById(function.get().getId()) > 0;
     }
 
@@ -630,8 +652,64 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
             properties.deleteEndpointProperties(endpoint.getId());
         }
         properties.deleteDeviceOverrides(device.get().getId());
+        schedules.delete(new QueryWrapper<DeviceFunctionScheduleEntity>().eq("device_id", device.get().getId()));
         endpoints.delete(new QueryWrapper<DeviceEndpointEntity>().eq("device_id", device.get().getId()));
         return devices.deleteById(device.get().getId()) > 0;
+    }
+
+    public Map<String, DeviceFunctionScheduleEntity> listScheduleOverrides(String devicePk) {
+        if (devicePk == null || devicePk.isBlank()) {
+            return Map.of();
+        }
+        List<DeviceFunctionScheduleEntity> rows = schedules.selectList(
+                new QueryWrapper<DeviceFunctionScheduleEntity>().eq("device_id", devicePk));
+        Map<String, DeviceFunctionScheduleEntity> byFunction = new LinkedHashMap<>();
+        for (DeviceFunctionScheduleEntity row : rows) {
+            byFunction.put(row.getFunctionId(), row);
+        }
+        return byFunction;
+    }
+
+    public Optional<DeviceFunctionScheduleEntity> findScheduleOverride(String devicePk, String functionId) {
+        if (devicePk == null || functionId == null || functionId.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(schedules.selectOne(new QueryWrapper<DeviceFunctionScheduleEntity>()
+                .eq("device_id", devicePk)
+                .eq("function_id", functionId)));
+    }
+
+    public DeviceFunctionScheduleEntity saveScheduleOverride(DeviceFunctionScheduleEntity entity) {
+        Instant now = Instant.now();
+        if (entity.getId() == null) {
+            entity.setId(SnowflakeIds.next());
+            entity.setCreatedAt(now);
+            entity.setUpdatedAt(now);
+            schedules.insert(entity);
+            return entity;
+        }
+        entity.setUpdatedAt(now);
+        schedules.updateById(entity);
+        return entity;
+    }
+
+    public boolean deleteScheduleOverride(String devicePk, String functionId) {
+        return schedules.delete(new QueryWrapper<DeviceFunctionScheduleEntity>()
+                .eq("device_id", devicePk)
+                .eq("function_id", functionId)) > 0;
+    }
+
+    /**
+     * 合并产品定时配置与设备覆盖，得到可登记到时间轮的任务。
+     */
+    public List<DeviceScheduleRegistry.ScheduledFunction> resolveSchedules(DeviceEntity device) {
+        if (device == null) {
+            return List.of();
+        }
+        return CatalogSchedules.resolve(
+                listFunctions(device.getProductId()),
+                listScheduleOverrides(device.getId()),
+                DeviceScheduleRegistry.MIN_INTERVAL_MS);
     }
 
     private static void touch(java.util.function.Consumer<Instant> created,

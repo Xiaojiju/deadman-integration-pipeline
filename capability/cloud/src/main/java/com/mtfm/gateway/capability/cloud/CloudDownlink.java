@@ -7,10 +7,11 @@ import com.mtfm.gateway.spi.port.PipelineIngress;
 import java.util.Map;
 
 /**
- * 云下行适配器：将云端命令解码后交给 {@link PipelineIngress#accept}。
+ * 遗留云下行适配器：直接 {@code accept(COMMAND)} 会丢掉 catalog 装配的 topic hints。
  *
- * <p>北向能力不实现南向 {@link com.mtfm.gateway.spi.capability.FunctionExecutor}。
+ * <p>北向 MQTT 命令请使用 {@link NorthboundMqttIngress} + {@link NorthboundCommandPort}。
  */
+@Deprecated
 public final class CloudDownlink {
 
     private final PipelineIngress ingress;

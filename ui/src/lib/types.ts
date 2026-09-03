@@ -148,6 +148,23 @@ export type ProductFunctionEntity = {
   payloadMode?: string
   /** JSON / HEX / BINARY */
   payloadEncoding?: string
+  replyTopicSlot?: string
+  correlationPath?: string
+  resultPath?: string
+  replyTimeoutMs?: number
+  scheduleIntervalMs?: number
+  scheduleEnabled?: boolean
+}
+
+export type DeviceFunctionScheduleView = {
+  functionId: string
+  enabled: boolean
+  intervalMs?: number | null
+  productEnabled: boolean
+  productIntervalMs?: number | null
+  overridden: boolean
+  overrideEnabled?: boolean | null
+  overrideIntervalMs?: number | null
 }
 
 export type ChannelEntity = {

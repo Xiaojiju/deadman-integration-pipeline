@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { catalogApi } from "@/lib/api"
+import { catalogApi, MIN_SCHEDULE_MS } from "@/lib/api"
 import type { DeviceEntity, ProductEntity, ProductFunctionEntity, WriteFieldOption } from "@/lib/types"
 
 type FieldRow = {
@@ -91,6 +91,7 @@ function topicSlotsOf(fn: ProductFunctionEntity | undefined): Array<{ key: strin
   }
   add(fn.publishTopicSlot, "发布 Topic")
   add(fn.subscribeTopicSlot, "订阅 Topic")
+  add(fn.replyTopicSlot, "应答 Topic")
   if (fn.capabilityType === "MQTT") {
     if (!fn.publishTopicSlot?.trim() && fn.accessType?.toUpperCase() !== "READ") {
       add("default_pub", "默认发布 Topic")
@@ -163,6 +164,9 @@ export function DeviceOverrideDialog({ open, onOpenChange, device, product }: Pr
   const [functionId, setFunctionId] = useState("")
   const [fieldRows, setFieldRows] = useState<FieldRow[]>([])
   const [topicRows, setTopicRows] = useState<FieldRow[]>([])
+  const [scheduleEnabledChoice, setScheduleEnabledChoice] = useState<"inherit" | "on" | "off">("inherit")
+  const [scheduleIntervalText, setScheduleIntervalText] = useState("")
+  const [productScheduleHint, setProductScheduleHint] = useState("")
   const [loading, setLoading] = useState(false)
   const [pending, setPending] = useState(false)
 
@@ -172,12 +176,23 @@ export function DeviceOverrideDialog({ open, onOpenChange, device, product }: Pr
   )
 
   const loadOverrides = useCallback(async (code: string, fn: ProductFunctionEntity) => {
-    const [fields, topics] = await Promise.all([
+    const [fields, topics, schedule] = await Promise.all([
       catalogApi.deviceFieldOverrides(code, fn.functionId),
       catalogApi.deviceTopicOverrides(code, fn.functionId),
+      catalogApi.deviceSchedule(code, fn.functionId),
     ])
     setFieldRows(mergeFieldRows(deviceSourceFields(fn), fields))
     setTopicRows(mergeTopicRows(topicSlotsOf(fn), topics))
+    setScheduleEnabledChoice(
+      schedule.overrideEnabled == null ? "inherit" : schedule.overrideEnabled ? "on" : "off"
+    )
+    setScheduleIntervalText(
+      schedule.overrideIntervalMs != null ? String(schedule.overrideIntervalMs) : ""
+    )
+    const productInterval = schedule.productIntervalMs != null ? `${schedule.productIntervalMs} ms` : "未配置"
+    setProductScheduleHint(
+      `产品默认：${schedule.productEnabled ? "启用" : "关闭"}，间隔 ${productInterval}`
+    )
   }, [])
 
   useEffect(() => {
@@ -199,6 +214,9 @@ export function DeviceOverrideDialog({ open, onOpenChange, device, product }: Pr
     if (!open || !device?.deviceCode || !functionId) {
       setFieldRows([])
       setTopicRows([])
+      setScheduleEnabledChoice("inherit")
+      setScheduleIntervalText("")
+      setProductScheduleHint("")
       return
     }
     const fn = functions.find((item) => item.functionId === functionId)
@@ -236,8 +254,16 @@ export function DeviceOverrideDialog({ open, onOpenChange, device, product }: Pr
         }
         topicOverrides[row.key] = row.value.trim()
       }
+      const intervalMs = scheduleIntervalText.trim() === "" ? null : Number(scheduleIntervalText)
+      if (scheduleIntervalText.trim() && (!Number.isFinite(intervalMs) || (intervalMs ?? 0) < MIN_SCHEDULE_MS)) {
+        toast.error(`定时间隔不能小于 ${MIN_SCHEDULE_MS} 毫秒`)
+        return
+      }
+      const enabled =
+        scheduleEnabledChoice === "inherit" ? null : scheduleEnabledChoice === "on"
       await catalogApi.replaceDeviceFieldOverrides(device.deviceCode, functionId, fieldOverrides)
       await catalogApi.replaceDeviceTopicOverrides(device.deviceCode, functionId, topicOverrides)
+      await catalogApi.replaceDeviceSchedule(device.deviceCode, functionId, { enabled, intervalMs })
       toast.success(`${functionId} 设备参数已保存`)
       onOpenChange(false)
     } catch (error) {
@@ -251,7 +277,7 @@ export function DeviceOverrideDialog({ open, onOpenChange, device, product }: Pr
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>设备参数 · {device?.deviceCode}</DialogTitle>
           <DialogDescription>
@@ -369,6 +395,38 @@ export function DeviceOverrideDialog({ open, onOpenChange, device, product }: Pr
                 )}
               </div>
             ) : null}
+            <Field>
+              <FieldLabel>定时下发</FieldLabel>
+              <Select
+                value={scheduleEnabledChoice}
+                onValueChange={(value) => setScheduleEnabledChoice(value as "inherit" | "on" | "off")}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="继承产品" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="inherit">继承产品</SelectItem>
+                    <SelectItem value="on">本设备启用</SelectItem>
+                    <SelectItem value="off">本设备关闭</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="dev-schedule-interval">定时间隔（毫秒）</FieldLabel>
+              <Input
+                id="dev-schedule-interval"
+                type="number"
+                min={MIN_SCHEDULE_MS}
+                value={scheduleIntervalText}
+                onChange={(e) => setScheduleIntervalText(e.target.value)}
+                placeholder={`留空继承产品；最低 ${MIN_SCHEDULE_MS}`}
+              />
+              {productScheduleHint ? (
+                <p className="text-sm text-muted-foreground">{productScheduleHint}</p>
+              ) : null}
+            </Field>
           </FieldGroup>
         )}
         <DialogFooter>

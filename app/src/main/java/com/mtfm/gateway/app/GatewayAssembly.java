@@ -2,6 +2,14 @@ package com.mtfm.gateway.app;
 
 import com.mtfm.gateway.capability.cloud.CloudCapability;
 import com.mtfm.gateway.capability.cloud.CloudPublisher;
+import com.mtfm.gateway.capability.cloud.HttpWebhookPublisher;
+import com.mtfm.gateway.capability.cloud.InMemoryNorthboundMqttSession;
+import com.mtfm.gateway.capability.cloud.NorthboundCommandPort;
+import com.mtfm.gateway.capability.cloud.NorthboundMqttIngress;
+import com.mtfm.gateway.capability.cloud.NorthboundMqttPublisher;
+import com.mtfm.gateway.capability.cloud.NorthboundMqttSession;
+import com.mtfm.gateway.capability.cloud.NorthboundSink;
+import com.mtfm.gateway.capability.cloud.PahoNorthboundMqttSession;
 import com.mtfm.gateway.capability.hikvision.HikvisionCapability;
 import com.mtfm.gateway.capability.hikvision.HikvisionDriver;
 import com.mtfm.gateway.capability.hikvision.HikvisionExecutor;
@@ -26,16 +34,26 @@ import com.mtfm.gateway.capability.mqtt.device.MqttTransport;
 import com.mtfm.gateway.capability.mqtt.device.PahoMqttTransport;
 import com.mtfm.gateway.catalog.apply.CatalogApplyService;
 import com.mtfm.gateway.catalog.apply.CatalogMqttSubscribeRoutes;
+import com.mtfm.gateway.catalog.dto.DeviceCommandRequest;
 import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.plugin.struct.StructInboundPlugin;
 import com.mtfm.gateway.plugin.yaya.YayaInboundPlugin;
 import com.mtfm.gateway.runtime.GatewayPipeline;
 import com.mtfm.gateway.runtime.registry.DefaultRegistries;
+import com.mtfm.gateway.runtime.schedule.ScheduleDispatcher;
 import com.mtfm.gateway.spi.capability.Publisher;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.context.annotation.Primary;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 网关宿主装配配置：按契约顺序 register 各能力、插件与 Publisher。
@@ -45,7 +63,7 @@ import org.springframework.context.annotation.Primary;
  * <ol>
  * <li>创建各南向 Executor Bean</li>
  * <li>构建 {@link GatewayPipeline} 并 register Driver + Executor + 入站插件</li>
- * <li>register 北向 {@link CloudPublisher}（唯一 CLOUD 通道）</li>
+ * <li>register 北向 {@link CloudPublisher} Hub（CLOUD 通道，扇出 MQTT / Webhook）</li>
  * <li>{@link CatalogApplyService#attach}，最后 {@code pipeline.start()}</li>
  * </ol>
  *
@@ -57,6 +75,8 @@ import org.springframework.context.annotation.Primary;
 @Configuration
 @EnableConfigurationProperties(GatewayProperties.class)
 public class GatewayAssembly {
+
+    private static final Logger LOG = LoggerFactory.getLogger(GatewayAssembly.class);
 
     @Bean
     public LoopbackExecutor loopbackExecutor() {
@@ -97,10 +117,59 @@ public class GatewayAssembly {
         return new HikvisionExecutor();
     }
 
-    @Bean
+    @Bean(destroyMethod = "close")
+    public NorthboundMqttSession northboundMqttSession(GatewayProperties gatewayProperties) {
+        GatewayProperties.NorthboundMqtt mqtt = gatewayProperties.getNorthbound().getMqtt();
+        if (mqtt.ready() && !"memory".equalsIgnoreCase(mqtt.getTransport())) {
+            return new PahoNorthboundMqttSession(
+                    mqtt.getUrl(), mqtt.getClientId(), mqtt.getUsername(), mqtt.getPassword());
+        }
+        return new InMemoryNorthboundMqttSession();
+    }
+
+    @Bean(destroyMethod = "close")
     @Primary
-    public Publisher cloudPublisher() {
-        return new CloudPublisher();
+    public CloudPublisher cloudPublisher(
+            GatewayProperties gatewayProperties, NorthboundMqttSession northboundMqttSession) {
+        List<NorthboundSink> sinks = new ArrayList<>();
+        GatewayProperties.NorthboundMqtt mqtt = gatewayProperties.getNorthbound().getMqtt();
+        if (mqtt.ready()) {
+            sinks.add(new NorthboundMqttPublisher(
+                    northboundMqttSession, mqtt.getResponseTopic(), mqtt.getTelemetryTopic()));
+        }
+        GatewayProperties.NorthboundHttp http = gatewayProperties.getNorthbound().getHttp();
+        if (http.getWebhookUrl() != null && !http.getWebhookUrl().isBlank()) {
+            sinks.add(new HttpWebhookPublisher(
+                    http.getWebhookUrl(),
+                    http.getMaxAttempts(),
+                    Duration.ofMillis(http.getTimeoutMs())));
+        }
+        return new CloudPublisher(sinks);
+    }
+
+    /**
+     * 北向 MQTT 命令入站。必须在流水线 attach 之后启动，走 catalog invoke。
+     */
+    @Bean(initMethod = "start")
+    @DependsOn("gatewayPipeline")
+    public NorthboundMqttIngress northboundMqttIngress(
+            GatewayProperties gatewayProperties,
+            NorthboundMqttSession northboundMqttSession,
+            CatalogApplyService applyService) {
+        if (!gatewayProperties.getNorthbound().getMqtt().ready()) {
+            return new NorthboundMqttIngress(null, null, null);
+        }
+        NorthboundCommandPort port = command -> applyService.invoke(
+                        command.deviceId(),
+                        new DeviceCommandRequest(command.functionId(), command.arguments(), command.requestId()))
+                .whenComplete((result, error) -> {
+                    if (error != null) {
+                        LOG.warn("北向 MQTT 命令提交失败 deviceId={} functionId={}: {}",
+                                command.deviceId(), command.functionId(), error.getMessage());
+                    }
+                });
+        return new NorthboundMqttIngress(
+                northboundMqttSession, port, gatewayProperties.getNorthbound().getMqtt().getCommandTopic());
     }
 
     /**
@@ -135,6 +204,28 @@ public class GatewayAssembly {
         applyService.attach(gatewayRegistries);
         pipeline.start();
         return pipeline;
+    }
+
+    /**
+     * 单时间轮定时下发。到期只走 catalog invoke，来源 {@code scheduler}。
+     */
+    @Bean(initMethod = "start", destroyMethod = "close")
+    @DependsOn("gatewayPipeline")
+    public ScheduleDispatcher scheduleDispatcher(CatalogApplyService applyService, GatewayPipeline pipeline) {
+        ScheduleDispatcher dispatcher = new ScheduleDispatcher();
+        dispatcher.setOccupancy(pipeline);
+        dispatcher.setMetrics(pipeline.stats());
+        dispatcher.setHandler((deviceId, functionId) -> {
+            if (!applyService.isLoaded(deviceId)) {
+                return;
+            }
+            try {
+                applyService.invoke(deviceId, new DeviceCommandRequest(functionId, Map.of(), null, "scheduler"));
+            } catch (RuntimeException ex) {
+                LOG.warn("定时下发提交失败 deviceId={} functionId={}: {}", deviceId, functionId, ex.getMessage());
+            }
+        });
+        return dispatcher;
     }
 
     /**

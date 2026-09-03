@@ -83,12 +83,21 @@ public final class PayloadDefinitionResolver {
             Definition definition,
             Map<String, Object> caller,
             Map<String, Object> deviceFieldOverrides) {
+        return assemble(definition, caller, deviceFieldOverrides, null);
+    }
+
+    public static Map<String, Object> assemble(
+            Definition definition,
+            Map<String, Object> caller,
+            Map<String, Object> deviceFieldOverrides,
+            String requestId) {
         Map<String, Object> assembled = CommandAssembler.assemble(new CommandAssembler.Request(
                 definition.payloadMode(),
                 definition.structRoot(),
                 definition.valueMappings(),
                 caller,
-                deviceFieldOverrides));
+                deviceFieldOverrides,
+                requestId));
         return FramePacker.pack(definition.fields(), assembled, definition.payloadEncoding());
     }
 

@@ -23,6 +23,12 @@ import java.util.List;
  * @param readFields         READ 功能字段
  * @param readValueOptions   读值映射
  * @param payloadEncoding    南向载荷编码，默认 JSON
+ * @param replyTopicSlot     MQTT 应答订阅 slot，空则不等待设备回包
+ * @param correlationPath    回包中关联号字段 path
+ * @param resultPath         回包中成败字段 path，空则匹配即成功
+ * @param replyTimeoutMs     等待设备应答毫秒数
+ * @param scheduleIntervalMs 定时下发间隔（阶段 C）
+ * @param scheduleEnabled    是否启用定时下发（阶段 C）
  */
 public record FunctionDef(
         String functionId,
@@ -35,7 +41,13 @@ public record FunctionDef(
         List<WriteFieldOption> writeFields,
         List<WriteFieldOption> readFields,
         List<ValueOption> readValueOptions,
-        PayloadEncoding payloadEncoding
+        PayloadEncoding payloadEncoding,
+        String replyTopicSlot,
+        String correlationPath,
+        String resultPath,
+        Integer replyTimeoutMs,
+        Long scheduleIntervalMs,
+        boolean scheduleEnabled
 ) {
 
     public FunctionDef {
@@ -52,6 +64,27 @@ public record FunctionDef(
         readFields = readFields == null ? List.of() : List.copyOf(readFields);
         readValueOptions = readValueOptions == null ? List.of() : List.copyOf(readValueOptions);
         payloadEncoding = payloadEncoding == null ? PayloadEncoding.JSON : payloadEncoding;
+        replyTopicSlot = blankToNull(replyTopicSlot);
+        correlationPath = blankToNull(correlationPath);
+        resultPath = blankToNull(resultPath);
+    }
+
+    /** 兼容旧 11 参构造（无应答/调度字段）。 */
+    public FunctionDef(
+            String functionId,
+            String accessType,
+            int accessPermission,
+            Option optionSchema,
+            List<PropertyItem> properties,
+            ValueAccessType writeAccessType,
+            List<ValueOption> writeValueOptions,
+            List<WriteFieldOption> writeFields,
+            List<WriteFieldOption> readFields,
+            List<ValueOption> readValueOptions,
+            PayloadEncoding payloadEncoding) {
+        this(functionId, accessType, accessPermission, optionSchema, properties, writeAccessType,
+                writeValueOptions, writeFields, readFields, readValueOptions, payloadEncoding,
+                null, null, null, null, null, false);
     }
 
     /** 兼容旧 10 参构造（无 payloadEncoding）。 */
@@ -94,5 +127,13 @@ public record FunctionDef(
     /** 仅含 functionId 与 accessType 的简化构造。 */
     public FunctionDef(String functionId, String accessType) {
         this(functionId, accessType, AccessPermission.WRITE.code(), null);
+    }
+
+    public boolean awaitsReply() {
+        return replyTopicSlot != null;
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 }

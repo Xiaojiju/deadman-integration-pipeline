@@ -35,8 +35,9 @@ public final class PayloadDisassembler {
         return points.isEmpty() ? Map.copyOf(source) : Map.copyOf(points);
     }
 
+    /** 按点分 path 取值，支持一层 Map 嵌套。 */
     @SuppressWarnings("unchecked")
-    private static Object extractPath(Map<String, Object> root, String path) {
+    public static Object extractPath(Map<String, ?> root, String path) {
         if (path == null || path.isBlank()) {
             return null;
         }

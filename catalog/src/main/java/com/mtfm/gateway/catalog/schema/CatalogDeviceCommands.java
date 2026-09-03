@@ -1,17 +1,21 @@
 package com.mtfm.gateway.catalog.schema;
 
 import com.mtfm.gateway.catalog.dto.DeviceEndpointWriteRequest;
+import com.mtfm.gateway.catalog.dto.DeviceFunctionScheduleView;
+import com.mtfm.gateway.catalog.dto.DeviceFunctionScheduleWriteRequest;
 import com.mtfm.gateway.catalog.dto.DeviceRegisterRequest;
 import com.mtfm.gateway.catalog.dto.DeviceUpdateRequest;
 import com.mtfm.gateway.catalog.dto.DeviceWriteRequest;
 import com.mtfm.gateway.catalog.entity.ChannelEntity;
 import com.mtfm.gateway.catalog.entity.DeviceEndpointEntity;
 import com.mtfm.gateway.catalog.entity.DeviceEntity;
+import com.mtfm.gateway.catalog.entity.DeviceFunctionScheduleEntity;
 import com.mtfm.gateway.catalog.entity.ProductFunctionEntity;
 import com.mtfm.gateway.catalog.json.JsonMaps;
 import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.spi.model.CapabilityDescriptor;
 import com.mtfm.gateway.spi.model.DeviceEndpointBinding;
+import com.mtfm.gateway.spi.port.DeviceScheduleRegistry;
 import com.mtfm.gateway.spi.property.PropertyItem;
 import com.mtfm.gateway.spi.property.PropertySchemas;
 
@@ -172,5 +176,65 @@ final class CatalogDeviceCommands {
         }
         support.validateTopicOverrides(function, endpoint, safe);
         store.properties().replaceDeviceTopicOverrides(device.getId(), functionId, safe);
+    }
+
+    DeviceFunctionScheduleView deviceSchedule(String deviceCode, String functionId) {
+        DeviceEntity device = support.requireDevice(deviceCode);
+        ProductFunctionEntity function = requireProductFunction(device, functionId);
+        DeviceFunctionScheduleEntity override = store.findScheduleOverride(device.getId(), functionId).orElse(null);
+        return toScheduleView(function, override);
+    }
+
+    DeviceFunctionScheduleView replaceDeviceSchedule(
+            String deviceCode, String functionId, DeviceFunctionScheduleWriteRequest request) {
+        DeviceEntity device = support.requireDevice(deviceCode);
+        ProductFunctionEntity function = requireProductFunction(device, functionId);
+        Boolean enabled = request == null ? null : request.enabled();
+        Long intervalMs = request == null ? null : request.intervalMs();
+        if (intervalMs != null && intervalMs < DeviceScheduleRegistry.MIN_INTERVAL_MS) {
+            throw new IllegalArgumentException("intervalMs 不能小于 " + DeviceScheduleRegistry.MIN_INTERVAL_MS);
+        }
+        if (enabled == null && intervalMs == null) {
+            store.deleteScheduleOverride(device.getId(), functionId);
+            return toScheduleView(function, null);
+        }
+        DeviceFunctionScheduleEntity entity = store.findScheduleOverride(device.getId(), functionId)
+                .orElseGet(() -> {
+                    DeviceFunctionScheduleEntity created = new DeviceFunctionScheduleEntity();
+                    created.setDeviceId(device.getId());
+                    created.setFunctionId(functionId);
+                    return created;
+                });
+        entity.setEnabled(enabled);
+        entity.setIntervalMs(intervalMs);
+        store.saveScheduleOverride(entity);
+        return toScheduleView(function, entity);
+    }
+
+    private ProductFunctionEntity requireProductFunction(DeviceEntity device, String functionId) {
+        return store.findFunction(device.getProductId(), functionId)
+                .orElseThrow(() -> new IllegalArgumentException("功能不存在: " + functionId));
+    }
+
+    private static DeviceFunctionScheduleView toScheduleView(
+            ProductFunctionEntity function, DeviceFunctionScheduleEntity override) {
+        boolean productEnabled = Boolean.TRUE.equals(function.getScheduleEnabled());
+        Long productInterval = function.getScheduleIntervalMs();
+        boolean overridden = override != null;
+        boolean enabled = overridden && override.getEnabled() != null
+                ? Boolean.TRUE.equals(override.getEnabled())
+                : productEnabled;
+        Long interval = overridden && override.getIntervalMs() != null
+                ? override.getIntervalMs()
+                : productInterval;
+        return new DeviceFunctionScheduleView(
+                function.getFunctionId(),
+                enabled,
+                interval,
+                productEnabled,
+                productInterval,
+                overridden,
+                overridden ? override.getEnabled() : null,
+                overridden ? override.getIntervalMs() : null);
     }
 }

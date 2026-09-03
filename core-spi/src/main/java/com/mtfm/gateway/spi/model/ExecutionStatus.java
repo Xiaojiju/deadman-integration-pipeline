@@ -6,6 +6,8 @@ package com.mtfm.gateway.spi.model;
 public enum ExecutionStatus {
     /** 执行成功。 */
     SUCCESS,
+    /** 南向已送出，等待设备应答。 */
+    ACCEPTED,
     /** 执行失败。 */
     FAILED,
     /** 执行超时。 */

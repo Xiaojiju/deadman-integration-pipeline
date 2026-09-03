@@ -23,6 +23,12 @@ import java.util.List;
  * @param description       功能说明
  * @param payloadMode       VALUE / STRUCT
  * @param payloadEncoding   JSON / HEX / BINARY
+ * @param replyTopicSlot    MQTT 应答订阅 slot
+ * @param correlationPath   回包关联号字段
+ * @param resultPath        回包成败字段
+ * @param replyTimeoutMs    等待应答毫秒
+ * @param scheduleIntervalMs 定时下发间隔毫秒
+ * @param scheduleEnabled   是否启用定时下发
  */
 public record ProductFunctionWriteRequest(
         String functionId,
@@ -40,5 +46,34 @@ public record ProductFunctionWriteRequest(
         String publishTopicSlot,
         String subscribeTopicSlot,
         String payloadMode,
-        String payloadEncoding) {
+        String payloadEncoding,
+        String replyTopicSlot,
+        String correlationPath,
+        String resultPath,
+        Integer replyTimeoutMs,
+        Long scheduleIntervalMs,
+        Boolean scheduleEnabled) {
+
+    public ProductFunctionWriteRequest(
+            String functionId,
+            String accessType,
+            Integer accessPermission,
+            String capabilityType,
+            String writeAccessType,
+            List<PropertyItem> properties,
+            List<ValueOption> writeValueOptions,
+            List<WriteFieldOption> writeFields,
+            List<WriteFieldOption> readFields,
+            List<ValueOption> readValueOptions,
+            Integer sortIndex,
+            String description,
+            String publishTopicSlot,
+            String subscribeTopicSlot,
+            String payloadMode,
+            String payloadEncoding) {
+        this(functionId, accessType, accessPermission, capabilityType, writeAccessType, properties,
+                writeValueOptions, writeFields, readFields, readValueOptions, sortIndex, description,
+                publishTopicSlot, subscribeTopicSlot, payloadMode, payloadEncoding,
+                null, null, null, null, null, null);
+    }
 }

@@ -13,6 +13,7 @@ import com.mtfm.gateway.spi.property.PropertySchemas;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 将目录配置装配为运行时 {@link FunctionCommand}。
@@ -39,6 +40,9 @@ final class CatalogCommandFactory {
         CatalogFormSupport.requireFunctionPermission(function);
         DeviceEndpointBinding endpoint = support.requireEndpointForFunction(device, function);
 
+        String requestId = request.requestId() == null || request.requestId().isBlank()
+                ? UUID.randomUUID().toString()
+                : request.requestId().trim();
         Map<String, Object> caller = request.arguments() == null ? Map.of() : request.arguments();
 
         PayloadDefinitionResolver.Definition definition = PayloadDefinitionResolver.resolve(function,
@@ -51,10 +55,14 @@ final class CatalogCommandFactory {
         deviceFieldOverrides.putAll(pathOverrides);
         support.validateFieldOverrides(function, deviceFieldOverrides);
 
-        Map<String, Object> payload = PayloadDefinitionResolver.assemble(definition, caller, deviceFieldOverrides);
+        Map<String, Object> payload = PayloadDefinitionResolver.assemble(
+                definition, caller, deviceFieldOverrides, requestId);
         support.validateCommandPayload(function, payload);
 
         Map<String, Object> deliveryHints = new LinkedHashMap<>();
+        if (request.source() != null && !request.source().isBlank()) {
+            deliveryHints.put("source", request.source().trim());
+        }
         if (function.getAccessType() != null && !function.getAccessType().isBlank()) {
             deliveryHints.put("accessType", function.getAccessType());
         }
@@ -77,12 +85,37 @@ final class CatalogCommandFactory {
                     deliveryHints.put(TopicRouteResolver.MQTT_SUBSCRIBE_TOPIC_HINT, resolved.subscribeTopic());
                 }
             }
+            putReplyHints(deliveryHints, function, catalog.withOverrides(topicOverrides));
         }
 
         return FunctionCommand.of(
+                requestId,
                 device.getDeviceCode(),
                 function.getFunctionId(),
                 payload,
                 deliveryHints);
+    }
+
+    private static void putReplyHints(
+            Map<String, Object> deliveryHints, ProductFunctionEntity function, TopicCatalog catalog) {
+        String replySlot = function.getReplyTopicSlot();
+        if (replySlot == null || replySlot.isBlank()) {
+            return;
+        }
+        try {
+            String replyTopic = catalog.resolveSubscribe(replySlot);
+            deliveryHints.put(TopicRouteResolver.MQTT_REPLY_TOPIC_HINT, replyTopic);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("无法解析应答 topic slot: " + replySlot, ex);
+        }
+        if (function.getCorrelationPath() != null && !function.getCorrelationPath().isBlank()) {
+            deliveryHints.put(TopicRouteResolver.MQTT_CORRELATION_PATH_HINT, function.getCorrelationPath().trim());
+        }
+        if (function.getResultPath() != null && !function.getResultPath().isBlank()) {
+            deliveryHints.put(TopicRouteResolver.MQTT_RESULT_PATH_HINT, function.getResultPath().trim());
+        }
+        if (function.getReplyTimeoutMs() != null && function.getReplyTimeoutMs() > 0) {
+            deliveryHints.put(TopicRouteResolver.MQTT_REPLY_TIMEOUT_MS_HINT, function.getReplyTimeoutMs());
+        }
     }
 }

@@ -53,10 +53,19 @@ class FieldValueGeneratorsTest {
     }
 
     @Test
+    void requestIdUsesProvidedValue() {
+        assertEquals("req-1", FieldValueGenerators.generate("request_id", "string", "req-1"));
+        Object generated = FieldValueGenerators.generate("request_id", "string", null);
+        assertInstanceOf(String.class, generated);
+        assertFalse(((String) generated).isBlank());
+    }
+
+    @Test
     void platformGeneratedDetection() {
         assertTrue(FieldValueGenerators.isPlatformGenerated("random_alnum_32"));
         assertTrue(FieldValueGenerators.isPlatformGenerated("timestamp_millis"));
         assertTrue(FieldValueGenerators.isPlatformGenerated("timestamp_seconds"));
+        assertTrue(FieldValueGenerators.isPlatformGenerated("request_id"));
         assertFalse(FieldValueGenerators.isPlatformGenerated(null));
         assertFalse(FieldValueGenerators.isPlatformGenerated(""));
         assertFalse(FieldValueGenerators.isPlatformGenerated("none"));

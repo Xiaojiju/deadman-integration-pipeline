@@ -41,10 +41,14 @@ public class CommandController {
         }
         return applyService.invoke(request.deviceId(),
                 new DeviceCommandRequest(request.functionId(),
-                        request.arguments() == null ? Map.of() : request.arguments()));
+                        request.arguments() == null ? Map.of() : request.arguments(),
+                        request.requestId()));
     }
 
     /** HTTP 命令请求体。 */
-    public record CommandRequest(String deviceId, String functionId, Map<String, Object> arguments) {
+    public record CommandRequest(String deviceId, String functionId, Map<String, Object> arguments, String requestId) {
+        public CommandRequest(String deviceId, String functionId, Map<String, Object> arguments) {
+            this(deviceId, functionId, arguments, null);
+        }
     }
 }

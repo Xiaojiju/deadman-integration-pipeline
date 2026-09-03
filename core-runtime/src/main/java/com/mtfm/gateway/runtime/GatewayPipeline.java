@@ -7,12 +7,15 @@ import com.mtfm.gateway.runtime.registry.DefaultRegistries;
 import com.mtfm.gateway.runtime.seal.DefaultEnvelopeSealer;
 import com.mtfm.gateway.runtime.stage.PipelineEngine;
 import com.mtfm.gateway.runtime.stage.PipelineEngine.NormalizeOutcome;
+import com.mtfm.gateway.runtime.reply.ReplyBinder;
+import com.mtfm.gateway.runtime.reply.ReplyWaiter;
 import com.mtfm.gateway.spi.capability.Driver;
 import com.mtfm.gateway.spi.capability.FunctionExecutor;
 import com.mtfm.gateway.spi.capability.Publisher;
 import com.mtfm.gateway.spi.catalog.FunctionCatalog;
 import com.mtfm.gateway.spi.exception.DecodeException;
 import com.mtfm.gateway.spi.metrics.GatewayMetrics;
+import com.mtfm.gateway.spi.model.Attributes;
 import com.mtfm.gateway.spi.model.CapabilityDescriptor;
 import com.mtfm.gateway.spi.model.Envelope;
 import com.mtfm.gateway.spi.model.EnvelopeDraft;
@@ -25,11 +28,13 @@ import com.mtfm.gateway.spi.model.OutboundDraft;
 import com.mtfm.gateway.spi.model.OutboundMessage;
 import com.mtfm.gateway.spi.model.PublishResult;
 import com.mtfm.gateway.spi.model.RawInbound;
+import com.mtfm.gateway.spi.payload.TopicRouteResolver;
 import com.mtfm.gateway.spi.plugin.InboundPlugin;
 import com.mtfm.gateway.spi.plugin.OutboundPlugin;
 import com.mtfm.gateway.spi.port.EnvelopeSealer;
 import com.mtfm.gateway.spi.port.PipelineCommandPort;
 import com.mtfm.gateway.spi.port.PipelineIngress;
+import com.mtfm.gateway.spi.port.ReplyOccupancy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -84,13 +89,16 @@ import java.util.concurrent.atomic.AtomicInteger;
  * @see GatewaySettings
  * @see DefaultRegistries
  */
-public final class GatewayPipeline implements PipelineIngress, PipelineCommandPort, AutoCloseable {
+public final class GatewayPipeline implements PipelineIngress, PipelineCommandPort, ReplyOccupancy, AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(GatewayPipeline.class);
 
     private final DefaultRegistries registries;
     private final GatewaySettings settings;
     private final PipelineEngine engine;
+    private final FunctionCatalog functionCatalog;
+    private final ReplyWaiter replyWaiter;
+    private final ReplyBinder replyBinder;
     private final CountingGatewayMetrics counters;
     private final GatewayMetrics metrics;
     private final AtomicBoolean started = new AtomicBoolean(false);
@@ -102,6 +110,7 @@ public final class GatewayPipeline implements PipelineIngress, PipelineCommandPo
     private final DropOldestQueue<EgressWork> egressNormal;
     private final ConcurrentHashMap<String, CompletableFuture<ExecutionResult>> inflight = new ConcurrentHashMap<>();
     private final AtomicInteger pendingEgress = new AtomicInteger();
+    private final AtomicInteger pendingIngress = new AtomicInteger();
     private DeviceSerialScheduler scheduler;
     private ExecutorService ingressPool;
     private ExecutorService egressPool;
@@ -119,9 +128,12 @@ public final class GatewayPipeline implements PipelineIngress, PipelineCommandPo
             EnvelopeSealer sealer, CountingGatewayMetrics counters, DefaultRegistries registries) {
         this.registries = registries == null ? new DefaultRegistries() : registries;
         this.settings = settings;
+        this.functionCatalog = functionCatalog;
         this.counters = counters;
         this.metrics = counters;
         this.engine = new PipelineEngine(this.registries, functionCatalog, sealer);
+        this.replyWaiter = new ReplyWaiter(4096, 64, this::onReplyTimeout);
+        this.replyBinder = new ReplyBinder(functionCatalog, this.replyWaiter);
         this.commandIngress = new ArrayBlockingQueue<>(settings.ingressCommandCapacity());
         this.telemetryIngress = new DropOldestQueue<>(settings.ingressTelemetryCapacity());
         this.rawIngress = new ArrayBlockingQueue<>(settings.ingressRawCapacity());
@@ -143,6 +155,7 @@ public final class GatewayPipeline implements PipelineIngress, PipelineCommandPo
         }
         this.scheduler = new DeviceSerialScheduler(
                 settings.executeWorkers(), settings.executeQueueCapacity(), settings.maxDeviceSlots());
+        this.replyWaiter.start();
         this.ingressPool = Executors.newFixedThreadPool(
                 settings.ingressWorkers(), DeviceSerialScheduler.namedFactory("gateway-ingress"));
         this.egressPool = Executors.newFixedThreadPool(
@@ -160,6 +173,7 @@ public final class GatewayPipeline implements PipelineIngress, PipelineCommandPo
             return;
         }
         completeAll(Failure.pipelineStopped());
+        replyWaiter.close();
         if (scheduler != null) {
             scheduler.shutdown();
             try {
@@ -185,10 +199,14 @@ public final class GatewayPipeline implements PipelineIngress, PipelineCommandPo
         if (stopped.get() || draft == null) {
             return false;
         }
-        IngressWork work = new IngressWork(draft, new CompletableFuture<>());
+        IngressWork work = new IngressWork(draft, new CompletableFuture<>(), null);
         if (draft.kind() == EnvelopeKind.TELEMETRY) {
+            pendingIngress.incrementAndGet();
             List<IngressWork> dropped = telemetryIngress.offerDropOldest(work);
-            dropped.forEach(item -> metrics.egressDrop(GatewayMetrics.DROP_TELEMETRY_INGRESS));
+            dropped.forEach(item -> {
+                pendingIngress.decrementAndGet();
+                metrics.egressDrop(GatewayMetrics.DROP_TELEMETRY_INGRESS);
+            });
             return true;
         }
         try {
@@ -212,7 +230,11 @@ public final class GatewayPipeline implements PipelineIngress, PipelineCommandPo
             return false;
         }
         try {
-            return rawIngress.offer(new RawWork(raw), settings.commandOfferTimeout().toMillis(), TimeUnit.MILLISECONDS);
+            boolean offered = rawIngress.offer(new RawWork(raw), settings.commandOfferTimeout().toMillis(), TimeUnit.MILLISECONDS);
+            if (offered) {
+                pendingIngress.incrementAndGet();
+            }
+            return offered;
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             return false;
@@ -236,7 +258,7 @@ public final class GatewayPipeline implements PipelineIngress, PipelineCommandPo
                 .payload(command.arguments())
                 .deadlineAt(command.deadlineAt())
                 .build();
-        IngressWork work = new IngressWork(draft, future);
+        IngressWork work = new IngressWork(draft, future, command);
         remember(command.requestId(), future);
         try {
             boolean offered = commandIngress.offer(work, settings.commandOfferTimeout().toMillis(), TimeUnit.MILLISECONDS);
@@ -255,7 +277,7 @@ public final class GatewayPipeline implements PipelineIngress, PipelineCommandPo
         while (Instant.now().isBefore(deadline)) {
             if (inflight.isEmpty() && commandIngress.isEmpty() && rawIngress.isEmpty()
                     && egressHigh.isEmpty() && telemetryIngress.size() == 0 && egressNormal.size() == 0
-                    && pendingEgress.get() == 0) {
+                    && pendingEgress.get() == 0 && pendingIngress.get() == 0) {
                 return true;
             }
             try {
@@ -270,6 +292,11 @@ public final class GatewayPipeline implements PipelineIngress, PipelineCommandPo
 
     public CountingGatewayMetrics stats() {
         return counters;
+    }
+
+    @Override
+    public boolean awaiting(String deviceId, String functionId) {
+        return replyWaiter.awaiting(deviceId, functionId);
     }
 
     public void registerDriver(Driver driver) {
@@ -337,7 +364,11 @@ public final class GatewayPipeline implements PipelineIngress, PipelineCommandPo
                 }
                 IngressWork telemetry = telemetryIngress.poll();
                 if (telemetry != null) {
-                    handleDraft(telemetry);
+                    try {
+                        handleDraft(telemetry);
+                    } finally {
+                        pendingIngress.decrementAndGet();
+                    }
                 }
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
@@ -353,18 +384,22 @@ public final class GatewayPipeline implements PipelineIngress, PipelineCommandPo
         if (rawWork == null) {
             return;
         }
-        RawInbound raw = rawWork.raw();
-        Optional<Driver> driver = registries.findDriver(raw.capabilityType());
-        if (driver.isEmpty()) {
-            metrics.egressDrop(GatewayMetrics.DROP_DECODE);
-            return;
-        }
         try {
-            EnvelopeDraft draft = driver.get().decode(raw);
-            accept(draft);
-        } catch (DecodeException ex) {
-            metrics.egressDrop(GatewayMetrics.DROP_DECODE);
-            LOG.warn("解码失败: {}", ex.getMessage());
+            RawInbound raw = rawWork.raw();
+            Optional<Driver> driver = registries.findDriver(raw.capabilityType());
+            if (driver.isEmpty()) {
+                metrics.egressDrop(GatewayMetrics.DROP_DECODE);
+                return;
+            }
+            try {
+                EnvelopeDraft draft = driver.get().decode(raw);
+                accept(draft);
+            } catch (DecodeException ex) {
+                metrics.egressDrop(GatewayMetrics.DROP_DECODE);
+                LOG.warn("解码失败: {}", ex.getMessage());
+            }
+        } finally {
+            pendingIngress.decrementAndGet();
         }
     }
 
@@ -393,22 +428,39 @@ public final class GatewayPipeline implements PipelineIngress, PipelineCommandPo
         }
         Envelope sealed = outcome.envelope();
         if (sealed.kind() == EnvelopeKind.TELEMETRY) {
-            offerCorrelated(engine.correlateTelemetry(sealed));
+            handleTelemetry(sealed);
             return;
         }
-        FunctionCommand command = FunctionCommand.from(sealed);
+        FunctionCommand command = restoreCommand(work, sealed);
         if (command.deadlineAt() != null && Instant.now().isAfter(command.deadlineAt())) {
             ExecutionResult timeout = ExecutionResult.timeout(command, Failure.timeout("core", "已超过 deadlineAt"));
             offerCorrelated(engine.correlate(timeout));
             complete(work, timeout);
             return;
         }
+        boolean awaitingReply = awaitsReply(command);
+        if (awaitingReply && !registerReply(command)) {
+            ExecutionResult rejected = ExecutionResult.rejected(command, Failure.replyWaiterFull(command.deviceId()));
+            offerCorrelated(engine.correlate(rejected));
+            complete(work, rejected);
+            return;
+        }
         boolean enqueued = scheduler.execute(command.deviceId(), () -> {
             ExecutionResult result = engine.execute(command);
+            if (awaitingReply && result.status() == com.mtfm.gateway.spi.model.ExecutionStatus.ACCEPTED) {
+                complete(work, result);
+                return;
+            }
+            if (awaitingReply) {
+                replyWaiter.cancel(command.deviceId(), correlationValue(command));
+            }
             offerCorrelated(engine.correlate(result));
             complete(work, result);
         });
         if (!enqueued) {
+            if (awaitingReply) {
+                replyWaiter.cancel(command.deviceId(), correlationValue(command));
+            }
             Failure failure = scheduler.deviceSlots() >= settings.maxDeviceSlots()
                     ? Failure.deviceSlotExhausted(command.deviceId())
                     : Failure.deviceQueueOverflow(command.deviceId());
@@ -416,6 +468,125 @@ public final class GatewayPipeline implements PipelineIngress, PipelineCommandPo
             offerCorrelated(engine.correlate(rejected));
             complete(work, rejected);
         }
+    }
+
+    private void handleTelemetry(Envelope sealed) {
+        Optional<ExecutionResult> matched = replyBinder.bind(sealed);
+        if (matched.isPresent()) {
+            offerCorrelated(engine.correlate(matched.get()));
+            return;
+        }
+        if (replyBinder.replyFrame(sealed)) {
+            Optional<String> listenId = replyBinder.listenFunctionId(sealed);
+            if (listenId.isEmpty() && functionCatalog != null) {
+                listenId = functionCatalog.find(sealed.deviceId(), sealed.functionId())
+                        .filter(def -> "READ".equalsIgnoreCase(def.accessType()))
+                        .map(def -> sealed.functionId());
+            }
+            if (listenId.isPresent()) {
+                String functionId = listenId.get();
+                Envelope telemetry = functionId.equals(sealed.functionId())
+                        ? sealed
+                        : new Envelope(
+                                sealed.envelopeId(),
+                                sealed.requestId(),
+                                sealed.direction(),
+                                sealed.kind(),
+                                sealed.deviceId(),
+                                functionId,
+                                sealed.capabilityType(),
+                                sealed.payload(),
+                                sealed.headers(),
+                                sealed.trace(),
+                                sealed.error(),
+                                sealed.createdAt(),
+                                sealed.deadlineAt());
+                offerCorrelated(engine.correlateTelemetry(telemetry));
+                return;
+            }
+            LOG.info("未匹配应答已丢弃 deviceId={} functionId={} topic={}",
+                    sealed.deviceId(), sealed.functionId(),
+                    sealed.headers().get("topic").orElse(""));
+            metrics.egressDrop(GatewayMetrics.DROP_TELEMETRY_REJECT);
+            return;
+        }
+        offerCorrelated(engine.correlateTelemetry(sealed));
+    }
+
+    private FunctionCommand restoreCommand(IngressWork work, Envelope sealed) {
+        if (work.command() == null) {
+            return FunctionCommand.from(sealed);
+        }
+        FunctionCommand original = work.command();
+        return new FunctionCommand(
+                sealed.requestId() != null ? sealed.requestId() : original.requestId(),
+                sealed.deviceId(),
+                sealed.functionId(),
+                sealed.capabilityType() != null ? sealed.capabilityType() : original.capabilityType(),
+                sealed.payload(),
+                original.deliveryHints(),
+                sealed.deadlineAt() != null ? sealed.deadlineAt() : original.deadlineAt());
+    }
+
+    private boolean awaitsReply(FunctionCommand command) {
+        return command.deliveryHints().get(TopicRouteResolver.MQTT_REPLY_TOPIC_HINT)
+                .map(String::valueOf)
+                .filter(value -> !value.isBlank())
+                .isPresent();
+    }
+
+    private boolean registerReply(FunctionCommand command) {
+        String corr = correlationValue(command);
+        if (corr == null || corr.isBlank()) {
+            return false;
+        }
+        Duration timeout = replyTimeout(command);
+        String resultPath = command.deliveryHints().get(TopicRouteResolver.MQTT_RESULT_PATH_HINT)
+                .map(String::valueOf)
+                .orElse(null);
+        return replyWaiter.tryRegister(new ReplyWaiter.Pending(
+                command.requestId() == null ? corr : command.requestId(),
+                command.deviceId(),
+                command.functionId(),
+                corr,
+                resultPath,
+                Instant.now().plus(timeout)));
+    }
+
+    private static String correlationValue(FunctionCommand command) {
+        if (command.requestId() != null && !command.requestId().isBlank()) {
+            return command.requestId();
+        }
+        return null;
+    }
+
+    private static Duration replyTimeout(FunctionCommand command) {
+        return command.deliveryHints().get(TopicRouteResolver.MQTT_REPLY_TIMEOUT_MS_HINT)
+                .map(value -> {
+                    try {
+                        long ms = Long.parseLong(String.valueOf(value));
+                        return ms > 0 ? Duration.ofMillis(ms) : Duration.ofSeconds(8);
+                    } catch (NumberFormatException ex) {
+                        return Duration.ofSeconds(8);
+                    }
+                })
+                .orElse(Duration.ofSeconds(8));
+    }
+
+    private void onReplyTimeout(ReplyWaiter.Pending pending) {
+        if (stopped.get()) {
+            return;
+        }
+        FunctionCommand command = new FunctionCommand(
+                pending.requestId(),
+                pending.deviceId(),
+                pending.functionId(),
+                null,
+                Attributes.empty(),
+                Attributes.empty(),
+                null);
+        offerCorrelated(engine.correlate(ExecutionResult.timeout(
+                command, Failure.timeout("core", "指令应答超时"))));
     }
 
     private void offerCorrelated(OutboundDraft draft) {
@@ -546,7 +717,7 @@ public final class GatewayPipeline implements PipelineIngress, PipelineCommandPo
         pool.shutdownNow();
     }
 
-    private record IngressWork(EnvelopeDraft draft, CompletableFuture<ExecutionResult> future) {
+    private record IngressWork(EnvelopeDraft draft, CompletableFuture<ExecutionResult> future, FunctionCommand command) {
     }
 
     private record RawWork(RawInbound raw) {

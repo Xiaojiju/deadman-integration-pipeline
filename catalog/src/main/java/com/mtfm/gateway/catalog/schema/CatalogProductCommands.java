@@ -163,6 +163,7 @@ final class CatalogProductCommands {
         if (request.subscribeTopicSlot() != null) {
             entity.setSubscribeTopicSlot(request.subscribeTopicSlot());
         }
+        applyReplyAndSchedule(entity, request);
         entity.setPayloadEncoding(PayloadEncoding.from(request.payloadEncoding()).wire());
         ProductFunctionEntity saved = store.saveFunction(entity);
         store.properties().replaceFunctionProperties(saved.getId(), items);
@@ -254,6 +255,7 @@ final class CatalogProductCommands {
         if (request.subscribeTopicSlot() != null) {
             entity.setSubscribeTopicSlot(request.subscribeTopicSlot());
         }
+        applyReplyAndSchedule(entity, request);
         if (request.payloadEncoding() != null && !request.payloadEncoding().isBlank()) {
             entity.setPayloadEncoding(PayloadEncoding.from(request.payloadEncoding()).wire());
         }
@@ -350,5 +352,30 @@ final class CatalogProductCommands {
             store.properties().replaceWriteOptions(entity.getId(), ValueAccessType.STRUCT, List.of(), bound);
         }
         return entity;
+    }
+
+    private static void applyReplyAndSchedule(ProductFunctionEntity entity, ProductFunctionWriteRequest request) {
+        if (request.replyTopicSlot() != null) {
+            entity.setReplyTopicSlot(blankToNull(request.replyTopicSlot()));
+        }
+        if (request.correlationPath() != null) {
+            entity.setCorrelationPath(blankToNull(request.correlationPath()));
+        }
+        if (request.resultPath() != null) {
+            entity.setResultPath(blankToNull(request.resultPath()));
+        }
+        if (request.replyTimeoutMs() != null) {
+            entity.setReplyTimeoutMs(request.replyTimeoutMs() <= 0 ? null : request.replyTimeoutMs());
+        }
+        if (request.scheduleIntervalMs() != null) {
+            entity.setScheduleIntervalMs(request.scheduleIntervalMs() <= 0 ? null : request.scheduleIntervalMs());
+        }
+        if (request.scheduleEnabled() != null) {
+            entity.setScheduleEnabled(request.scheduleEnabled());
+        }
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 }

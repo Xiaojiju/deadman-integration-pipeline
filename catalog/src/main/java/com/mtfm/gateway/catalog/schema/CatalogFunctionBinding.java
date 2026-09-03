@@ -80,7 +80,7 @@ final class CatalogFunctionBinding {
             writeAccess = resolveWriteAccess(request);
             boolean isRead = "READ".equalsIgnoreCase(accessType);
             writeFields = isRead ? List.of() : nullSafeFields(request.writeFields());
-            readFields = isRead ? nullSafeFields(request.readFields()) : List.of();
+            readFields = nullSafeFields(request.readFields());
             writeValueOptions = request.writeValueOptions() == null ? List.of() : request.writeValueOptions();
         }
         List<ValueOption> readValueOptions = request.readValueOptions() == null

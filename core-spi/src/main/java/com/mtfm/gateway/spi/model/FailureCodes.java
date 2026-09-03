@@ -45,6 +45,8 @@ public final class FailureCodes {
     public static final String PIPELINE_STOPPED = "PIPELINE_STOPPED";
     /** 功能无写权限。 */
     public static final String ACCESS_DENIED = "ACCESS_DENIED";
+    /** 应答等待槽已满。 */
+    public static final String REPLY_WAITER_FULL = "REPLY_WAITER_FULL";
 
     private FailureCodes() {
     }

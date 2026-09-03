@@ -265,4 +265,20 @@ class CommandAssemblerTest {
         assertEquals("true", payload.get("value"));
         assertEquals("BOOLEAN", payload.get("dataType"));
     }
+
+    @Test
+    void requestIdGeneratorWritesCommandRequestId() {
+        FieldNode root = FieldNode.objectRoot("root", List.of(
+                FieldNode.leaf("seq", "string", FieldSource.PLATFORM, "none", "request_id", null, "序列")));
+
+        Map<String, Object> payload = CommandAssembler.assemble(new CommandAssembler.Request(
+                PayloadMode.STRUCT,
+                root,
+                List.of(),
+                Map.of(),
+                Map.of(),
+                "req-open-1"));
+
+        assertEquals("req-open-1", payload.get("seq"));
+    }
 }

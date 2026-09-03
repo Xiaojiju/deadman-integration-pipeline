@@ -86,4 +86,8 @@ public record Failure(String code, String message, String source, boolean retrya
         return of(FailureCodes.ACCESS_DENIED,
                 "功能无写权限: " + deviceId + "/" + functionId, "core", false);
     }
+
+    public static Failure replyWaiterFull(String deviceId) {
+        return of(FailureCodes.REPLY_WAITER_FULL, "应答等待槽已满: " + deviceId, "core", true);
+    }
 }

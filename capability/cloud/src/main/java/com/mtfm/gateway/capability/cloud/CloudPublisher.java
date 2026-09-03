@@ -6,20 +6,36 @@ import com.mtfm.gateway.spi.model.CommandResponse;
 import com.mtfm.gateway.spi.model.OutboundMessage;
 import com.mtfm.gateway.spi.model.PublishResult;
 import com.mtfm.gateway.spi.model.TelemetryEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * 北向云 Publisher，channelHint 固定为 {@code CLOUD}。
+ * 北向 Hub：channelHint 固定 {@code CLOUD}。先入内存快照，再扇出 MQTT / Webhook。
  *
- * <p>接收流水线出站 {@link OutboundMessage}（命令响应 / 遥测事件）并发布到云端。
- * 测试环境可调用 {@link #snapshot()} / {@link #responses()} 断言出站内容。
+ * <p>扇出失败只打日志，始终返回 success，避免 Egress 重试导致重复投递。
  */
-public final class CloudPublisher implements Publisher {
+public final class CloudPublisher implements Publisher, AutoCloseable {
+
+    private static final Logger LOG = LoggerFactory.getLogger(CloudPublisher.class);
 
     private final CopyOnWriteArrayList<OutboundMessage> published = new CopyOnWriteArrayList<>();
+    private final List<NorthboundSink> sinks;
+
+    public CloudPublisher() {
+        this(List.of());
+    }
+
+    public CloudPublisher(NorthboundSink... sinks) {
+        this(sinks == null ? List.of() : List.of(sinks));
+    }
+
+    public CloudPublisher(List<NorthboundSink> sinks) {
+        this.sinks = sinks == null ? List.of() : List.copyOf(sinks);
+    }
 
     @Override
     public String channel() {
@@ -29,6 +45,13 @@ public final class CloudPublisher implements Publisher {
     @Override
     public PublishResult publish(OutboundMessage message) {
         published.add(message);
+        for (NorthboundSink sink : sinks) {
+            try {
+                sink.publish(message);
+            } catch (RuntimeException ex) {
+                LOG.warn("北向扇出失败 {}: {}", sink.getClass().getSimpleName(), ex.getMessage());
+            }
+        }
         return PublishResult.success();
     }
 
@@ -50,5 +73,18 @@ public final class CloudPublisher implements Publisher {
                 .filter(TelemetryEvent.class::isInstance)
                 .map(TelemetryEvent.class::cast)
                 .toList();
+    }
+
+    @Override
+    public void close() {
+        for (NorthboundSink sink : sinks) {
+            if (sink instanceof AutoCloseable closeable) {
+                try {
+                    closeable.close();
+                } catch (Exception ex) {
+                    LOG.warn("关闭北向扇出失败 {}: {}", sink.getClass().getSimpleName(), ex.getMessage());
+                }
+            }
+        }
     }
 }

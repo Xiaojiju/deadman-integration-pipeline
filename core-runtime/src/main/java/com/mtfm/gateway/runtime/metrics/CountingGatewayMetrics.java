@@ -44,6 +44,11 @@ public final class CountingGatewayMetrics implements GatewayMetrics {
         bump("retry." + channel);
     }
 
+    @Override
+    public void scheduleSkip(String reason) {
+        bump("schedule.skip." + reason);
+    }
+
     public long get(String key) {
         LongAdder adder = counters.get(key);
         return adder == null ? 0L : adder.sum();

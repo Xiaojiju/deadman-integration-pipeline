@@ -8,6 +8,7 @@ import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.spi.model.DeviceEndpointBinding;
 import com.mtfm.gateway.spi.model.ExecutionResult;
 import com.mtfm.gateway.spi.model.FunctionCommand;
+import com.mtfm.gateway.spi.port.DeviceScheduleRegistry;
 import com.mtfm.gateway.spi.port.DriverRegistry;
 import com.mtfm.gateway.spi.port.PipelineCommandPort;
 import org.slf4j.Logger;
@@ -38,23 +39,33 @@ public class CatalogApplyService {
     private final CatalogStore store;
     private final ObjectProvider<CatalogFormService> forms;
     private final ObjectProvider<PipelineCommandPort> commandPort;
+    private final ObjectProvider<DeviceScheduleRegistry> schedules;
     private DriverRegistry registry;
 
     public CatalogApplyService(CatalogStore store,
             ObjectProvider<CatalogFormService> forms,
             ObjectProvider<PipelineCommandPort> commandPort) {
-        this(store, forms, commandPort, null);
+        this(store, forms, commandPort, null, null);
+    }
+
+    public CatalogApplyService(CatalogStore store,
+            ObjectProvider<CatalogFormService> forms,
+            ObjectProvider<PipelineCommandPort> commandPort,
+            ObjectProvider<DriverRegistry> driverRegistry) {
+        this(store, forms, commandPort, driverRegistry, null);
     }
 
     @Autowired
     public CatalogApplyService(CatalogStore store,
             ObjectProvider<CatalogFormService> forms,
             ObjectProvider<PipelineCommandPort> commandPort,
-            ObjectProvider<DriverRegistry> driverRegistry) {
+            ObjectProvider<DriverRegistry> driverRegistry,
+            ObjectProvider<DeviceScheduleRegistry> schedules) {
         this.store = store;
         this.forms = forms;
         this.commandPort = commandPort;
         this.registry = driverRegistry == null ? null : driverRegistry.getIfAvailable();
+        this.schedules = schedules;
     }
 
     public void attach(DriverRegistry registry) {
@@ -95,28 +106,35 @@ public class CatalogApplyService {
         List<DeviceEndpointBinding> all = store.findEndpoints(deviceCode);
         detach(deviceCode, all);
         if (all.isEmpty()) {
+            syncSchedules(deviceCode, List.of());
             return;
         }
-        List<DeviceEndpointBinding> endpoints = all.stream()
-                .filter(binding -> binding.channelEnabled())
-                .collect(Collectors.toList());
-        if (endpoints.isEmpty()) {
-            throw new IllegalArgumentException("设备没有已启用的通道: " + deviceCode);
-        }
-        Set<String> types = new LinkedHashSet<>();
-        for (DeviceEndpointBinding endpoint : endpoints) {
-            types.add(endpoint.capabilityType().toUpperCase());
-        }
-        if (types.size() > 1) {
-            throw new IllegalStateException("设备绑定了多种南向能力，当前运行时一设备一协议: " + types);
-        }
-        String capabilityType = endpoints.getFirst().capabilityType();
-        registry.register(deviceCode, capabilityType);
-        registry.findExecutor(capabilityType).ifPresent(executor -> {
-            for (DeviceEndpointBinding endpoint : endpoints) {
-                executor.bind(endpoint);
+        try {
+            List<DeviceEndpointBinding> endpoints = all.stream()
+                    .filter(binding -> binding.channelEnabled())
+                    .collect(Collectors.toList());
+            if (endpoints.isEmpty()) {
+                throw new IllegalArgumentException("设备没有已启用的通道: " + deviceCode);
             }
-        });
+            Set<String> types = new LinkedHashSet<>();
+            for (DeviceEndpointBinding endpoint : endpoints) {
+                types.add(endpoint.capabilityType().toUpperCase());
+            }
+            if (types.size() > 1) {
+                throw new IllegalStateException("设备绑定了多种南向能力，当前运行时一设备一协议: " + types);
+            }
+            String capabilityType = endpoints.getFirst().capabilityType();
+            registry.register(deviceCode, capabilityType);
+            registry.findExecutor(capabilityType).ifPresent(executor -> {
+                for (DeviceEndpointBinding endpoint : endpoints) {
+                    executor.bind(endpoint);
+                }
+            });
+            syncSchedules(deviceCode, store.resolveSchedules(device));
+        } catch (RuntimeException ex) {
+            syncSchedules(deviceCode, List.of());
+            throw ex;
+        }
     }
 
     public void unload(String deviceCode) {
@@ -124,6 +142,7 @@ public class CatalogApplyService {
             return;
         }
         detach(deviceCode, store.findEndpoints(deviceCode));
+        syncSchedules(deviceCode, List.of());
     }
 
     private void detach(String deviceCode, List<DeviceEndpointBinding> endpoints) {
@@ -140,6 +159,43 @@ public class CatalogApplyService {
             registry.findExecutor(type).ifPresent(executor -> executor.unbind(deviceCode));
         }
         registry.unregister(deviceCode);
+    }
+
+    /** 设备已 load 时按当前目录重算该设备时间轮任务。 */
+    public void refreshSchedule(String deviceCode) {
+        if (!isLoaded(deviceCode)) {
+            return;
+        }
+        DeviceEntity device = store.resolveDevice(deviceCode).orElse(null);
+        if (device == null || Boolean.FALSE.equals(device.getEnabled())) {
+            syncSchedules(deviceCode, List.of());
+            return;
+        }
+        syncSchedules(deviceCode, store.resolveSchedules(device));
+    }
+
+    /** 产品功能调度变更后，重算该产品下已 load 设备的时间轮。 */
+    public void refreshSchedulesForProduct(String productId) {
+        if (productId == null || productId.isBlank()) {
+            return;
+        }
+        for (DeviceEntity device : store.listDevicesByProduct(productId)) {
+            if (isLoaded(device.getDeviceCode())) {
+                refreshSchedule(device.getDeviceCode());
+            }
+        }
+    }
+
+    private void syncSchedules(String deviceCode, List<DeviceScheduleRegistry.ScheduledFunction> jobs) {
+        DeviceScheduleRegistry registry = schedules == null ? null : schedules.getIfAvailable();
+        if (registry == null) {
+            return;
+        }
+        if (jobs == null || jobs.isEmpty()) {
+            registry.remove(deviceCode);
+        } else {
+            registry.replace(deviceCode, jobs);
+        }
     }
 
     /** 设备是否已 load 到运行时。 */

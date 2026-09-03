@@ -35,10 +35,10 @@ public record ExecutionResult(
             throw new IllegalArgumentException("status 不能为空");
         }
         data = data == null ? Attributes.empty() : data;
-        if (status == ExecutionStatus.SUCCESS && failure != null) {
-            throw new IllegalArgumentException("SUCCESS 不得携带 failure");
+        if (terminalOk(status) && failure != null) {
+            throw new IllegalArgumentException(status + " 不得携带 failure");
         }
-        if (status != ExecutionStatus.SUCCESS && failure == null) {
+        if (!terminalOk(status) && failure == null) {
             throw new IllegalArgumentException(status + " 必须携带 failure");
         }
     }
@@ -50,6 +50,11 @@ public record ExecutionResult(
 
     public static ExecutionResult success(String requestId, String deviceId, String functionId, Map<String, ?> data) {
         return success(requestId, deviceId, functionId, Attributes.from(data));
+    }
+
+    /** 南向已送出、等待设备应答。 */
+    public static ExecutionResult accepted(String requestId, String deviceId, String functionId, Map<String, ?> data) {
+        return new ExecutionResult(requestId, deviceId, functionId, ExecutionStatus.ACCEPTED, Attributes.from(data), null);
     }
 
     /** 创建失败结果。 */
@@ -74,5 +79,9 @@ public record ExecutionResult(
     public static ExecutionResult rejected(Envelope envelope, Failure failure) {
         return new ExecutionResult(envelope.requestId(), envelope.deviceId(), envelope.functionId(),
                 ExecutionStatus.REJECTED, Attributes.empty(), failure);
+    }
+
+    public static boolean terminalOk(ExecutionStatus status) {
+        return status == ExecutionStatus.SUCCESS || status == ExecutionStatus.ACCEPTED;
     }
 }

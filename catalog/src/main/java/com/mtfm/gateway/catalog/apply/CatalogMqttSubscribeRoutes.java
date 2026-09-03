@@ -10,12 +10,12 @@ import com.mtfm.gateway.spi.port.MqttSubscribeRoute;
 import com.mtfm.gateway.spi.port.MqttSubscribeRouteCatalog;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Stream;
 
-/** 从产品功能 + 设备 address 解析 MQTT READ 订阅路由。 */
+/** 从产品功能 + 设备 address 解析 MQTT 订阅路由（READ 监听 + WRITE 应答）。 */
 @Service
 public class CatalogMqttSubscribeRoutes implements MqttSubscribeRouteCatalog {
 
@@ -36,18 +36,22 @@ public class CatalogMqttSubscribeRoutes implements MqttSubscribeRouteCatalog {
         TopicCatalog catalog = TopicCatalog.fromAddressMap(addressValues);
         Map<String, Map<String, String>> topicOverrides = store.properties()
                 .listDeviceTopicOverridesByDevice(device.get().getId());
-        return store.listFunctions(device.get().getProductId()).stream()
-                .filter(function -> CAPABILITY_MQTT.equalsIgnoreCase(function.getCapabilityType()))
-                .filter(function -> "READ".equalsIgnoreCase(function.getAccessType()))
-                .map(function -> toRoute(function, catalog,
-                        topicOverrides.getOrDefault(function.getFunctionId(), Map.of())))
-                .flatMap(route -> route.map(Stream::of).orElseGet(Stream::empty))
-                .toList();
+        List<MqttSubscribeRoute> routes = new ArrayList<>();
+        for (ProductFunctionEntity function : store.listFunctions(device.get().getProductId())) {
+            if (!CAPABILITY_MQTT.equalsIgnoreCase(function.getCapabilityType())) {
+                continue;
+            }
+            Map<String, String> overrides = topicOverrides.getOrDefault(function.getFunctionId(), Map.of());
+            if ("READ".equalsIgnoreCase(function.getAccessType())) {
+                toListenRoute(function, catalog, overrides).ifPresent(routes::add);
+            }
+            toReplyRoute(function, catalog, overrides).ifPresent(routes::add);
+        }
+        return List.copyOf(routes);
     }
 
-    private Optional<MqttSubscribeRoute> toRoute(
-            ProductFunctionEntity function, TopicCatalog catalog,
-            Map<String, String> topicOverrides) {
+    private Optional<MqttSubscribeRoute> toListenRoute(
+            ProductFunctionEntity function, TopicCatalog catalog, Map<String, String> topicOverrides) {
         TopicCatalog effective = catalog.withOverrides(topicOverrides);
         FunctionRoute route = new FunctionRoute(function.getPublishTopicSlot(), function.getSubscribeTopicSlot());
         try {
@@ -56,7 +60,25 @@ public class CatalogMqttSubscribeRoutes implements MqttSubscribeRouteCatalog {
             if (resolved.subscribeTopic() == null || resolved.subscribeTopic().isBlank()) {
                 return Optional.empty();
             }
-            return Optional.of(new MqttSubscribeRoute(resolved.subscribeTopic(), function.getFunctionId()));
+            return Optional.of(new MqttSubscribeRoute(resolved.subscribeTopic(), function.getFunctionId(), false));
+        } catch (IllegalArgumentException ex) {
+            return Optional.empty();
+        }
+    }
+
+    private Optional<MqttSubscribeRoute> toReplyRoute(
+            ProductFunctionEntity function, TopicCatalog catalog, Map<String, String> topicOverrides) {
+        String replySlot = function.getReplyTopicSlot();
+        if (replySlot == null || replySlot.isBlank()) {
+            return Optional.empty();
+        }
+        TopicCatalog effective = catalog.withOverrides(topicOverrides);
+        try {
+            String topic = effective.resolveSubscribe(replySlot);
+            if (topic == null || topic.isBlank()) {
+                return Optional.empty();
+            }
+            return Optional.of(new MqttSubscribeRoute(topic, function.getFunctionId(), true));
         } catch (IllegalArgumentException ex) {
             return Optional.empty();
         }

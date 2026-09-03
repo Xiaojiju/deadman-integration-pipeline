@@ -16,7 +16,9 @@ public enum FieldValueGenerator {
     /** 当前时间戳，秒；落库类型由字段 type 决定（string → {@code "1756..."}，int → 数字）。 */
     TIMESTAMP_SECONDS("timestamp_seconds"),
     /** 标准 UUID 字符串。 */
-    UUID("uuid");
+    UUID("uuid"),
+    /** 使用本次命令的 requestId，供设备回包关联。 */
+    REQUEST_ID("request_id");
 
     private final String code;
 
@@ -41,6 +43,7 @@ public enum FieldValueGenerator {
             case "timestamp_millis", "timestamp", "at" -> TIMESTAMP_MILLIS;
             case "timestamp_seconds", "timestamp_sec", "epoch_seconds" -> TIMESTAMP_SECONDS;
             case "uuid" -> UUID;
+            case "request_id", "requestid", "request-id" -> REQUEST_ID;
             default -> null;
         };
     }

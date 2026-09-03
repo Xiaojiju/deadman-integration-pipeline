@@ -34,10 +34,10 @@ public record CommandResponse(
             throw new IllegalArgumentException("status 不能为空");
         }
         data = data == null ? Attributes.empty() : data;
-        if (status == ExecutionStatus.SUCCESS && error != null) {
-            throw new IllegalArgumentException("SUCCESS 不得携带 error");
+        if (ExecutionResult.terminalOk(status) && error != null) {
+            throw new IllegalArgumentException(status + " 不得携带 error");
         }
-        if (status != ExecutionStatus.SUCCESS && error == null) {
+        if (!ExecutionResult.terminalOk(status) && error == null) {
             throw new IllegalArgumentException(status + " 必须携带 error");
         }
     }

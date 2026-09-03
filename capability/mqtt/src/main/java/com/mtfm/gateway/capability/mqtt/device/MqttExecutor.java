@@ -70,7 +70,7 @@ public final class MqttExecutor implements FunctionExecutor {
                 : routeCatalog.routesForDevice(binding.deviceId(), binding.address().values());
         for (MqttSubscribeRoute route : readRoutes) {
             topics.add(route.topic());
-            registerTopic(binding.channelId(), route.topic(), binding.deviceId(), route.functionId());
+            registerTopic(binding.channelId(), route.topic(), binding.deviceId(), route.functionId(), route.reply());
         }
 
         Map<String, BiConsumer<String, String>> handlers = new LinkedHashMap<>();
@@ -119,6 +119,15 @@ public final class MqttExecutor implements FunctionExecutor {
         LOG.info("MQTT 发布 deviceId={} functionId={} channelId={} topic={} payload={}",
                 command.deviceId(), command.functionId(), bound.channelId(), topic, payload);
         transport.publish(bound.channelId(), topic, payload);
+        boolean awaitingReply = command.deliveryHints()
+                .get(TopicRouteResolver.MQTT_REPLY_TOPIC_HINT)
+                .map(String::valueOf)
+                .filter(value -> !value.isBlank())
+                .isPresent();
+        if (awaitingReply) {
+            return ExecutionResult.accepted(command.requestId(), command.deviceId(), command.functionId(),
+                    Map.of("topic", topic));
+        }
         return ExecutionResult.success(command.requestId(), command.deviceId(), command.functionId(),
                 Map.of("topic", topic));
     }
@@ -131,25 +140,39 @@ public final class MqttExecutor implements FunctionExecutor {
         if (targets.isEmpty()) {
             return;
         }
-        for (TopicTarget target : targets) {
-            if (!deviceId.equals(target.deviceId())) {
-                continue;
-            }
-            ingress.acceptRaw(RawInbound.builder()
-                    .capabilityType(MqttCapability.TYPE)
-                    .deviceIdHint(target.deviceId())
-                    .text(payload)
-                    .headers(Map.of(
-                            "topic", topic,
-                            "functionId", target.functionId(),
-                            "kind", "TELEMETRY"))
-                    .build());
+        List<TopicTarget> mine = targets.stream()
+                .filter(target -> deviceId.equals(target.deviceId()))
+                .toList();
+        if (mine.isEmpty()) {
+            return;
         }
+        TopicTarget reply = mine.stream().filter(TopicTarget::reply).findFirst().orElse(null);
+        TopicTarget listen = mine.stream().filter(target -> !target.reply()).findFirst().orElse(null);
+        TopicTarget chosen = reply != null ? reply : listen;
+        if (chosen == null) {
+            return;
+        }
+        java.util.Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("topic", topic);
+        headers.put("functionId", chosen.functionId());
+        headers.put("kind", "TELEMETRY");
+        if (reply != null) {
+            headers.put("mqtt.reply", "true");
+            if (listen != null && !listen.functionId().equals(reply.functionId())) {
+                headers.put("mqtt.listenFunctionId", listen.functionId());
+            }
+        }
+        ingress.acceptRaw(RawInbound.builder()
+                .capabilityType(MqttCapability.TYPE)
+                .deviceIdHint(chosen.deviceId())
+                .text(payload)
+                .headers(headers)
+                .build());
     }
 
-    private void registerTopic(String channelId, String topic, String deviceId, String functionId) {
+    private void registerTopic(String channelId, String topic, String deviceId, String functionId, boolean reply) {
         topicIndex.computeIfAbsent(indexKey(channelId, topic), key -> new CopyOnWriteArrayList<>())
-                .add(new TopicTarget(deviceId, functionId));
+                .add(new TopicTarget(deviceId, functionId, reply));
     }
 
     private void dropBinding(Bound previous, String deviceId) {
@@ -256,6 +279,6 @@ public final class MqttExecutor implements FunctionExecutor {
         }
     }
 
-    private record TopicTarget(String deviceId, String functionId) {
+    private record TopicTarget(String deviceId, String functionId, boolean reply) {
     }
 }

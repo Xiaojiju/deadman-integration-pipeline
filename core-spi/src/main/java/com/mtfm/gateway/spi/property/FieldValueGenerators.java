@@ -24,13 +24,20 @@ public final class FieldValueGenerators {
 
     /** 生成原始值（时间戳为 Long）；未知 generator 抛异常。 */
     public static Object generate(String valueGenerator) {
-        return generate(valueGenerator, null);
+        return generate(valueGenerator, null, null);
     }
 
     /**
      * 生成并按字段类型转换。string 得到数字字符串，int 得到整数（时间戳用 Long，避免毫秒溢出 Integer）。
      */
     public static Object generate(String valueGenerator, String fieldType) {
+        return generate(valueGenerator, fieldType, null);
+    }
+
+    /**
+     * {@code request_id} 使用传入的 requestId；缺省则生成 UUID。
+     */
+    public static Object generate(String valueGenerator, String fieldType, String requestId) {
         FieldValueGenerator gen = FieldValueGenerator.from(valueGenerator);
         if (gen == null) {
             throw new IllegalArgumentException("未知 valueGenerator: " + valueGenerator);
@@ -40,6 +47,9 @@ public final class FieldValueGenerators {
             case TIMESTAMP_MILLIS -> System.currentTimeMillis();
             case TIMESTAMP_SECONDS -> System.currentTimeMillis() / 1000L;
             case UUID -> UUID.randomUUID().toString();
+            case REQUEST_ID -> (requestId == null || requestId.isBlank())
+                    ? UUID.randomUUID().toString()
+                    : requestId;
         };
         return coerce(raw, fieldType);
     }

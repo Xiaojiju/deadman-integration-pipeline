@@ -155,7 +155,13 @@ final class CatalogFormViews {
                 function.getPublishTopicSlot(),
                 function.getSubscribeTopicSlot(),
                 function.getPayloadMode(),
-                function.getPayloadEncoding());
+                function.getPayloadEncoding(),
+                function.getReplyTopicSlot(),
+                function.getCorrelationPath(),
+                function.getResultPath(),
+                function.getReplyTimeoutMs(),
+                function.getScheduleIntervalMs(),
+                function.getScheduleEnabled());
     }
 
     ChannelView toChannelView(ChannelEntity entity) {

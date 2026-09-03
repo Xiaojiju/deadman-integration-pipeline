@@ -27,5 +27,11 @@ public record ProductFunctionView(
         String publishTopicSlot,
         String subscribeTopicSlot,
         String payloadMode,
-        String payloadEncoding) {
+        String payloadEncoding,
+        String replyTopicSlot,
+        String correlationPath,
+        String resultPath,
+        Integer replyTimeoutMs,
+        Long scheduleIntervalMs,
+        Boolean scheduleEnabled) {
 }

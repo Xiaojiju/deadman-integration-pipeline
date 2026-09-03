@@ -9,8 +9,8 @@ import java.util.List;
 /**
  * 北向云通道能力常量。
  *
- * <p>下行走 {@link CloudDownlink} → {@link com.mtfm.gateway.spi.port.PipelineIngress}；
- * 上行走 {@link CloudPublisher}。无 Address schema（北向无子设备寻址）。
+ * <p>下行走 {@link NorthboundMqttIngress} → catalog invoke；
+ * 上行走 {@link CloudPublisher} Hub 扇出 MQTT / Webhook。无 Address schema（北向无子设备寻址）。
  */
 public final class CloudCapability {
 

@@ -40,6 +40,28 @@ class MqttInboundTest {
     }
 
     @Test
+    void replyAndListenShareTopicPreferReplyAndKeepListenId() {
+        InMemoryMqttTransport transport = new InMemoryMqttTransport();
+        RecordingIngress ingress = new RecordingIngress();
+        MqttSubscribeRouteCatalog routes = (deviceCode, address) -> List.of(
+                new MqttSubscribeRoute("ydlink/F1111/response", "fn.open", true),
+                new MqttSubscribeRoute("ydlink/F1111/response", "fn.listen", false));
+        MqttExecutor executor = new MqttExecutor(transport);
+        executor.attach(ingress, routes);
+        executor.bind(binding("door-1", "ch-1", Map.of(
+                "default_pub", "ydlink/F1111/execute",
+                "default_sub", "ydlink/F1111/response")));
+
+        transport.publish("ch-1", "ydlink/F1111/response", "{\"seq\":\"orphan\",\"ok\":true}");
+
+        assertEquals(1, ingress.raws.size());
+        RawInbound raw = ingress.raws.get(0);
+        assertEquals("fn.open", raw.headers().get("functionId"));
+        assertEquals("true", raw.headers().get("mqtt.reply"));
+        assertEquals("fn.listen", raw.headers().get("mqtt.listenFunctionId"));
+    }
+
+    @Test
     void sharedChannelUnbindRebindDoesNotDuplicateIngress() {
         InMemoryMqttTransport transport = new InMemoryMqttTransport();
         RecordingIngress ingress = new RecordingIngress();
