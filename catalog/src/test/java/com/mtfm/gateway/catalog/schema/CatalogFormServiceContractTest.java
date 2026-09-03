@@ -59,7 +59,7 @@ class CatalogFormServiceContractTest {
                 fieldsCaptor.capture());
         List<WriteFieldOption> fields = fieldsCaptor.getValue();
         assertEquals(List.of("area", "offset", "value", "dataType"),
-                fields.stream().map(WriteFieldOption::field).toList());
+                fields.stream().map(f -> f.field()).toList());
         WriteFieldOption area = field(fields, "area");
         assertEquals("constant", area.source());
         assertEquals("HOLDING", area.constant());
@@ -77,8 +77,8 @@ class CatalogFormServiceContractTest {
         when(store.findFunction("p1", "light.switch")).thenReturn(Optional.empty());
         when(registrar.find("MODBUS")).thenReturn(Optional.of(modbusContract()));
 
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
-                forms.createFunction("p1", request("light.switch", "WRITE", "VALUE",
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> forms.createFunction("p1", request("light.switch", "WRITE", "VALUE",
                         List.of(new WriteFieldOption("topic", "x", "string", "string", false, List.of(), "none")),
                         null)));
         assertTrue(ex.getMessage().contains("不允许自定义字段"));
@@ -90,8 +90,8 @@ class CatalogFormServiceContractTest {
         when(store.findFunction("p1", "light.switch")).thenReturn(Optional.empty());
         when(registrar.find("MODBUS")).thenReturn(Optional.of(modbusContract()));
 
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
-                forms.createFunction("p1", request("light.switch", "WRITE", "VALUE",
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> forms.createFunction("p1", request("light.switch", "WRITE", "VALUE",
                         List.of(new WriteFieldOption(
                                 "offset", "起始地址", "int", "int", true, List.of(), "none",
                                 null, "mapped", null, "value")),
@@ -127,7 +127,7 @@ class CatalogFormServiceContractTest {
         ArgumentCaptor<List<WriteFieldOption>> readCaptor = ArgumentCaptor.forClass(List.class);
         verify(properties).replaceReadFields(eq("pf-fn.read"), readCaptor.capture());
         assertEquals(List.of("area", "offset", "quantity", "dataType"),
-                readCaptor.getValue().stream().map(WriteFieldOption::field).toList());
+                readCaptor.getValue().stream().map(f -> f.field()).toList());
     }
 
     private void stubCreate() {

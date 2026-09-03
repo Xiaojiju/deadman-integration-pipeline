@@ -2,6 +2,7 @@ package com.mtfm.gateway.catalog.apply;
 
 import com.mtfm.gateway.catalog.dto.DeviceCommandRequest;
 import com.mtfm.gateway.catalog.dto.DeviceRegisterRequest;
+import com.mtfm.gateway.catalog.entity.ChannelEntity;
 import com.mtfm.gateway.catalog.entity.DeviceEntity;
 import com.mtfm.gateway.catalog.schema.CatalogFormService;
 import com.mtfm.gateway.catalog.store.CatalogStore;
@@ -14,8 +15,10 @@ import com.mtfm.gateway.spi.port.PipelineCommandPort;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -76,14 +79,30 @@ public class CatalogApplyService {
         if (registry == null) {
             throw new IllegalStateException("尚未 attach 流水线注册表");
         }
-        store.resolveDevice(deviceCode)
+        DeviceEntity device = store.resolveDevice(deviceCode)
                 .orElseThrow(() -> new IllegalArgumentException("设备不存在: " + deviceCode));
+        if (Boolean.FALSE.equals(device.getEnabled())) {
+            throw new IllegalArgumentException("设备已停用: " + deviceCode);
+        }
         unload(deviceCode);
-        List<DeviceEndpointBinding> endpoints = store.findEndpoints(deviceCode);
-        if (endpoints.isEmpty()) {
+        List<DeviceEndpointBinding> all = store.findEndpoints(deviceCode);
+        if (all.isEmpty()) {
             return;
         }
-        String capabilityType = endpoints.get(0).capabilityType();
+        List<DeviceEndpointBinding> endpoints = all.stream()
+                .filter(this::channelEnabled)
+                .toList();
+        if (endpoints.isEmpty()) {
+            throw new IllegalArgumentException("设备没有已启用的通道: " + deviceCode);
+        }
+        Set<String> types = new LinkedHashSet<>();
+        for (DeviceEndpointBinding endpoint : endpoints) {
+            types.add(endpoint.capabilityType().toUpperCase());
+        }
+        if (types.size() > 1) {
+            throw new IllegalStateException("设备绑定了多种南向能力，当前运行时一设备一协议: " + types);
+        }
+        String capabilityType = endpoints.getFirst().capabilityType();
         registry.register(deviceCode, capabilityType);
         FunctionExecutor executor = executors.get(capabilityType);
         if (executor != null) {
@@ -91,6 +110,11 @@ public class CatalogApplyService {
                 executor.bind(endpoint);
             }
         }
+    }
+
+    private boolean channelEnabled(DeviceEndpointBinding endpoint) {
+        ChannelEntity channel = store.findChannel(endpoint.channelId()).orElse(null);
+        return channel != null && !Boolean.FALSE.equals(channel.getEnabled());
     }
 
     public void unload(String deviceCode) {

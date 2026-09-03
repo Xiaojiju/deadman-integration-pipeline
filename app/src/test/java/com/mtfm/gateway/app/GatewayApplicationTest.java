@@ -25,5 +25,9 @@ class GatewayApplicationTest {
         assertTrue(pipeline.find("MODBUS").orElseThrow().addressSchema().stream()
                 .anyMatch(field -> "slaveId".equals(field.name()) && field.required()));
         assertTrue(pipeline.find("MODBUS").orElseThrow().contractedParameters());
+        assertTrue(pipeline.find("MODBUS").orElseThrow().connectionSchema().stream()
+                .anyMatch(field -> "transport".equals(field.name())
+                        && field.choices().contains("TCP")
+                        && field.choices().contains("RTU")));
     }
 }

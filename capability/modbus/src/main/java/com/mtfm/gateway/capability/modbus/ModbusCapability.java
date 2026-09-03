@@ -11,9 +11,8 @@ import java.util.List;
 /**
  * 南向 Modbus 能力常量与登记描述符。
  *
- * <p>Channel（connection）承载 TCP 连接参数 host/port；Address 承载从站号 slaveId。
+ * <p>Channel 用 transport=TCP|RTU 分流：TCP 填 host/port，RTU 填串口参数。Address 仍是 slaveId。
  * 产品功能可自定义业务 functionId，参数名锁死为 area/offset/quantity/dataType/value。
- * 多设备共享同一 host:port 时复用 {@link ModbusChannel}，由 {@link ModbusExecutor} retain/release 管理生命周期。
  *
  * @see ModbusExecutor
  * @see ModbusChannel
@@ -32,8 +31,16 @@ public final class ModbusCapability {
     public static final CapabilityDescriptor DESCRIPTOR = new CapabilityDescriptor(
             TYPE,
             List.of(
-                    SchemaField.required("host", FieldType.STRING, "Modbus TCP 主机"),
-                    SchemaField.optional("port", FieldType.INT, "端口", 502)
+                    SchemaField.choice("transport", "传输 TCP 或串口 RTU", false, "TCP",
+                            List.of("TCP", "RTU")),
+                    SchemaField.optional("host", FieldType.STRING, "TCP 主机"),
+                    SchemaField.optional("port", FieldType.INT, "TCP 端口", 502),
+                    SchemaField.optional("serialPort", FieldType.STRING, "RTU 串口，如 /dev/ttyUSB0 或 COM3"),
+                    SchemaField.optional("baudRate", FieldType.INT, "波特率", 9600),
+                    SchemaField.optional("dataBits", FieldType.INT, "数据位", 8),
+                    SchemaField.choice("parity", "校验", false, "NONE",
+                            List.of("NONE", "EVEN", "ODD")),
+                    SchemaField.optional("stopBits", FieldType.INT, "停止位", 1)
             ),
             List.of(SchemaField.required("slaveId", FieldType.INT, "从站号，属于地址片，不属于 Option")),
             List.of(

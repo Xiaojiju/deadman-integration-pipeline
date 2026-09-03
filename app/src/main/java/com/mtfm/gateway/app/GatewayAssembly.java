@@ -10,9 +10,13 @@ import com.mtfm.gateway.capability.loopback.device.LoopbackCapability;
 import com.mtfm.gateway.capability.loopback.device.LoopbackDriver;
 import com.mtfm.gateway.capability.loopback.device.LoopbackExecutor;
 import com.mtfm.gateway.capability.modbus.InMemoryModbusBus;
+import com.mtfm.gateway.capability.modbus.ModbusBus;
 import com.mtfm.gateway.capability.modbus.ModbusCapability;
 import com.mtfm.gateway.capability.modbus.ModbusDriver;
 import com.mtfm.gateway.capability.modbus.ModbusExecutor;
+import com.mtfm.gateway.capability.modbus.RoutingModbusBus;
+import com.mtfm.gateway.capability.modbus.rtu.RtuModbusBus;
+import com.mtfm.gateway.capability.modbus.tcp.TcpModbusBus;
 import com.mtfm.gateway.capability.mqtt.device.InMemoryMqttTransport;
 import com.mtfm.gateway.capability.mqtt.device.MqttCapability;
 import com.mtfm.gateway.capability.mqtt.device.MqttDriver;
@@ -35,12 +39,14 @@ import org.springframework.context.annotation.Primary;
 /**
  * 网关宿主装配配置：按契约顺序 register 各能力、插件与 Publisher。
  *
- * <p>装配顺序：
+ * <p>
+ * 装配顺序：
  * <ol>
- *   <li>创建各南向 Executor Bean</li>
- *   <li>构建 {@link GatewayPipeline} 并 register Driver + Executor + 入站插件</li>
- *   <li>register 北向 {@link CloudPublisher}（唯一 CLOUD 通道）</li>
- *   <li>{@link CatalogApplyService#attach} 并 registerExecutor，最后 {@code pipeline.start()}</li>
+ * <li>创建各南向 Executor Bean</li>
+ * <li>构建 {@link GatewayPipeline} 并 register Driver + Executor + 入站插件</li>
+ * <li>register 北向 {@link CloudPublisher}（唯一 CLOUD 通道）</li>
+ * <li>{@link CatalogApplyService#attach} 并 registerExecutor，最后
+ * {@code pipeline.start()}</li>
  * </ol>
  *
  * <pre>{@code
@@ -57,9 +63,20 @@ public class GatewayAssembly {
         return new LoopbackExecutor();
     }
 
+    @Bean(destroyMethod = "close")
+    public ModbusBus modbusBus(GatewayProperties gatewayProperties) {
+        if (gatewayProperties.getModbus().memory()) {
+            return new InMemoryModbusBus();
+        }
+        int requestTimeout = gatewayProperties.getModbus().getRequestTimeoutMs();
+        return new RoutingModbusBus(
+                new TcpModbusBus(gatewayProperties.getModbus().getConnectTimeoutMs(), requestTimeout),
+                new RtuModbusBus(requestTimeout));
+    }
+
     @Bean
-    public ModbusExecutor modbusExecutor() {
-        return new ModbusExecutor(new InMemoryModbusBus());
+    public ModbusExecutor modbusExecutor(ModbusBus modbusBus) {
+        return new ModbusExecutor(modbusBus);
     }
 
     @Bean(destroyMethod = "close")

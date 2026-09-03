@@ -15,16 +15,8 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 南向 Modbus 执行器：Decode / Execute / Channel 生命周期分离。
  *
- * <p><b>Channel + Address 模型</b>：Channel（connection）= host:port 共享 TCP 会话；
- * Address = slaveId 区分从站。bind 时从 {@link DeviceEndpointBinding} 提取两者，
- * 对 {@link ModbusBus#retain(ModbusChannel)} 引用计数；unbind 时 {@link ModbusBus#release(ModbusChannel)}。
- *
- * <pre>{@code
- * // bind: connection={host,port} + address={slaveId}
- * executor.bind(endpointBinding);
- * // 同一 host:port 的第二台设备 bind 不会新建 TCP，仅增加 retain 计数
- * executor.unbind(deviceId); // release，计数归零时关闭连接
- * }</pre>
+ * <p><b>Channel + Address 模型</b>：Channel 按 transport 复用 TCP 或串口；
+ * Address = slaveId。bind 时 {@link ModbusChannel#from} 解析连接参数。
  */
 public final class ModbusExecutor implements FunctionExecutor {
 
@@ -45,11 +37,9 @@ public final class ModbusExecutor implements FunctionExecutor {
 
     @Override
     public void bind(DeviceEndpointBinding binding) {
-        String host = string(binding.connection(), "host");
-        int port = intValue(binding.connection(), "port", 502);
         int unitId = intValue(binding.address(), "slaveId",
                 intValue(binding.address(), "unitId", 1));
-        ModbusChannel channel = new ModbusChannel(binding.channelId(), host, port);
+        ModbusChannel channel = ModbusChannel.from(binding.channelId(), binding.connection());
         BoundEndpoint previous = endpoints.put(binding.deviceId(), new BoundEndpoint(channel, unitId));
         if (previous != null) {
             bus.release(previous.channel());
@@ -141,10 +131,6 @@ public final class ModbusExecutor implements FunctionExecutor {
             return false;
         }
         return command.arguments().get(ModbusCapability.ARG_VALUE).isPresent();
-    }
-
-    private static String string(Attributes attributes, String key) {
-        return attributes.get(key).map(String::valueOf).orElse("");
     }
 
     private static String stringArg(Attributes attributes, String key) {

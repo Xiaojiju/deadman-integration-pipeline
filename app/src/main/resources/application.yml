@@ -13,3 +13,7 @@ server:
 gateway:
   mqtt:
     transport: ${GATEWAY_MQTT_TRANSPORT:paho}
+  modbus:
+    mode: ${GATEWAY_MODBUS_MODE:real}
+    connect-timeout-ms: ${GATEWAY_MODBUS_CONNECT_TIMEOUT_MS:3000}
+    request-timeout-ms: ${GATEWAY_MODBUS_REQUEST_TIMEOUT_MS:3000}

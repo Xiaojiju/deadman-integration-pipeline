@@ -25,7 +25,9 @@ import com.mtfm.gateway.catalog.entity.ProductFunctionEntity;
 import com.mtfm.gateway.catalog.json.JsonMaps;
 import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.spi.capability.CapabilityRegistrar;
+import com.mtfm.gateway.spi.model.AccessPermission;
 import com.mtfm.gateway.spi.model.CapabilityDescriptor;
+import com.mtfm.gateway.spi.model.DeviceEndpointBinding;
 import com.mtfm.gateway.spi.model.FieldFormat;
 import com.mtfm.gateway.spi.model.FieldType;
 import com.mtfm.gateway.spi.model.FormField;
@@ -48,12 +50,15 @@ import com.mtfm.gateway.spi.property.WriteFieldOption;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 能力 schema 与表单装配：CapabilityDescriptor → /supported → PropertyItem 落库 → 运行时投影。
@@ -74,10 +79,24 @@ public class CatalogFormService {
         this.applyService = applyService;
     }
 
+    /**
+     * 列出所有能力
+     * 这个方法主要是用于查询支持的「能力」，能力可能附带FIXED_FUNCTIONS、CONTRACTED_PARAMETERS等特性。
+     * 
+     * @return 能力列表
+     */
     public List<CapabilityDescriptor> listCapabilities() {
         return registrar == null ? List.of() : registrar.list();
     }
 
+    /**
+     * 获取能力
+     * 这个方法主要获取指定能力的描述，描述中附带了能力注册到总线中支持范围。
+     * 
+     * @see CapabilityDescriptor 能力描述符
+     * @param capabilityType 能力类型
+     * @return 能力描述符
+     */
     public CapabilityDescriptor requireCapability(String capabilityType) {
         if (registrar == null) {
             throw new IllegalArgumentException("能力注册中心尚未装配");
@@ -86,12 +105,26 @@ public class CatalogFormService {
                 .orElseThrow(() -> new IllegalArgumentException("未登记能力: " + capabilityType));
     }
 
+    /**
+     * 获取能力的功能模板
+     * 这个方式是获取指定能力所原生支持的功能模板列表，这些功能模板是能力在总线中支持范围。
+     * 
+     * @param capabilityType 能力类型
+     * @return 功能模板列表
+     */
     public List<FunctionTemplate> capabilityFunctions(String capabilityType) {
         return requireCapability(capabilityType).functionTemplates();
     }
 
     // ——— /supported ———
 
+    /**
+     * 获取能力的连接参数模板
+     * 这个方式是获取指定能力所原生支持的连接参数模板，这些连接参数模板是能力在总线中支持范围。
+     * 
+     * @param capabilityType 能力类型
+     * @return 连接参数模板列表
+     */
     public SupportedSchemaView supportedConnection(String capabilityType) {
         CapabilityDescriptor descriptor = requireCapability(capabilityType);
         List<SchemaField> schema = descriptor.connectionSchema();
@@ -101,6 +134,13 @@ public class CatalogFormService {
                 PropertySchemas.choiceOptionsByField(schema));
     }
 
+    /**
+     * 获取能力的地址参数模板
+     * 这个方式是获取指定能力所原生支持的地址参数模板，这些地址参数模板是能力在总线中支持范围。
+     * 
+     * @param capabilityType 能力类型
+     * @return 地址参数模板列表
+     */
     public SupportedSchemaView supportedAddress(String capabilityType) {
         CapabilityDescriptor descriptor = requireCapability(capabilityType);
         List<SchemaField> schema = descriptor.addressSchema();
@@ -110,18 +150,41 @@ public class CatalogFormService {
                 PropertySchemas.choiceOptionsByField(schema));
     }
 
+    /**
+     * 获取能力的功能模板
+     * 这个方式是获取指定能力所原生支持的功能模板列表，这些功能模板是能力在总线中支持范围。
+     * 
+     * @param capabilityType 能力类型
+     * @return 功能模板列表
+     */
     public List<SupportedFunctionView> supportedFunctions(String capabilityType) {
         return requireCapability(capabilityType).functionTemplates().stream()
                 .map(this::toSupportedFunction)
                 .toList();
     }
 
+    /**
+     * 获取能力的功能模板
+     * 这个方式是获取指定能力所原生支持的功能模板，这些功能模板是能力在总线中支持范围。
+     * 
+     * @param capabilityType 能力类型
+     * @param functionId     功能ID
+     * @return 功能模板
+     * @throws IllegalArgumentException 如果功能模板不存在
+     */
     public SupportedFunctionView supportedFunction(String capabilityType, String functionId) {
         FunctionTemplate template = requireCapability(capabilityType).functionTemplate(functionId)
                 .orElseThrow(() -> new IllegalArgumentException("功能模板不存在: " + functionId));
         return toSupportedFunction(template);
     }
 
+    /**
+     * 转换功能模板为支持功能视图
+     * 这个方式是转换指定功能模板为支持功能视图，支持功能视图包含了功能ID、描述、访问类型、访问权限、值访问类型、参数、写选项、选择选项等。
+     * 
+     * @param template 功能模板
+     * @return 支持功能视图
+     */
     private SupportedFunctionView toSupportedFunction(FunctionTemplate template) {
         List<SchemaField> schema = template.parameters();
         List<PropertyItem> properties = PropertySchemas.toPropertyItems(schema);
@@ -139,6 +202,13 @@ public class CatalogFormService {
                 choices);
     }
 
+    /**
+     * 扁平化选择选项
+     * 这个方式是扁平化选择选项，选择选项包含了选择选项ID、描述、值等。
+     * 
+     * @param choices 选择选项
+     * @return 扁平化选择选项列表
+     */
     private static List<ValueOption> flattenChoiceOptions(Map<String, List<ValueOption>> choices) {
         if (choices == null || choices.isEmpty()) {
             return List.of();
@@ -152,6 +222,13 @@ public class CatalogFormService {
         return List.copyOf(all);
     }
 
+    /**
+     * 扁平化写选项
+     * 这个方式是扁平化写选项，写选项包含了写选项ID、描述、值等。
+     * 
+     * @param writeFields 写选项
+     * @return 扁平化写选项列表
+     */
     private static List<ValueOption> flattenWriteFieldOptions(List<WriteFieldOption> writeFields) {
         if (writeFields == null || writeFields.isEmpty()) {
             return List.of();
@@ -174,6 +251,15 @@ public class CatalogFormService {
 
     // ——— Channel ———
 
+    /**
+     * 创建通道
+     * 这个方式是创建指定通道，通道包含了通道ID、通道编码、通道类型、通道连接、通道是否启用等。
+     * 
+     * @param request 通道写请求
+     * @return 通道实体
+     * @throws IllegalArgumentException 如果通道编码为空或通道类型为空或通道编码已存在
+     */
+    @Transactional
     public ChannelEntity createChannel(ChannelWriteRequest request) {
         if (request == null || request.code() == null || request.code().isBlank()) {
             throw new IllegalArgumentException("通道 code 不能为空");
@@ -184,9 +270,11 @@ public class CatalogFormService {
         if (store.findChannel(request.code()).isPresent()) {
             throw new IllegalArgumentException("通道编码已存在: " + request.code());
         }
+        // 获取能力描述符
         CapabilityDescriptor descriptor = requireCapability(request.capabilityType());
         List<PropertyItem> items = resolveProperties(request.properties(), request.connection());
         SchemaValidator.require(descriptor.connectionSchema(), PropertySchemas.toValueMap(items), "通道 connection");
+        requireModbusTransportFields(descriptor.capabilityType(), PropertySchemas.toValueMap(items));
         ChannelEntity entity = new ChannelEntity();
         entity.setCode(request.code());
         entity.setCapabilityType(request.capabilityType());
@@ -197,6 +285,16 @@ public class CatalogFormService {
         return saved;
     }
 
+    /**
+     * 更新通道
+     * 这个方式是更新指定通道，通道包含了通道ID、通道编码、通道类型、通道连接、通道是否启用等。
+     * 
+     * @param channelIdOrCode 通道ID或编码
+     * @param request         通道写请求
+     * @return 通道实体
+     * @throws IllegalArgumentException 如果通道不存在或通道编码为空或通道类型为空或通道编码已存在
+     */
+    @Transactional
     public ChannelEntity updateChannel(String channelIdOrCode, ChannelWriteRequest request) {
         ChannelEntity entity = store.findChannel(channelIdOrCode)
                 .orElseThrow(() -> new IllegalArgumentException("通道不存在: " + channelIdOrCode));
@@ -206,6 +304,7 @@ public class CatalogFormService {
                 List<PropertyItem> items = resolveProperties(request.properties(), request.connection());
                 SchemaValidator.require(descriptor.connectionSchema(), PropertySchemas.toValueMap(items),
                         "通道 connection");
+                requireModbusTransportFields(descriptor.capabilityType(), PropertySchemas.toValueMap(items));
                 entity.setConnection(JsonMaps.write(PropertySchemas.toValueMap(items)));
                 store.properties().replaceChannelProperties(entity.getId(), items);
             }
@@ -216,8 +315,43 @@ public class CatalogFormService {
         return store.updateChannel(entity);
     }
 
+    /**
+     * MODBUS：TCP 必填 host，RTU 必填 serialPort。schema 里两者都是可选，避免互相卡住。
+     * 
+     * @param capabilityType 能力类型
+     * @param values         值
+     * @throws IllegalArgumentException 如果能力类型为空或能力类型不为MODBUS或值为空或值不包含transport字段或transport字段为空或transport字段不为RTU或transport字段不为TCP或serialPort字段为空或serialPort字段不为RTU或host字段为空或host字段不为TCP
+     */
+    private static void requireModbusTransportFields(String capabilityType, Map<String, Object> values) {
+        if (capabilityType == null || !"MODBUS".equalsIgnoreCase(capabilityType)) {
+            return;
+        }
+        Map<String, Object> safe = values == null ? Map.of() : values;
+        String transport = String.valueOf(safe.getOrDefault("transport", "TCP"));
+        if ("RTU".equalsIgnoreCase(transport)) {
+            Object serial = safe.get("serialPort");
+            if (serial == null || String.valueOf(serial).isBlank()) {
+                throw new IllegalArgumentException("通道 connection 缺少必填字段: serialPort");
+            }
+            return;
+        }
+        Object host = safe.get("host");
+        if (host == null || String.valueOf(host).isBlank()) {
+            throw new IllegalArgumentException("通道 connection 缺少必填字段: host");
+        }
+    }
+
     // ——— Product ———
 
+    /**
+     * 创建产品
+     * 这个方式是创建指定产品，产品包含了产品ID、产品编码、产品名称、产品描述等。
+     * 
+     * @param request 产品写请求
+     * @return 产品实体
+     * @throws IllegalArgumentException 如果产品编码为空或产品名称为空或产品编码已存在
+     */
+    @Transactional
     public ProductEntity createProduct(ProductWriteRequest request) {
         if (request == null || request.code() == null || request.code().isBlank()) {
             throw new IllegalArgumentException("产品 code 不能为空");
@@ -239,6 +373,16 @@ public class CatalogFormService {
         return saved;
     }
 
+    /**
+     * 更新产品
+     * 这个方式是更新指定产品，产品包含了产品ID、产品编码、产品名称、产品描述等。
+     * 
+     * @param productId 产品ID
+     * @param request   产品写请求
+     * @return 产品实体
+     * @throws IllegalArgumentException 如果产品不存在或产品编码为空或产品名称已存在
+     */
+    @Transactional
     public ProductEntity updateProduct(String productId, ProductWriteRequest request) {
         ProductEntity entity = store.findProduct(productId)
                 .orElseThrow(() -> new IllegalArgumentException("产品不存在: " + productId));
@@ -253,6 +397,16 @@ public class CatalogFormService {
         return store.updateProduct(entity);
     }
 
+    /**
+     * 导入能力功能
+     * 这个方式是导入指定能力的功能，功能包含了功能ID、功能类型、功能参数、功能写选项、功能读选项、功能值访问类型、功能值访问权限、功能值访问选项等。
+     * 
+     * @param productId      产品ID
+     * @param capabilityType 能力类型
+     * @return 产品功能实体列表
+     * @throws IllegalArgumentException 如果产品不存在或能力无预置功能模板或产品功能已存在
+     */
+    @Transactional
     public List<ProductFunctionEntity> importCapabilityFunctions(String productId, String capabilityType) {
         store.findProduct(productId).orElseThrow(() -> new IllegalArgumentException("产品不存在: " + productId));
         CapabilityDescriptor descriptor = requireCapability(capabilityType);
@@ -265,6 +419,16 @@ public class CatalogFormService {
                 .toList();
     }
 
+    /**
+     * 创建产品功能实体
+     * 这个方式是创建指定产品功能实体，产品功能实体包含了功能ID、功能类型、功能参数、功能写选项、功能读选项、功能值访问类型、功能值访问权限、功能值访问选项等。
+     * 
+     * @param productId      产品ID
+     * @param capabilityType 能力类型
+     * @param template       功能模板
+     * @return 产品功能实体
+     * @throws IllegalArgumentException 如果产品不存在或能力类型为空或能力类型无预置功能模板或功能模板为空或功能模板无参数或功能模板无写选项或功能模板无读选项或功能模板无值访问类型或功能模板无值访问权限或功能模板无值访问选项
+     */
     private ProductFunctionEntity createFunctionFromTemplate(
             String productId, String capabilityType, FunctionTemplate template) {
         CapabilityDescriptor descriptor = requireCapability(capabilityType);
@@ -292,6 +456,16 @@ public class CatalogFormService {
                 null));
     }
 
+    /**
+     * 创建产品功能
+     * 这个方式是创建指定产品功能，产品功能包含了功能ID、功能类型、功能参数、功能写选项、功能读选项、功能值访问类型、功能值访问权限、功能值访问选项等。
+     * 
+     * @param productId 产品ID
+     * @param request   产品功能写请求
+     * @return 产品功能实体
+     * @throws IllegalArgumentException 如果产品功能ID为空或产品功能类型为空或产品功能已存在
+     */
+    @Transactional
     public ProductFunctionEntity createFunction(String productId, ProductFunctionWriteRequest request) {
         if (request == null || request.functionId() == null || request.functionId().isBlank()) {
             throw new IllegalArgumentException("functionId 不能为空");
@@ -344,7 +518,7 @@ public class CatalogFormService {
             writeAccess = resolveWriteAccess(request);
             String access = request.accessType() != null && !request.accessType().isBlank()
                     ? request.accessType()
-                    : template.map(FunctionTemplate::accessType).orElse("WRITE");
+                    : template.map(t -> t.accessType()).orElse("WRITE");
             FunctionTemplate contract = requireContractTemplate(descriptor, access);
             PayloadMode mode = writeAccess == ValueAccessType.VALUE ? PayloadMode.VALUE : PayloadMode.STRUCT;
             boolean isRead = "READ".equalsIgnoreCase(access);
@@ -380,7 +554,10 @@ public class CatalogFormService {
                         : template.map(t -> t.accessType()).orElse("WRITE"));
         entity.setAccessPermission(request.accessPermission() != null
                 ? request.accessPermission()
-                : template.map(t -> t.accessPermission()).orElse(2));
+                : template.map(ft -> ft.accessPermission())
+                        .orElseGet(() -> "READ".equalsIgnoreCase(entity.getAccessType())
+                                ? AccessPermission.READ.code()
+                                : AccessPermission.WRITE.code()));
         entity.setCapabilityType(request.capabilityType());
         entity.setOptionSchema(JsonMaps.write(PropertySchemas.toValueMap(items)));
         entity.setProtocolMapping(null);
@@ -408,6 +585,17 @@ public class CatalogFormService {
         return saved;
     }
 
+    /**
+     * 更新产品功能
+     * 这个方式是更新指定产品功能，产品功能包含了功能ID、功能类型、功能参数、功能写选项、功能读选项、功能值访问类型、功能值访问权限、功能值访问选项等。
+     * 
+     * @param productId  产品ID
+     * @param functionId 功能ID
+     * @param request    产品功能写请求
+     * @return 产品功能实体
+     * @throws IllegalArgumentException 如果产品功能不存在或产品功能ID为空或产品功能类型为空或产品功能已存在
+     */
+    @Transactional
     public ProductFunctionEntity updateFunction(String productId, String functionId,
             ProductFunctionWriteRequest request) {
         ProductFunctionEntity entity = store.findFunction(productId, functionId)
@@ -536,7 +724,13 @@ public class CatalogFormService {
         return store.updateFunction(entity);
     }
 
-    /** OPEN 且命中预置模板、且模板无参：结构锁定（如 MQTT publish/subscribe）。 */
+    /**
+     * OPEN 且命中预置模板、且模板无参：结构锁定（如 MQTT publish/subscribe）。
+     * 
+     * @param descriptor 能力描述符
+     * @param template   功能模板
+     * @return 是否为空模板
+     */
     private static boolean isOpenLockedEmptyTemplate(
             CapabilityDescriptor descriptor, Optional<FunctionTemplate> template) {
         return !descriptor.fixedFunctions()
@@ -544,6 +738,13 @@ public class CatalogFormService {
                 && template.get().parameters().isEmpty();
     }
 
+    /**
+     * 拒绝打开锁定结构修改
+     * 这个方式是拒绝打开锁定结构修改，打开锁定结构修改包含了功能ID、功能类型、功能参数、功能写选项、功能读选项、功能值访问类型、功能值访问权限、功能值访问选项等。
+     * 
+     * @param request 产品功能写请求
+     * @throws IllegalArgumentException 如果产品功能ID为空或产品功能类型为空或产品功能已存在
+     */
     private static void rejectOpenLockedStructureMutation(ProductFunctionWriteRequest request) {
         if (request.properties() != null && !request.properties().isEmpty()) {
             throw new IllegalArgumentException("能力预置无参功能不允许配置 properties");
@@ -559,10 +760,24 @@ public class CatalogFormService {
         }
     }
 
+    /**
+     * 空安全字段
+     * 这个方式是空安全字段，字段包含了字段ID、字段名称、字段类型、字段描述等。
+     * 
+     * @param fields 字段列表
+     * @return 空安全字段列表
+     */
     private static List<WriteFieldOption> nullSafeFields(List<WriteFieldOption> fields) {
         return fields == null ? List.of() : fields;
     }
 
+    /**
+     * 解析写访问类型
+     * 这个方式是解析写访问类型，写访问类型包含了写访问类型ID、写访问类型名称、写访问类型描述等。
+     * 
+     * @param request 产品功能写请求
+     * @return 写访问类型
+     */
     private static ValueAccessType resolveWriteAccess(ProductFunctionWriteRequest request) {
         if (request.payloadMode() != null && !request.payloadMode().isBlank()) {
             return PayloadMode.from(request.payloadMode()) == PayloadMode.VALUE
@@ -575,6 +790,14 @@ public class CatalogFormService {
         return ValueAccessType.STRUCT;
     }
 
+    /**
+     * 解析功能属性
+     * 这个方式是解析功能属性，功能属性包含了功能属性ID、功能属性名称、功能属性类型、功能属性描述等。
+     * 
+     * @param request  产品功能写请求
+     * @param template 功能模板
+     * @return 功能属性列表
+     */
     private List<PropertyItem> resolveFunctionProperties(
             ProductFunctionWriteRequest request, Optional<FunctionTemplate> template) {
         if (request.properties() != null) {
@@ -585,6 +808,10 @@ public class CatalogFormService {
 
     /**
      * FIXED：属性名必须落在模板 parameters 内；带 choices 的字段取值必须是规定枚举。
+     * 
+     * @param items    属性列表
+     * @param template 功能模板
+     * @return 约束固定属性列表
      */
     private static List<PropertyItem> constrainFixedProperties(
             List<PropertyItem> items, FunctionTemplate template) {
@@ -617,7 +844,12 @@ public class CatalogFormService {
         return List.copyOf(result);
     }
 
-    /** 模板 parameters → STRUCT 写字段（含 choices 子选项）。 */
+    /**
+     * 模板 parameters → STRUCT 写字段（含 choices 子选项）。
+     * 
+     * @param template 功能模板
+     * @return 写字段列表
+     */
     private static List<WriteFieldOption> templateWriteFields(FunctionTemplate template) {
         if (template == null || template.parameters() == null || template.parameters().isEmpty()) {
             return List.of();
@@ -645,6 +877,11 @@ public class CatalogFormService {
     /**
      * CONTRACT：字段名锁死为模板 parameters，只合并来源/常量/映射。
      * 寻址字段默认 constant（取模板 defaultValue）；value 在 VALUE 模式下 mapped，否则 caller。
+     * 
+     * @param template  功能模板
+     * @param requested 请求字段列表
+     * @param mode      负载模式
+     * @return 绑定合同字段列表
      */
     private static List<WriteFieldOption> bindContractFields(
             FunctionTemplate template,
@@ -701,6 +938,14 @@ public class CatalogFormService {
         return List.copyOf(result);
     }
 
+    /**
+     * 种子合同字段
+     * 这个方式是种子合同字段，种子合同字段包含了种子合同字段ID、种子合同字段名称、种子合同字段类型、种子合同字段描述等。
+     * 
+     * @param template 功能模板
+     * @param mode     负载模式
+     * @return 种子合同字段列表
+     */
     private static List<WriteFieldOption> seedContractFields(FunctionTemplate template, PayloadMode mode) {
         List<WriteFieldOption> fields = new ArrayList<>();
         for (SchemaField field : template.parameters()) {
@@ -728,6 +973,14 @@ public class CatalogFormService {
         return List.copyOf(fields);
     }
 
+    /**
+     * 解析固定写字段
+     * 这个方式是解析固定写字段，固定写字段包含了固定写字段ID、固定写字段名称、固定写字段类型、固定写字段描述等。
+     * 
+     * @param requested 请求字段列表
+     * @param template  功能模板
+     * @return 固定写字段列表
+     */
     private List<WriteFieldOption> resolveFixedWriteFields(
             List<WriteFieldOption> requested, Optional<FunctionTemplate> template) {
         if (template.isEmpty()) {
@@ -742,6 +995,10 @@ public class CatalogFormService {
     /**
      * FIXED：writeFields 的 field 必须 ⊆ 模板 parameters；options 取值 ⊆ choices；可改
      * description。
+     * 
+     * @param requested 请求字段列表
+     * @param template  功能模板
+     * @return 约束固定写字段列表
      */
     private static List<WriteFieldOption> constrainFixedWriteFields(
             List<WriteFieldOption> requested, FunctionTemplate template) {
@@ -782,6 +1039,14 @@ public class CatalogFormService {
         return List.copyOf(result);
     }
 
+    /**
+     * 合并固定字段选项
+     * 这个方式是合并固定字段选项，固定字段选项包含了固定字段选项ID、固定字段选项名称、固定字段选项类型、固定字段选项描述等。
+     * 
+     * @param requested 请求字段列表
+     * @param allowed   允许字段列表
+     * @return 合并固定字段选项列表
+     */
     private static List<ValueOption> mergeFixedFieldOptions(
             List<ValueOption> requested, List<ValueOption> allowed) {
         if (allowed.isEmpty()) {
@@ -823,6 +1088,10 @@ public class CatalogFormService {
 
     /**
      * FIXED：读写选项取值必须 ⊆ 模板所有 choices；空入参则回落为模板全量 choices。
+     * 
+     * @param requested 请求字段列表
+     * @param template  功能模板
+     * @return 约束固定字段选项列表
      */
     private static List<ValueOption> constrainFixedValueOptions(
             List<ValueOption> requested, FunctionTemplate template) {
@@ -862,6 +1131,15 @@ public class CatalogFormService {
 
     // ——— Device ———
 
+    /**
+     * 创建设备
+     * 这个方式是创建指定设备，设备包含了设备ID、设备编码、设备名称、设备描述等。
+     * 
+     * @param request 设备写请求
+     * @return 设备实体
+     * @throws IllegalArgumentException 如果设备编码为空或设备名称为空或设备编码已存在
+     */
+    @Transactional
     public DeviceEntity createDevice(DeviceWriteRequest request) {
         if (request == null || request.deviceCode() == null || request.deviceCode().isBlank()) {
             throw new IllegalArgumentException("deviceCode 不能为空");
@@ -887,6 +1165,16 @@ public class CatalogFormService {
         return saved;
     }
 
+    /**
+     * 更新设备
+     * 这个方式是更新指定设备，设备包含了设备ID、设备编码、设备名称、设备描述等。
+     * 
+     * @param deviceCode 设备编码
+     * @param request    设备更新请求
+     * @return 设备实体
+     * @throws IllegalArgumentException 如果设备不存在或设备编码为空或设备名称为空或设备编码已存在
+     */
+    @Transactional
     public DeviceEntity updateDevice(String deviceCode, DeviceUpdateRequest request) {
         DeviceEntity entity = requireDevice(deviceCode);
         if (request != null) {
@@ -906,6 +1194,16 @@ public class CatalogFormService {
         return store.updateDevice(entity);
     }
 
+    /**
+     * 更新设备端点
+     * 这个方式是更新指定设备端点，设备端点包含了设备端点ID、设备端点编码、设备端点名称、设备端点描述等。
+     * 
+     * @param endpointId 设备端点ID
+     * @param request    设备端点写请求
+     * @return 设备端点实体
+     * @throws IllegalArgumentException 如果设备端点不存在或设备端点编码为空或设备端点名称为空或设备端点编码已存在
+     */
+    @Transactional
     public DeviceEndpointEntity updateEndpoint(String endpointId, DeviceEndpointWriteRequest request) {
         DeviceEndpointEntity entity = store.findEndpoint(endpointId)
                 .orElseThrow(() -> new IllegalArgumentException("端点不存在: " + endpointId));
@@ -930,6 +1228,15 @@ public class CatalogFormService {
         return store.updateEndpoint(entity);
     }
 
+    /**
+     * 注册设备
+     * 这个方式是注册指定设备，设备包含了设备ID、设备编码、设备名称、设备描述等。
+     * 
+     * @param request 设备注册请求
+     * @return 设备实体
+     * @throws IllegalArgumentException 如果设备编码为空或设备名称为空或设备编码已存在
+     */
+    @Transactional
     public DeviceEntity registerDevice(DeviceRegisterRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("登记请求不能为空");
@@ -949,6 +1256,16 @@ public class CatalogFormService {
         return device;
     }
 
+    /**
+     * 创建设备端点
+     * 这个方式是创建设备端点，设备端点包含了设备端点ID、设备端点编码、设备端点名称、设备端点描述等。
+     * 
+     * @param deviceCodeOrId 设备编码或ID
+     * @param request        设备端点写请求
+     * @return 设备端点实体
+     * @throws IllegalArgumentException 如果设备端点编码为空或设备端点名称为空或设备端点编码已存在
+     */
+    @Transactional
     public DeviceEndpointEntity createEndpoint(String deviceCodeOrId, DeviceEndpointWriteRequest request) {
         if (request == null || request.channelId() == null || request.channelId().isBlank()) {
             throw new IllegalArgumentException("channelId 不能为空");
@@ -968,27 +1285,61 @@ public class CatalogFormService {
         return saved;
     }
 
+    /**
+     * 列出设备
+     * 这个方式是列出所有设备，设备包含了设备ID、设备编码、设备名称、设备描述等。
+     * 
+     * @return 设备实体列表
+     */
     public List<DeviceEntity> listDevices() {
         return store.listDevices();
     }
 
+    /**
+     * 分页设备
+     * 这个方式是分页设备，设备包含了设备ID、设备编码、设备名称、设备描述等。
+     * 
+     * @param page 页码
+     * @param size 每页大小
+     * @return 设备实体列表
+     */
     public PageResult<DeviceEntity> pageDevices(int page, int size) {
         return store.pageDevices(page, size);
     }
 
+    /**
+     * 获取设备
+     * 这个方式是获取指定设备，设备包含了设备ID、设备编码、设备名称、设备描述等。
+     * 
+     * @param deviceCodeOrId 设备编码或ID
+     * @return 设备实体
+     * @throws IllegalArgumentException 如果设备不存在或设备编码为空或设备名称为空或设备编码已存在
+     */
     public DeviceEntity requireDevice(String deviceCodeOrId) {
         return store.resolveDevice(deviceCodeOrId)
                 .orElseThrow(() -> new IllegalArgumentException("设备不存在: " + deviceCodeOrId));
     }
 
+    /**
+     * 构建功能命令
+     * 这个方式是构建指定功能命令，功能命令包含了功能命令ID、功能命令名称、功能命令参数、功能命令写选项、功能命令读选项、功能命令值访问类型、功能命令值访问权限、功能命令值访问选项等。
+     * 
+     * @param deviceCode 设备编码
+     * @param request    设备命令请求
+     * @return 功能命令
+     */
     public FunctionCommand buildCommand(String deviceCode, DeviceCommandRequest request) {
         if (request == null || request.functionId() == null || request.functionId().isBlank()) {
             throw new IllegalArgumentException("functionId 不能为空");
         }
         DeviceEntity device = requireDevice(deviceCode);
+        requireEnabled(device.getEnabled(), "设备已停用: " + device.getDeviceCode());
         ProductFunctionEntity function = store.findFunction(device.getProductId(), request.functionId())
                 .orElseThrow(() -> new IllegalArgumentException(
                         "功能未配置到产品: " + device.getProductId() + "/" + request.functionId()));
+        requireFunctionPermission(function);
+        DeviceEndpointBinding endpoint = requireEndpointForFunction(device, function);
+
         Map<String, Object> caller = request.arguments() == null ? Map.of() : request.arguments();
 
         PayloadDefinitionResolver.Definition definition = PayloadDefinitionResolver.resolve(function,
@@ -999,6 +1350,7 @@ public class CatalogFormService {
                 device.getId(), function.getFunctionId());
         Map<String, Object> deviceFieldOverrides = new LinkedHashMap<>(legacyOverrides);
         deviceFieldOverrides.putAll(pathOverrides);
+        validateFieldOverrides(function, deviceFieldOverrides);
 
         Map<String, Object> payload = PayloadDefinitionResolver.assemble(definition, caller, deviceFieldOverrides);
 
@@ -1007,25 +1359,22 @@ public class CatalogFormService {
             deliveryHints.put("accessType", function.getAccessType());
         }
         if ("MQTT".equalsIgnoreCase(function.getCapabilityType())) {
-            var endpoints = store.findEndpoints(device.getDeviceCode());
-            if (!endpoints.isEmpty()) {
-                Map<String, Object> address = endpoints.get(0).address().values();
-                TopicCatalog catalog = TopicCatalog.fromAddressMap(address);
-                Map<String, String> topicOverrides = store.properties().listDeviceTopicOverrides(
-                        device.getId(), function.getFunctionId());
-                var resolved = TopicRouteResolver.resolve(
-                        catalog,
-                        definition.route(),
-                        topicOverrides,
-                        !"READ".equalsIgnoreCase(function.getAccessType()));
-                if (resolved.publishTopic() != null) {
-                    deliveryHints.put(TopicRouteResolver.MQTT_PUBLISH_TOPIC_HINT, resolved.publishTopic());
-                }
-                if ("READ".equalsIgnoreCase(function.getAccessType())) {
-                    deliveryHints.put("mqtt.subscribeOnly", "true");
-                    if (resolved.subscribeTopic() != null) {
-                        deliveryHints.put(TopicRouteResolver.MQTT_SUBSCRIBE_TOPIC_HINT, resolved.subscribeTopic());
-                    }
+            TopicCatalog catalog = TopicCatalog.fromAddressMap(endpoint.address().values());
+            Map<String, String> topicOverrides = store.properties().listDeviceTopicOverrides(
+                    device.getId(), function.getFunctionId());
+            validateTopicOverrides(function, endpoint, topicOverrides);
+            var resolved = TopicRouteResolver.resolve(
+                    catalog,
+                    definition.route(),
+                    topicOverrides,
+                    !"READ".equalsIgnoreCase(function.getAccessType()));
+            if (resolved.publishTopic() != null) {
+                deliveryHints.put(TopicRouteResolver.MQTT_PUBLISH_TOPIC_HINT, resolved.publishTopic());
+            }
+            if ("READ".equalsIgnoreCase(function.getAccessType())) {
+                deliveryHints.put("mqtt.subscribeOnly", "true");
+                if (resolved.subscribeTopic() != null) {
+                    deliveryHints.put(TopicRouteResolver.MQTT_SUBSCRIBE_TOPIC_HINT, resolved.subscribeTopic());
                 }
             }
         }
@@ -1037,6 +1386,13 @@ public class CatalogFormService {
                 deliveryHints);
     }
 
+    /**
+     * 列出产品功能
+     * 这个方式是列出指定产品功能，产品功能包含了产品功能ID、产品功能类型、产品功能参数、产品功能写选项、产品功能读选项、产品功能值访问类型、产品功能值访问权限、产品功能值访问选项等。
+     * 
+     * @param productId 产品ID
+     * @return 产品功能实体列表
+     */
     public List<FunctionFormView> productFunctions(String productId) {
         store.findProduct(productId).orElseThrow(() -> new IllegalArgumentException("产品不存在: " + productId));
         return store.listFunctions(productId).stream()
@@ -1044,6 +1400,13 @@ public class CatalogFormService {
                 .toList();
     }
 
+    /**
+     * 列出产品功能视图
+     * 这个方式是列出指定产品功能视图，产品功能视图包含了产品功能视图ID、产品功能视图类型、产品功能视图参数、产品功能视图写选项、产品功能视图读选项、产品功能视图值访问类型、产品功能视图值访问权限、产品功能视图值访问选项等。
+     * 
+     * @param productId 产品ID
+     * @return 产品功能视图实体列表
+     */
     public List<ProductFunctionView> listProductFunctionViews(String productId) {
         store.findProduct(productId).orElseThrow(() -> new IllegalArgumentException("产品不存在: " + productId));
         return store.listFunctions(productId).stream()
@@ -1051,12 +1414,27 @@ public class CatalogFormService {
                 .toList();
     }
 
+    /**
+     * 获取产品功能
+     * 这个方式是获取指定产品功能，产品功能包含了产品功能ID、产品功能类型、产品功能参数、产品功能写选项、产品功能读选项、产品功能值访问类型、产品功能值访问权限、产品功能值访问选项等。
+     * 
+     * @param productId  产品ID
+     * @param functionId 功能ID
+     * @return 产品功能实体
+     */
     public FunctionFormView productFunction(String productId, String functionId) {
         ProductFunctionEntity function = store.findFunction(productId, functionId)
                 .orElseThrow(() -> new IllegalArgumentException("功能不存在: " + productId + "/" + functionId));
         return toForm(function, Map.of());
     }
 
+    /**
+     * 列出设备功能
+     * 这个方式是列出指定设备功能，设备功能包含了设备功能ID、设备功能类型、设备功能参数、设备功能写选项、设备功能读选项、设备功能值访问类型、设备功能值访问权限、设备功能值访问选项等。
+     * 
+     * @param deviceCode 设备编码
+     * @return 设备功能实体列表
+     */
     public List<FunctionFormView> deviceFunctions(String deviceCode) {
         DeviceEntity device = store.findDeviceByCode(deviceCode)
                 .orElseThrow(() -> new IllegalArgumentException("设备不存在: " + deviceCode));
@@ -1066,6 +1444,14 @@ public class CatalogFormService {
                 .toList();
     }
 
+    /**
+     * 获取设备功能
+     * 这个方式是获取指定设备功能，设备功能包含了设备功能ID、设备功能类型、设备功能参数、设备功能写选项、设备功能读选项、设备功能值访问类型、设备功能值访问权限、设备功能值访问选项等。
+     * 
+     * @param deviceCode 设备编码
+     * @param functionId 功能ID
+     * @return 设备功能实体
+     */
     public FunctionFormView deviceFunction(String deviceCode, String functionId) {
         DeviceEntity device = store.findDeviceByCode(deviceCode)
                 .orElseThrow(() -> new IllegalArgumentException("设备不存在: " + deviceCode));
@@ -1074,6 +1460,13 @@ public class CatalogFormService {
         return toForm(function, store.loadAllDeviceOverrides(device));
     }
 
+    /**
+     * 转换产品功能视图
+     * 这个方式是转换指定产品功能视图，产品功能视图包含了产品功能视图ID、产品功能视图类型、产品功能视图参数、产品功能视图写选项、产品功能视图读选项、产品功能视图值访问类型、产品功能视图值访问权限、产品功能视图值访问选项等。
+     * 
+     * @param function 产品功能实体
+     * @return 产品功能视图实体
+     */
     public ProductFunctionView toProductFunctionView(ProductFunctionEntity function) {
         List<PropertyItem> props = store.loadFunctionProperties(function);
         ValueAccessType writeAccess = ValueAccessType.from(function.getWriteAccessType());
@@ -1098,6 +1491,14 @@ public class CatalogFormService {
                 function.getPayloadEncoding());
     }
 
+    /**
+     * 获取设备字段覆盖
+     * 这个方式是获取指定设备字段覆盖，设备字段覆盖包含了设备字段覆盖ID、设备字段覆盖名称、设备字段覆盖类型、设备字段覆盖描述等。
+     * 
+     * @param deviceCode 设备编码
+     * @param functionId 功能ID
+     * @return 设备字段覆盖实体
+     */
     public Map<String, Object> deviceFieldOverrides(String deviceCode, String functionId) {
         DeviceEntity device = requireDevice(deviceCode);
         store.findFunction(device.getProductId(), functionId)
@@ -1105,13 +1506,32 @@ public class CatalogFormService {
         return store.properties().listDeviceFieldOverrides(device.getId(), functionId);
     }
 
+    /**
+     * 替换设备字段覆盖
+     * 这个方式是替换指定设备字段覆盖，设备字段覆盖包含了设备字段覆盖ID、设备字段覆盖名称、设备字段覆盖类型、设备字段覆盖描述等。
+     * 
+     * @param deviceCode 设备编码
+     * @param functionId 功能ID
+     * @param overrides  设备字段覆盖
+     */
+    @Transactional
     public void replaceDeviceFieldOverrides(String deviceCode, String functionId, Map<String, Object> overrides) {
         DeviceEntity device = requireDevice(deviceCode);
-        store.findFunction(device.getProductId(), functionId)
+        ProductFunctionEntity function = store.findFunction(device.getProductId(), functionId)
                 .orElseThrow(() -> new IllegalArgumentException("功能不存在: " + functionId));
-        store.properties().replaceDeviceFieldOverrides(device.getId(), functionId, overrides);
+        Map<String, Object> safe = overrides == null ? Map.of() : overrides;
+        validateFieldOverrides(function, safe);
+        store.properties().replaceDeviceFieldOverrides(device.getId(), functionId, safe);
     }
 
+    /**
+     * 获取设备主题覆盖
+     * 这个方式是获取指定设备主题覆盖，设备主题覆盖包含了设备主题覆盖ID、设备主题覆盖名称、设备主题覆盖类型、设备主题覆盖描述等。
+     * 
+     * @param deviceCode 设备编码
+     * @param functionId 功能ID
+     * @return 设备主题覆盖实体
+     */
     public Map<String, String> deviceTopicOverrides(String deviceCode, String functionId) {
         DeviceEntity device = requireDevice(deviceCode);
         store.findFunction(device.getProductId(), functionId)
@@ -1119,13 +1539,35 @@ public class CatalogFormService {
         return store.properties().listDeviceTopicOverrides(device.getId(), functionId);
     }
 
+    /**
+     * 替换设备主题覆盖
+     * 这个方式是替换指定设备主题覆盖，设备主题覆盖包含了设备主题覆盖ID、设备主题覆盖名称、设备主题覆盖类型、设备主题覆盖描述等。
+     * 
+     * @param deviceCode 设备编码
+     * @param functionId 功能ID
+     * @param overrides  设备主题覆盖
+     */
+    @Transactional
     public void replaceDeviceTopicOverrides(String deviceCode, String functionId, Map<String, String> overrides) {
         DeviceEntity device = requireDevice(deviceCode);
-        store.findFunction(device.getProductId(), functionId)
+        ProductFunctionEntity function = store.findFunction(device.getProductId(), functionId)
                 .orElseThrow(() -> new IllegalArgumentException("功能不存在: " + functionId));
-        store.properties().replaceDeviceTopicOverrides(device.getId(), functionId, overrides);
+        Map<String, String> safe = overrides == null ? Map.of() : overrides;
+        DeviceEndpointBinding endpoint = null;
+        if ("MQTT".equalsIgnoreCase(function.getCapabilityType())) {
+            endpoint = requireEndpointForFunction(device, function);
+        }
+        validateTopicOverrides(function, endpoint, safe);
+        store.properties().replaceDeviceTopicOverrides(device.getId(), functionId, safe);
     }
 
+    /**
+     * 转换通道视图
+     * 这个方式是转换指定通道视图，通道视图包含了通道视图ID、通道视图类型、通道视图参数、通道视图写选项、通道视图读选项、通道视图值访问类型、通道视图值访问权限、通道视图值访问选项等。
+     * 
+     * @param entity 通道实体
+     * @return 通道视图实体
+     */
     public ChannelView toChannelView(ChannelEntity entity) {
         return new ChannelView(
                 entity.getId(),
@@ -1137,6 +1579,13 @@ public class CatalogFormService {
                 entity.getUpdatedAt());
     }
 
+    /**
+     * 转换设备视图
+     * 这个方式是转换指定设备视图，设备视图包含了设备视图ID、设备视图类型、设备视图参数、设备视图写选项、设备视图读选项、设备视图值访问类型、设备视图值访问权限、设备视图值访问选项等。
+     * 
+     * @param entity 设备实体
+     * @return 设备视图实体
+     */
     public DeviceView toDeviceView(DeviceEntity entity) {
         CatalogApplyService apply = applyService == null ? null : applyService.getIfAvailable();
         boolean loaded = apply != null && apply.isLoaded(entity.getDeviceCode());
@@ -1152,6 +1601,13 @@ public class CatalogFormService {
                 loaded);
     }
 
+    /**
+     * 转换设备端点视图
+     * 这个方式是转换指定设备端点视图，设备端点视图包含了设备端点视图ID、设备端点视图类型、设备端点视图参数、设备端点视图写选项、设备端点视图读选项、设备端点视图值访问类型、设备端点视图值访问权限、设备端点视图值访问选项等。
+     * 
+     * @param entity 设备端点实体
+     * @return 设备端点视图实体
+     */
     public DeviceEndpointView toEndpointView(DeviceEndpointEntity entity) {
         return new DeviceEndpointView(
                 entity.getId(),
@@ -1161,6 +1617,14 @@ public class CatalogFormService {
                 entity.getCreatedAt());
     }
 
+    /**
+     * 分页通道视图
+     * 这个方式是分页通道视图，通道视图包含了通道视图ID、通道视图类型、通道视图参数、通道视图写选项、通道视图读选项、通道视图值访问类型、通道视图值访问权限、通道视图值访问选项等。
+     * 
+     * @param page 页码
+     * @param size 每页大小
+     * @return 通道视图实体列表
+     */
     public PageResult<ChannelView> pageChannelViews(int page, int size) {
         PageResult<ChannelEntity> raw = store.pageChannels(page, size);
         return new PageResult<>(
@@ -1171,6 +1635,14 @@ public class CatalogFormService {
                 raw.totalPages());
     }
 
+    /**
+     * 分页设备视图
+     * 这个方式是分页设备视图，设备视图包含了设备视图ID、设备视图类型、设备视图参数、设备视图写选项、设备视图读选项、设备视图值访问类型、设备视图值访问权限、设备视图值访问选项等。
+     * 
+     * @param page 页码
+     * @param size 每页大小
+     * @return 设备视图实体列表
+     */
     public PageResult<DeviceView> pageDeviceViews(int page, int size) {
         PageResult<DeviceEntity> raw = store.pageDevices(page, size);
         return new PageResult<>(
@@ -1181,6 +1653,14 @@ public class CatalogFormService {
                 raw.totalPages());
     }
 
+    /**
+     * 转换产品功能视图
+     * 这个方式是转换指定产品功能视图，产品功能视图包含了产品功能视图ID、产品功能视图类型、产品功能视图参数、产品功能视图写选项、产品功能视图读选项、产品功能视图值访问类型、产品功能视图值访问权限、产品功能视图值访问选项等。
+     * 
+     * @param function        产品功能实体
+     * @param deviceOverrides 设备覆盖
+     * @return 产品功能视图实体
+     */
     private FunctionFormView toForm(ProductFunctionEntity function, Map<String, List<PropertyItem>> deviceOverrides) {
         List<PropertyItem> base = store.loadFunctionProperties(function);
         List<PropertyItem> overrideItems = deviceOverrides.getOrDefault(function.getFunctionId(), List.of());
@@ -1194,7 +1674,8 @@ public class CatalogFormService {
         List<SchemaField> schema = inferSchema(values);
         Optional<FunctionTemplate> template = findTemplate(function.getCapabilityType(), function.getFunctionId());
         boolean contracted = registrar != null && function.getCapabilityType() != null
-                && registrar.find(function.getCapabilityType()).map(CapabilityDescriptor::contractedParameters).orElse(false);
+                && registrar.find(function.getCapabilityType()).map(descriptor -> descriptor.contractedParameters())
+                        .orElse(false);
         if (contracted && !structFields.isEmpty()) {
             schema = schemaFromWriteFields(structFields, true);
         } else if (template.isPresent()) {
@@ -1226,6 +1707,14 @@ public class CatalogFormService {
                 resolvePayloadMode(function, writeOptions));
     }
 
+    /**
+     * 解析负载模式
+     * 这个方式是解析指定负载模式，负载模式包含了负载模式ID、负载模式名称、负载模式描述等。
+     * 
+     * @param function     产品功能实体
+     * @param writeOptions 写选项
+     * @return 负载模式
+     */
     private static String resolvePayloadMode(ProductFunctionEntity function, List<ValueOption> writeOptions) {
         if (function.getPayloadMode() != null && !function.getPayloadMode().isBlank()) {
             return function.getPayloadMode();
@@ -1237,7 +1726,13 @@ public class CatalogFormService {
         return com.mtfm.gateway.spi.payload.PayloadMode.STRUCT.wire();
     }
 
-    /** STRUCT/READ 字段 → 下发表单 SchemaField。callerOnly 时只暴露调用方需要填的字段。 */
+    /**
+     * STRUCT/READ 字段 → 下发表单 SchemaField。callerOnly 时只暴露调用方需要填的字段。
+     * 
+     * @param writeFields 写字段列表
+     * @param callerOnly  是否只暴露调用方需要填的字段
+     * @return 下发表单 SchemaField 列表
+     */
     private static List<SchemaField> schemaFromWriteFields(List<WriteFieldOption> writeFields, boolean callerOnly) {
         if (writeFields == null || writeFields.isEmpty()) {
             return List.of();
@@ -1309,6 +1804,13 @@ public class CatalogFormService {
         return List.copyOf(byName.values());
     }
 
+    /**
+     * 解析描述
+     * 这个方式是解析指定描述，描述包含了描述ID、描述名称、描述类型、描述描述等。
+     * 
+     * @param function 产品功能实体
+     * @return 描述
+     */
     private String resolveDescription(ProductFunctionEntity function) {
         if (function.getDescription() != null && !function.getDescription().isBlank()) {
             return function.getDescription();
@@ -1319,6 +1821,14 @@ public class CatalogFormService {
                 .orElse(function.getFunctionId());
     }
 
+    /**
+     * 查找模板
+     * 这个方式是查找指定模板，模板包含了模板ID、模板名称、模板类型、模板描述等。
+     * 
+     * @param capabilityType 能力类型
+     * @param functionId     功能ID
+     * @return 模板实体
+     */
     private Optional<FunctionTemplate> findTemplate(String capabilityType, String functionId) {
         if (capabilityType == null || capabilityType.isBlank() || registrar == null) {
             return Optional.empty();
@@ -1326,6 +1836,14 @@ public class CatalogFormService {
         return registrar.find(capabilityType).flatMap(descriptor -> descriptor.functionTemplate(functionId));
     }
 
+    /**
+     * 解析属性
+     * 这个方式是解析指定属性，属性包含了属性ID、属性名称、属性类型、属性描述等。
+     * 
+     * @param properties 属性列表
+     * @param legacy     遗产属性
+     * @return 属性列表
+     */
     private static List<PropertyItem> resolveProperties(List<PropertyItem> properties, Map<String, Object> legacy) {
         if (properties != null) {
             return properties;
@@ -1333,6 +1851,14 @@ public class CatalogFormService {
         return PropertySchemas.fromValueMap(legacy == null ? Map.of() : legacy);
     }
 
+    /**
+     * 解析功能覆盖
+     * 这个方式是解析指定功能覆盖，功能覆盖包含了功能覆盖ID、功能覆盖名称、功能覆盖类型、功能覆盖描述等。
+     * 
+     * @param overrides 覆盖列表
+     * @param legacy    遗产覆盖
+     * @return 覆盖列表
+     */
     private static Map<String, List<PropertyItem>> resolveFunctionOverrides(
             Map<String, List<PropertyItem>> overrides, Map<String, Object> legacy) {
         if (overrides != null) {
@@ -1341,6 +1867,13 @@ public class CatalogFormService {
         return CatalogStore.parseLegacyOverrides(legacy);
     }
 
+    /**
+     * 转换覆盖为遗产覆盖
+     * 这个方式是转换指定覆盖为遗产覆盖，覆盖包含了覆盖ID、覆盖名称、覆盖类型、覆盖描述等。
+     * 
+     * @param overrides 覆盖列表
+     * @return 遗产覆盖
+     */
     private static Map<String, Object> toLegacyOverrideMap(Map<String, List<PropertyItem>> overrides) {
         Map<String, Object> result = new LinkedHashMap<>();
         if (overrides == null) {
@@ -1350,12 +1883,129 @@ public class CatalogFormService {
         return result;
     }
 
+    private static void requireEnabled(Boolean enabled, String message) {
+        if (Boolean.FALSE.equals(enabled)) {
+            throw new IllegalArgumentException(message);
+        }
+    }
+
+    private static void requireFunctionPermission(ProductFunctionEntity function) {
+        int permission = function.getAccessPermission() == null
+                ? AccessPermission.WRITE.code()
+                : function.getAccessPermission();
+        if ("WRITE".equalsIgnoreCase(function.getAccessType())
+                && !AccessPermission.contains(permission, AccessPermission.WRITE)) {
+            throw new IllegalArgumentException("功能未授予写权限: " + function.getFunctionId());
+        }
+        if ("READ".equalsIgnoreCase(function.getAccessType())
+                && !AccessPermission.contains(permission, AccessPermission.READ)
+                && permission != AccessPermission.WRITE.code()) {
+            throw new IllegalArgumentException("功能未授予读权限: " + function.getFunctionId());
+        }
+    }
+
+    private DeviceEndpointBinding requireEndpointForFunction(DeviceEntity device, ProductFunctionEntity function) {
+        String capability = function.getCapabilityType();
+        List<DeviceEndpointBinding> matched = store.findEndpoints(device.getDeviceCode()).stream()
+                .filter(endpoint -> capability != null && capability.equalsIgnoreCase(endpoint.capabilityType()))
+                .toList();
+        if (matched.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "设备未绑定 " + capability + " 通道: " + device.getDeviceCode() + "/" + function.getFunctionId());
+        }
+        DeviceEndpointBinding chosen = matched.getFirst();
+        ChannelEntity channel = store.findChannel(chosen.channelId())
+                .orElseThrow(() -> new IllegalArgumentException("通道不存在: " + chosen.channelId()));
+        requireEnabled(channel.getEnabled(), "通道已停用: " + channel.getCode());
+        return chosen;
+    }
+
+    private void validateFieldOverrides(ProductFunctionEntity function, Map<String, Object> overrides) {
+        if (overrides == null || overrides.isEmpty()) {
+            return;
+        }
+        Set<String> allowed = allowedOverrideFields(function);
+        List<String> unknown = overrides.keySet().stream()
+                .filter(key -> key != null && !key.isBlank() && !allowed.contains(key))
+                .toList();
+        if (!unknown.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "设备字段覆盖不在功能契约内: " + unknown + "（功能 " + function.getFunctionId() + "）");
+        }
+    }
+
+    private Set<String> allowedOverrideFields(ProductFunctionEntity function) {
+        Set<String> allowed = new LinkedHashSet<>();
+        boolean read = "READ".equalsIgnoreCase(function.getAccessType());
+        List<WriteFieldOption> fields = read
+                ? store.properties().listReadFields(function.getId())
+                : store.properties().listWriteFields(function.getId());
+        for (WriteFieldOption field : fields == null ? List.<WriteFieldOption>of() : fields) {
+            if (field.field() != null && !field.field().isBlank()) {
+                allowed.add(field.field());
+            }
+            if (field.callerField() != null && !field.callerField().isBlank()) {
+                allowed.add(field.callerField());
+            }
+        }
+        for (PropertyItem item : store.loadFunctionProperties(function)) {
+            if (item.attribute() != null && !item.attribute().isBlank()) {
+                allowed.add(item.attribute());
+            }
+        }
+        return allowed;
+    }
+
+    private void validateTopicOverrides(
+            ProductFunctionEntity function, DeviceEndpointBinding endpoint, Map<String, String> overrides) {
+        if (overrides == null || overrides.isEmpty()) {
+            return;
+        }
+        Set<String> allowed = new LinkedHashSet<>();
+        allowed.add(TopicCatalog.DEFAULT_PUB);
+        allowed.add(TopicCatalog.DEFAULT_SUB);
+        if (function.getPublishTopicSlot() != null && !function.getPublishTopicSlot().isBlank()) {
+            allowed.add(function.getPublishTopicSlot());
+        }
+        if (function.getSubscribeTopicSlot() != null && !function.getSubscribeTopicSlot().isBlank()) {
+            allowed.add(function.getSubscribeTopicSlot());
+        }
+        if (endpoint != null) {
+            try {
+                allowed.addAll(TopicCatalog.fromAddressMap(endpoint.address().values()).slots().keySet());
+            } catch (IllegalArgumentException ignored) {
+                // 地址尚未配齐时只允许默认 slot
+            }
+        }
+        List<String> unknown = overrides.keySet().stream()
+                .filter(key -> key != null && !key.isBlank() && !allowed.contains(key))
+                .toList();
+        if (!unknown.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "设备主题覆盖不在已知 slot 内: " + unknown + "（功能 " + function.getFunctionId() + "）");
+        }
+    }
+
+    /**
+     * 推断模式
+     * 这个方式是推断指定模式，模式包含了模式ID、模式名称、模式类型、模式描述等。
+     * 
+     * @param values 值
+     * @return 模式列表
+     */
     private static List<SchemaField> inferSchema(Map<String, Object> values) {
         return values.entrySet().stream()
                 .map(entry -> SchemaField.optional(entry.getKey(), inferType(entry.getValue()), "", entry.getValue()))
                 .toList();
     }
 
+    /**
+     * 推断类型
+     * 这个方式是推断指定类型，类型包含了类型ID、类型名称、类型类型、类型描述等。
+     * 
+     * @param value 值
+     * @return 类型
+     */
     private static FieldType inferType(Object value) {
         if (value instanceof Number) {
             return FieldType.INT;

@@ -48,6 +48,7 @@ import {
 import { catalogApi } from "@/lib/api"
 import {
   buildValuesFromFields,
+  defaultsFromSchema,
   propertiesToRecord,
   recordToProperties,
   toFieldStringMap,
@@ -62,6 +63,26 @@ type Props = {
 
 type Mode = "create" | "edit"
 
+const MODBUS_TCP_FIELDS = new Set(["transport", "host", "port"])
+const MODBUS_RTU_FIELDS = new Set(["transport", "serialPort", "baudRate", "dataBits", "parity", "stopBits"])
+
+function visibleConnectionSchema(
+  schema: SchemaField[],
+  capabilityType: string,
+  transport: string
+): SchemaField[] {
+  if (capabilityType !== "MODBUS") {
+    return schema
+  }
+  const rtu = (transport || "TCP").toUpperCase() === "RTU"
+  const allowed = rtu ? MODBUS_RTU_FIELDS : MODBUS_TCP_FIELDS
+  return schema
+    .filter((field) => allowed.has(field.name))
+    .map((field) =>
+      field.name === "host" || field.name === "serialPort" ? { ...field, required: true } : field
+    )
+}
+
 export function ChannelsPanel({ channels, capabilities, onChanged }: Props) {
   const [open, setOpen] = useState(false)
   const [mode, setMode] = useState<Mode>("create")
@@ -75,6 +96,10 @@ export function ChannelsPanel({ channels, capabilities, onChanged }: Props) {
   const schema: SchemaField[] = useMemo(() => {
     return capabilities.find((item) => item.capabilityType === capabilityType)?.connectionSchema ?? []
   }, [capabilities, capabilityType])
+  const visibleSchema: SchemaField[] = useMemo(
+    () => visibleConnectionSchema(schema, capabilityType, connection.transport || "TCP"),
+    [schema, capabilityType, connection.transport]
+  )
 
   function openCreate() {
     const first = capabilities[0]?.capabilityType ?? ""
@@ -82,7 +107,7 @@ export function ChannelsPanel({ channels, capabilities, onChanged }: Props) {
     setEditingId(null)
     setCode("")
     setCapabilityType(first)
-    setConnection({})
+    setConnection(defaultsFromSchema(capabilities[0]?.connectionSchema ?? []))
     setEnabled(true)
     setOpen(true)
   }
@@ -104,8 +129,8 @@ export function ChannelsPanel({ channels, capabilities, onChanged }: Props) {
     }
     setPending(true)
     try {
-      const body = buildValuesFromFields(schema, connection)
-      const properties = recordToProperties(body, schema)
+      const body = buildValuesFromFields(visibleSchema, connection)
+      const properties = recordToProperties(body, visibleSchema)
       if (mode === "create") {
         await catalogApi.createChannel({
           code: code.trim(),
@@ -151,7 +176,7 @@ export function ChannelsPanel({ channels, capabilities, onChanged }: Props) {
       <CardHeader className="flex flex-row items-start justify-between gap-4">
         <div className="flex flex-col gap-1.5">
           <CardTitle>通道</CardTitle>
-          <CardDescription>共享连接（host/port/凭证），多设备复用。</CardDescription>
+          <CardDescription>共享连接。Modbus 通道选 TCP 或 RTU，产品功能仍是同一套。</CardDescription>
         </div>
         <Button size="sm" onClick={openCreate}>
           <PlusIcon data-icon="inline-start" />
@@ -241,7 +266,8 @@ export function ChannelsPanel({ channels, capabilities, onChanged }: Props) {
                 disabled={mode === "edit"}
                 onValueChange={(value) => {
                   setCapabilityType(value)
-                  setConnection({})
+                  const next = capabilities.find((item) => item.capabilityType === value)?.connectionSchema ?? []
+                  setConnection(defaultsFromSchema(next))
                 }}
               >
                 <SelectTrigger>
@@ -258,7 +284,7 @@ export function ChannelsPanel({ channels, capabilities, onChanged }: Props) {
                 </SelectContent>
               </Select>
             </Field>
-            {schema.map((field) => (
+            {visibleSchema.map((field) => (
               <Field key={field.name}>
                 <FieldLabel htmlFor={`conn-${field.name}`}>
                   {field.label || field.name}
