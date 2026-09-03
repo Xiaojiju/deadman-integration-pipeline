@@ -95,7 +95,6 @@ class CloudPublisherHubTest {
                 new java.net.InetSocketAddress(0), 0);
         server.createContext("/hook", exchange -> {
             int n = hits.incrementAndGet();
-            byte[] ignored = exchange.getRequestBody().readAllBytes();
             int status = n == 1 ? 500 : 204;
             exchange.sendResponseHeaders(status, -1);
             exchange.close();
