@@ -50,6 +50,16 @@ public interface MqttTransport extends AutoCloseable {
      */
     void subscribe(String channelId, String topic, BiConsumer<String, String> handler);
 
+    /**
+     * 取消指定 handler 的订阅。同一 channel/topic 上其他设备的 handler 不受影响；
+     * 该 topic 已无 handler 时，生产实现应向 Broker 发送 unsubscribe。
+     *
+     * @param channelId 通道 ID
+     * @param topic     主题
+     * @param handler   当初 {@link #subscribe} 传入的同一实例
+     */
+    void unsubscribe(String channelId, String topic, BiConsumer<String, String> handler);
+
     @Override
     default void close() {
     }

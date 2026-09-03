@@ -153,6 +153,7 @@ public final class DefaultRegistries implements DriverRegistry, PluginRegistry, 
         return Optional.ofNullable(drivers.get(capabilityType));
     }
 
+    @Override
     public Optional<FunctionExecutor> findExecutor(String capabilityType) {
         return Optional.ofNullable(executors.get(capabilityType));
     }

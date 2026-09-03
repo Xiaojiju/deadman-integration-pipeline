@@ -34,18 +34,20 @@ public class CatalogMqttSubscribeRoutes implements MqttSubscribeRouteCatalog {
             return List.of();
         }
         TopicCatalog catalog = TopicCatalog.fromAddressMap(addressValues);
+        Map<String, Map<String, String>> topicOverrides = store.properties()
+                .listDeviceTopicOverridesByDevice(device.get().getId());
         return store.listFunctions(device.get().getProductId()).stream()
                 .filter(function -> CAPABILITY_MQTT.equalsIgnoreCase(function.getCapabilityType()))
                 .filter(function -> "READ".equalsIgnoreCase(function.getAccessType()))
-                .map(function -> toRoute(device.get(), function, catalog))
+                .map(function -> toRoute(function, catalog,
+                        topicOverrides.getOrDefault(function.getFunctionId(), Map.of())))
                 .flatMap(route -> route.map(Stream::of).orElseGet(Stream::empty))
                 .toList();
     }
 
     private Optional<MqttSubscribeRoute> toRoute(
-            DeviceEntity device, ProductFunctionEntity function, TopicCatalog catalog) {
-        Map<String, String> topicOverrides = store.properties().listDeviceTopicOverrides(
-                device.getId(), function.getFunctionId());
+            ProductFunctionEntity function, TopicCatalog catalog,
+            Map<String, String> topicOverrides) {
         TopicCatalog effective = catalog.withOverrides(topicOverrides);
         FunctionRoute route = new FunctionRoute(function.getPublishTopicSlot(), function.getSubscribeTopicSlot());
         try {

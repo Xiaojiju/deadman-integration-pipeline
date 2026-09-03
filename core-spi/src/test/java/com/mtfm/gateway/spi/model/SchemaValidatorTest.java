@@ -53,4 +53,24 @@ class SchemaValidatorTest {
                 () -> SchemaValidator.require(schema, Map.of("enabled", "yes"), "通道 connection"));
         assertTrue(ex.getMessage().contains("enabled"));
     }
+
+    @Test
+    void rejectsIntegersOutsideDeclaredRange() {
+        List<SchemaField> schema = List.of(SchemaField.optional("port", FieldType.INT, "端口", 502).range(1, 65535));
+        assertDoesNotThrow(() -> SchemaValidator.require(schema, Map.of("port", 502), "通道 connection"));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> SchemaValidator.require(schema, Map.of("port", 70000), "通道 connection"));
+        assertTrue(ex.getMessage().contains("port"));
+        assertTrue(ex.getMessage().contains("超出范围"));
+    }
+
+    @Test
+    void requireConstraintsIgnoresUnknownKeys() {
+        List<SchemaField> schema = List.of(SchemaField.required("offset", FieldType.INT, "起始地址", 0).range(0, 65535));
+        assertDoesNotThrow(() -> SchemaValidator.requireConstraints(
+                schema, Map.of("offset", 2, "packed", "FF"), "功能参数"));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> SchemaValidator.requireConstraints(schema, Map.of("offset", -1), "功能参数"));
+        assertTrue(ex.getMessage().contains("offset"));
+    }
 }

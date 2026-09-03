@@ -16,12 +16,11 @@ import com.mtfm.gateway.catalog.dto.FunctionFormView;
 import com.mtfm.gateway.catalog.dto.PageResult;
 import com.mtfm.gateway.catalog.dto.ProductFunctionView;
 import com.mtfm.gateway.catalog.dto.ProductFunctionWriteRequest;
+import com.mtfm.gateway.catalog.dto.ProductView;
 import com.mtfm.gateway.catalog.dto.ProductWriteRequest;
 import com.mtfm.gateway.catalog.dto.SupportedFunctionView;
 import com.mtfm.gateway.catalog.dto.SupportedSchemaView;
-import com.mtfm.gateway.catalog.entity.ProductEntity;
 import com.mtfm.gateway.catalog.schema.CatalogFormService;
-import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.spi.model.CapabilityDescriptor;
 import com.mtfm.gateway.spi.model.ExecutionResult;
 import com.mtfm.gateway.spi.model.FormField;
@@ -42,18 +41,16 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * 配置域 REST：能力/功能表单、产品/通道/设备增删查改、运行时 load/unload、手动下发指令。
- * <p>对外 JSON 字段一律以结构化对象返回（非 JSON 字符串）。
+ * <p>对外 JSON 一律走 View，不直接返回 ORM 实体。
  */
 @RestController
 @RequestMapping("/catalog")
 public class CatalogController {
 
-    private final CatalogStore store;
     private final CatalogApplyService applyService;
     private final CatalogFormService forms;
 
-    public CatalogController(CatalogStore store, CatalogApplyService applyService, CatalogFormService forms) {
-        this.store = store;
+    public CatalogController(CatalogApplyService applyService, CatalogFormService forms) {
         this.applyService = applyService;
         this.forms = forms;
     }
@@ -85,25 +82,21 @@ public class CatalogController {
         return forms.supportedAddress(capabilityType).fields();
     }
 
-    /** 能力连接属性 schema（对齐旧 /supported）。 */
     @GetMapping("/capabilities/{capabilityType}/supported/connection")
     public SupportedSchemaView supportedConnection(@PathVariable String capabilityType) {
         return forms.supportedConnection(capabilityType);
     }
 
-    /** 能力端点地址属性 schema。 */
     @GetMapping("/capabilities/{capabilityType}/supported/address")
     public SupportedSchemaView supportedAddress(@PathVariable String capabilityType) {
         return forms.supportedAddress(capabilityType);
     }
 
-    /** 能力功能模板 + 参数属性 + choices。 */
     @GetMapping("/capabilities/{capabilityType}/supported/functions")
     public List<SupportedFunctionView> supportedFunctions(@PathVariable String capabilityType) {
         return forms.supportedFunctions(capabilityType);
     }
 
-    /** 单功能完整表单结构（含枚举选项）。 */
     @GetMapping("/capabilities/{capabilityType}/supported/functions/{functionId}")
     public SupportedFunctionView supportedFunction(
             @PathVariable String capabilityType, @PathVariable String functionId) {
@@ -113,35 +106,33 @@ public class CatalogController {
     // ——— 产品 ———
 
     @GetMapping("/products")
-    public PageResult<ProductEntity> listProducts(
+    public PageResult<ProductView> listProducts(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return store.pageProducts(page, size);
+        return forms.pageProductViews(page, size);
     }
 
     @GetMapping("/products/{productId}")
-    public ProductEntity getProduct(@PathVariable String productId) {
-        return store.findProduct(productId)
-                .orElseThrow(() -> new IllegalArgumentException("产品不存在: " + productId));
+    public ProductView getProduct(@PathVariable String productId) {
+        return forms.requireProductView(productId);
     }
 
     @PostMapping("/products")
-    public ProductEntity createProduct(@RequestBody ProductWriteRequest request) {
-        return forms.createProduct(request);
+    public ProductView createProduct(@RequestBody ProductWriteRequest request) {
+        return forms.toProductView(forms.createProduct(request));
     }
 
     @PutMapping("/products/{productId}")
-    public ProductEntity updateProduct(@PathVariable String productId, @RequestBody ProductWriteRequest request) {
-        return forms.updateProduct(productId, request);
+    public ProductView updateProduct(@PathVariable String productId, @RequestBody ProductWriteRequest request) {
+        return forms.toProductView(forms.updateProduct(productId, request));
     }
 
     @DeleteMapping("/products/{productId}")
     public Map<String, Object> deleteProduct(@PathVariable String productId) {
-        boolean deleted = store.deleteProduct(productId);
+        boolean deleted = forms.deleteProduct(productId);
         return Map.of("productId", productId, "deleted", deleted);
     }
 
-    /** 列出产品功能（含 description；optionSchema / protocolMapping 为对象）。 */
     @GetMapping("/products/{productId}/functions")
     public List<ProductFunctionView> listProductFunctions(@PathVariable String productId) {
         return forms.listProductFunctionViews(productId);
@@ -179,7 +170,7 @@ public class CatalogController {
 
     @DeleteMapping("/products/{productId}/functions/{functionId}")
     public Map<String, Object> deleteFunction(@PathVariable String productId, @PathVariable String functionId) {
-        boolean deleted = store.deleteFunction(productId, functionId);
+        boolean deleted = forms.deleteFunction(productId, functionId);
         return Map.of("productId", productId, "functionId", functionId, "deleted", deleted);
     }
 
@@ -194,8 +185,7 @@ public class CatalogController {
 
     @GetMapping("/channels/{channelId}")
     public ChannelView getChannel(@PathVariable String channelId) {
-        return forms.toChannelView(store.findChannel(channelId)
-                .orElseThrow(() -> new IllegalArgumentException("通道不存在: " + channelId)));
+        return forms.requireChannelView(channelId);
     }
 
     @PostMapping("/channels")
@@ -210,7 +200,7 @@ public class CatalogController {
 
     @DeleteMapping("/channels/{channelId}")
     public Map<String, Object> deleteChannel(@PathVariable String channelId) {
-        boolean deleted = store.deleteChannel(channelId);
+        boolean deleted = forms.deleteChannel(channelId);
         return Map.of("channelId", channelId, "deleted", deleted);
     }
 
@@ -274,7 +264,7 @@ public class CatalogController {
     @DeleteMapping("/devices/{deviceCode}/endpoints/{endpointId}")
     public Map<String, Object> deleteEndpoint(@PathVariable String deviceCode, @PathVariable String endpointId) {
         forms.requireDevice(deviceCode);
-        boolean deleted = store.deleteEndpoint(endpointId);
+        boolean deleted = forms.deleteEndpoint(endpointId);
         return Map.of("endpointId", endpointId, "deleted", deleted);
     }
 
@@ -300,7 +290,6 @@ public class CatalogController {
         return applyService.invoke(deviceCode, request);
     }
 
-    /** 设备功能级字段覆盖（如 deviceId 与平台编码不同）。 */
     @GetMapping("/devices/{deviceCode}/functions/{functionId}/field-overrides")
     public Map<String, Object> deviceFieldOverrides(
             @PathVariable String deviceCode, @PathVariable String functionId) {
@@ -317,7 +306,6 @@ public class CatalogController {
         return forms.deviceFieldOverrides(deviceCode, functionId);
     }
 
-    /** 设备功能级 topic slot 覆盖。 */
     @GetMapping("/devices/{deviceCode}/functions/{functionId}/topic-overrides")
     public Map<String, String> deviceTopicOverrides(
             @PathVariable String deviceCode, @PathVariable String functionId) {

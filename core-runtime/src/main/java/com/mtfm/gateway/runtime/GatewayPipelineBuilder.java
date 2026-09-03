@@ -1,6 +1,7 @@
 package com.mtfm.gateway.runtime;
 
 import com.mtfm.gateway.runtime.metrics.CountingGatewayMetrics;
+import com.mtfm.gateway.runtime.registry.DefaultRegistries;
 import com.mtfm.gateway.runtime.seal.DefaultEnvelopeSealer;
 import com.mtfm.gateway.spi.catalog.FunctionCatalog;
 import com.mtfm.gateway.spi.port.EnvelopeSealer;
@@ -21,6 +22,7 @@ public final class GatewayPipelineBuilder {
     private GatewaySettings settings = GatewaySettings.defaults();
     private EnvelopeSealer sealer = new DefaultEnvelopeSealer();
     private CountingGatewayMetrics counters = new CountingGatewayMetrics();
+    private DefaultRegistries registries;
 
     public GatewayPipelineBuilder functionCatalog(FunctionCatalog functionCatalog) {
         this.functionCatalog = functionCatalog;
@@ -37,7 +39,12 @@ public final class GatewayPipelineBuilder {
         return this;
     }
 
+    public GatewayPipelineBuilder registries(DefaultRegistries registries) {
+        this.registries = registries;
+        return this;
+    }
+
     public GatewayPipeline build() {
-        return new GatewayPipeline(functionCatalog, settings, sealer, counters);
+        return new GatewayPipeline(functionCatalog, settings, sealer, counters, registries);
     }
 }

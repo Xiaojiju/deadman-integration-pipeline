@@ -27,25 +27,29 @@ import com.mtfm.gateway.spi.option.OptionTrees;
 import com.mtfm.gateway.spi.property.PropertyItem;
 import com.mtfm.gateway.spi.property.PropertySchemas;
 import com.mtfm.gateway.spi.property.ValueAccessType;
-import com.mtfm.gateway.spi.property.ValueOption;
-import com.mtfm.gateway.spi.property.WriteFieldOption;
+import com.mtfm.gateway.spi.secret.SecretCodec;
 import com.mtfm.gateway.catalog.id.SnowflakeIds;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 配置域持久化与 SPI 目录投影。
  *
  * <p>
  * 负责 MyBatis CRUD，并实现 {@link FunctionCatalog} / {@link DeviceBindingCatalog}。
- * 属性优先读 EAV；若 EAV 为空则从旧 JSON 列懒迁移。
+ * 属性优先读 EAV；若 EAV 为空则从旧 JSON 列懒迁移一次。EAV 有行之后不再读 JSON，
+ * 避免双写漂。JSON 列仅作同事务副本。连接机密经 {@link SecretCodec} 落库 / 运行时还原。
  */
 @Service
 public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
@@ -56,6 +60,8 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
     private final DeviceMapper devices;
     private final DeviceEndpointMapper endpoints;
     private final CatalogPropertyRepository properties;
+    private final SecretCodec secretCodec;
+    private final ConcurrentHashMap<String, Object> migrateLocks = new ConcurrentHashMap<>();
 
     public CatalogStore(
             ProductMapper products,
@@ -63,17 +69,25 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
             ChannelMapper channels,
             DeviceMapper devices,
             DeviceEndpointMapper endpoints,
-            CatalogPropertyRepository properties) {
+            CatalogPropertyRepository properties,
+            ObjectProvider<SecretCodec> secretCodec) {
         this.products = products;
         this.functions = functions;
         this.channels = channels;
         this.devices = devices;
         this.endpoints = endpoints;
         this.properties = properties;
+        this.secretCodec = secretCodec == null
+                ? SecretCodec.identity()
+                : secretCodec.getIfAvailable(SecretCodec::identity);
     }
 
     public CatalogPropertyRepository properties() {
         return properties;
+    }
+
+    public SecretCodec secretCodec() {
+        return secretCodec;
     }
 
     public ProductEntity saveProduct(ProductEntity entity) {
@@ -169,10 +183,7 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
         merged.putAll(PropertySchemas.toValueMap(overrides));
         Option optionSchema = OptionTrees.fromUnknown(merged);
         ValueAccessType writeAccess = ValueAccessType.from(function.getWriteAccessType());
-        List<ValueOption> writeValues = properties.listWriteValueOptions(function.getId());
-        List<WriteFieldOption> writeFields = properties.listWriteFields(function.getId());
-        List<WriteFieldOption> readFields = properties.listReadFields(function.getId());
-        List<ValueOption> readValues = properties.listReadValueOptions(function.getId());
+        FunctionOptionBundle bundle = properties.loadFunctionOptions(function.getId());
         return Optional.of(new FunctionDef(
                 function.getFunctionId(),
                 function.getAccessType(),
@@ -180,10 +191,10 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
                 optionSchema,
                 PropertySchemas.fromValueMap(merged),
                 writeAccess,
-                writeValues,
-                writeFields,
-                readFields,
-                readValues,
+                bundle.writeValueOptions(),
+                bundle.writeFields(),
+                bundle.readFields(),
+                bundle.readValueOptions(),
                 PayloadEncoding.from(function.getPayloadEncoding())));
     }
 
@@ -193,7 +204,7 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
         if (found.isEmpty()) {
             return Optional.empty();
         }
-        return Optional.of(new DeviceBinding(deviceId, found.get(0).capabilityType()));
+        return Optional.of(new DeviceBinding(deviceId, uniqueCapabilityType(found)));
     }
 
     @Override
@@ -204,17 +215,56 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
         }
         List<DeviceEndpointEntity> rows = endpoints.selectList(new QueryWrapper<DeviceEndpointEntity>()
                 .eq("device_id", device.get().getId()));
-        return rows.stream().map(row -> {
-            ChannelEntity channel = channels.selectById(row.getChannelId());
-            Attributes connection = Attributes.from(PropertySchemas.toValueMap(loadChannelProperties(channel)));
-            Attributes address = Attributes.from(PropertySchemas.toValueMap(loadEndpointProperties(row)));
-            return new DeviceEndpointBinding(
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        List<String> channelIds = rows.stream()
+                .map(e -> e.getChannelId())
+                .filter(id -> id != null && !id.isBlank())
+                .distinct()
+                .toList();
+        List<ChannelEntity> channelRows = channelIds.isEmpty()
+                ? List.of()
+                : channels.selectByIds(channelIds);
+        Map<String, ChannelEntity> channelById = new LinkedHashMap<>();
+        for (ChannelEntity channel : channelRows) {
+            channelById.put(channel.getId(), channel);
+        }
+        Map<String, List<PropertyItem>> channelProps = loadChannelProperties(channelRows);
+        Map<String, List<PropertyItem>> endpointProps = loadEndpointProperties(rows);
+        List<DeviceEndpointBinding> result = new ArrayList<>();
+        for (DeviceEndpointEntity row : rows) {
+            ChannelEntity channel = channelById.get(row.getChannelId());
+            if (channel == null) {
+                throw new IllegalStateException("端点引用了不存在的通道: device="
+                        + device.get().getDeviceCode() + " channelId=" + row.getChannelId());
+            }
+            Attributes connection = Attributes.from(openConnectionSecrets(
+                    PropertySchemas.toValueMap(channelProps.getOrDefault(channel.getId(), List.of()))));
+            Attributes address = Attributes.from(PropertySchemas.toValueMap(
+                    endpointProps.getOrDefault(row.getId(), List.of())));
+            result.add(new DeviceEndpointBinding(
                     device.get().getDeviceCode(),
                     channel.getCode(),
                     channel.getCapabilityType(),
                     connection,
-                    address);
-        }).toList();
+                    address,
+                    !Boolean.FALSE.equals(channel.getEnabled())));
+        }
+        return List.copyOf(result);
+    }
+
+    static String uniqueCapabilityType(List<DeviceEndpointBinding> endpoints) {
+        Set<String> types = new LinkedHashSet<>();
+        for (DeviceEndpointBinding endpoint : endpoints) {
+            if (endpoint.capabilityType() != null && !endpoint.capabilityType().isBlank()) {
+                types.add(endpoint.capabilityType().toUpperCase());
+            }
+        }
+        if (types.size() > 1) {
+            throw new IllegalStateException("设备绑定了多种南向能力，当前运行时一设备一协议: " + types);
+        }
+        return endpoints.get(0).capabilityType();
     }
 
     /** 批量读取通道属性：EAV 优先，空则按通道懒迁移。 */
@@ -232,19 +282,18 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
         return result;
     }
 
-    /** 读取通道属性：EAV 优先，空则从 connection JSON 懒迁移。 */
+    /** 读取通道属性：EAV 优先，空则从 connection JSON 懒迁移一次。 */
     public List<PropertyItem> loadChannelProperties(ChannelEntity channel) {
-        List<PropertyItem> items = properties.listChannelProperties(channel.getId());
-        if (!items.isEmpty()) {
-            return items;
-        }
-        Map<String, Object> legacy = JsonMaps.readMap(channel.getConnection());
-        if (legacy.isEmpty()) {
-            return List.of();
-        }
-        List<PropertyItem> migrated = PropertySchemas.fromValueMap(legacy);
-        properties.replaceChannelProperties(channel.getId(), migrated);
-        return migrated;
+        return migrateOnce("channel:" + channel.getId(), () -> properties.listChannelProperties(channel.getId()),
+                () -> {
+                    Map<String, Object> legacy = JsonMaps.readMap(channel.getConnection());
+                    if (legacy.isEmpty()) {
+                        return List.of();
+                    }
+                    List<PropertyItem> migrated = PropertySchemas.fromValueMap(legacy);
+                    properties.replaceChannelProperties(channel.getId(), migrated);
+                    return migrated;
+                });
     }
 
     /** 批量读取端点属性：EAV 优先，空则按端点懒迁移。 */
@@ -262,19 +311,18 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
         return result;
     }
 
-    /** 读取端点属性：EAV 优先，空则从 address JSON 懒迁移。 */
+    /** 读取端点属性：EAV 优先，空则从 address JSON 懒迁移一次。 */
     public List<PropertyItem> loadEndpointProperties(DeviceEndpointEntity endpoint) {
-        List<PropertyItem> items = properties.listEndpointProperties(endpoint.getId());
-        if (!items.isEmpty()) {
-            return items;
-        }
-        Map<String, Object> legacy = JsonMaps.readMap(endpoint.getAddress());
-        if (legacy.isEmpty()) {
-            return List.of();
-        }
-        List<PropertyItem> migrated = PropertySchemas.fromValueMap(legacy);
-        properties.replaceEndpointProperties(endpoint.getId(), migrated);
-        return migrated;
+        return migrateOnce("endpoint:" + endpoint.getId(), () -> properties.listEndpointProperties(endpoint.getId()),
+                () -> {
+                    Map<String, Object> legacy = JsonMaps.readMap(endpoint.getAddress());
+                    if (legacy.isEmpty()) {
+                        return List.of();
+                    }
+                    List<PropertyItem> migrated = PropertySchemas.fromValueMap(legacy);
+                    properties.replaceEndpointProperties(endpoint.getId(), migrated);
+                    return migrated;
+                });
     }
 
     /** 批量读取功能属性：EAV 优先，空则按功能懒迁移。 */
@@ -292,19 +340,18 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
         return result;
     }
 
-    /** 读取功能属性：EAV 优先，空则从 optionSchema JSON 懒迁移。 */
+    /** 读取功能属性：EAV 优先，空则从 optionSchema JSON 懒迁移一次。 */
     public List<PropertyItem> loadFunctionProperties(ProductFunctionEntity function) {
-        List<PropertyItem> items = properties.listFunctionProperties(function.getId());
-        if (!items.isEmpty()) {
-            return items;
-        }
-        Map<String, Object> legacy = JsonMaps.readMap(function.getOptionSchema());
-        if (legacy.isEmpty()) {
-            return List.of();
-        }
-        List<PropertyItem> migrated = PropertySchemas.fromValueMap(legacy);
-        properties.replaceFunctionProperties(function.getId(), migrated);
-        return migrated;
+        return migrateOnce("function:" + function.getId(), () -> properties.listFunctionProperties(function.getId()),
+                () -> {
+                    Map<String, Object> legacy = JsonMaps.readMap(function.getOptionSchema());
+                    if (legacy.isEmpty()) {
+                        return List.of();
+                    }
+                    List<PropertyItem> migrated = PropertySchemas.fromValueMap(legacy);
+                    properties.replaceFunctionProperties(function.getId(), migrated);
+                    return migrated;
+                });
     }
 
     /**
@@ -594,5 +641,39 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
             created.accept(now);
         }
         updated.accept(now);
+    }
+
+    private Map<String, Object> openConnectionSecrets(Map<String, Object> values) {
+        if (values == null || values.isEmpty()) {
+            return values == null ? Map.of() : values;
+        }
+        Map<String, Object> opened = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : values.entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof String text) {
+                opened.put(entry.getKey(), secretCodec.open(text));
+            } else {
+                opened.put(entry.getKey(), value);
+            }
+        }
+        return opened;
+    }
+
+    private List<PropertyItem> migrateOnce(
+            String lockKey,
+            java.util.function.Supplier<List<PropertyItem>> loadEav,
+            java.util.function.Supplier<List<PropertyItem>> migrate) {
+        List<PropertyItem> items = loadEav.get();
+        if (!items.isEmpty()) {
+            return items;
+        }
+        Object lock = migrateLocks.computeIfAbsent(lockKey, key -> new Object());
+        synchronized (lock) {
+            items = loadEav.get();
+            if (!items.isEmpty()) {
+                return items;
+            }
+            return migrate.get();
+        }
     }
 }

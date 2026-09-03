@@ -83,6 +83,32 @@ public interface ModbusBus extends AutoCloseable {
         return 0;
     }
 
+    /**
+     * 连续读数字量；默认循环单次读。TCP/RTU 实现一次 PDU。
+     */
+    default java.util.List<Number> readNumerics(ModbusChannel channel, int unitId, ModbusArea area, int offset,
+            int quantity, ModbusDataType dataType) {
+        int count = Math.max(1, quantity);
+        java.util.List<Number> values = new java.util.ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            values.add(readNumeric(channel, unitId, area, offset + i, dataType));
+        }
+        return values;
+    }
+
+    /**
+     * 连续读线圈/离散量；默认循环单次读。
+     */
+    default java.util.List<Boolean> readBooleans(ModbusChannel channel, int unitId, ModbusArea area, int offset,
+            int quantity) {
+        int count = Math.max(1, quantity);
+        java.util.List<Boolean> values = new java.util.ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            values.add(readBoolean(channel, unitId, area, offset + i));
+        }
+        return values;
+    }
+
     @Override
     default void close() {
     }

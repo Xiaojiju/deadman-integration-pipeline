@@ -54,6 +54,23 @@ public final class InMemoryMqttTransport implements MqttTransport {
         subscribers.computeIfAbsent(key(channelId, topic), ignored -> new CopyOnWriteArrayList<>()).add(handler);
     }
 
+    @Override
+    public void unsubscribe(String channelId, String topic, BiConsumer<String, String> handler) {
+        CopyOnWriteArrayList<BiConsumer<String, String>> handlers = subscribers.get(key(channelId, topic));
+        if (handlers == null) {
+            return;
+        }
+        handlers.remove(handler);
+        if (handlers.isEmpty()) {
+            subscribers.remove(key(channelId, topic), handlers);
+        }
+    }
+
+    public int handlerCount(String channelId, String topic) {
+        CopyOnWriteArrayList<BiConsumer<String, String>> handlers = subscribers.get(key(channelId, topic));
+        return handlers == null ? 0 : handlers.size();
+    }
+
     public List<String> snapshot() {
         return new ArrayList<>(published);
     }

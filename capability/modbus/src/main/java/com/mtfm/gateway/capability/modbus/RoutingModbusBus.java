@@ -48,6 +48,18 @@ public final class RoutingModbusBus implements ModbusBus {
     }
 
     @Override
+    public java.util.List<Number> readNumerics(ModbusChannel channel, int unitId, ModbusArea area, int offset,
+            int quantity, ModbusDataType dataType) {
+        return pick(channel).readNumerics(channel, unitId, area, offset, quantity, dataType);
+    }
+
+    @Override
+    public java.util.List<Boolean> readBooleans(ModbusChannel channel, int unitId, ModbusArea area, int offset,
+            int quantity) {
+        return pick(channel).readBooleans(channel, unitId, area, offset, quantity);
+    }
+
+    @Override
     public void writeNumeric(ModbusChannel channel, int unitId, ModbusArea area, int offset, ModbusDataType dataType,
             Number value) {
         pick(channel).writeNumeric(channel, unitId, area, offset, dataType, value);

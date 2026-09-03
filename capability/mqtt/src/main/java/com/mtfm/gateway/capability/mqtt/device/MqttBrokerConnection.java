@@ -7,6 +7,8 @@ import java.util.Map;
 
 /**
  * MQTT Broker 连接参数（来自通道 connection 属性）。
+ *
+ * <p>host 必填；未配置时失败而不是连到本机 1883。port 缺省为 1883。
  */
 public record MqttBrokerConnection(
         String host,
@@ -17,7 +19,7 @@ public record MqttBrokerConnection(
 
     public MqttBrokerConnection {
         if (host == null || host.isBlank()) {
-            host = "localhost";
+            throw new IllegalArgumentException("MQTT 通道缺少 host");
         }
         if (port <= 0) {
             port = 1883;
@@ -35,13 +37,16 @@ public record MqttBrokerConnection(
 
     public static MqttBrokerConnection fromMap(Map<String, Object> connection) {
         if (connection == null || connection.isEmpty()) {
-            return new MqttBrokerConnection("localhost", 1883, null, null);
+            throw new IllegalArgumentException("MQTT 通道 connection 为空");
         }
         Object brokerObj = connection.get("broker");
         if (brokerObj != null && !String.valueOf(brokerObj).isBlank()) {
             return parseBrokerUri(String.valueOf(brokerObj).trim(), connection);
         }
-        String host = stringOr(connection.get("host"), "localhost");
+        String host = stringOr(connection.get("host"), null);
+        if (host == null || host.isBlank()) {
+            throw new IllegalArgumentException("MQTT 通道缺少 host");
+        }
         int port = parsePort(connection.get("port"), 1883);
         String username = blankToNull(stringOr(connection.get("username"), null));
         String password = blankToNull(stringOr(connection.get("password"), null));
@@ -51,13 +56,18 @@ public record MqttBrokerConnection(
     private static MqttBrokerConnection parseBrokerUri(String broker, Map<String, Object> connection) {
         try {
             URI uri = URI.create(broker.replaceFirst("^mqtt://", "tcp://"));
-            String host = uri.getHost() != null ? uri.getHost() : "localhost";
+            String host = uri.getHost();
+            if (host == null || host.isBlank()) {
+                throw new IllegalArgumentException("MQTT broker URI 缺少 host: " + broker);
+            }
             int port = uri.getPort() > 0 ? uri.getPort() : 1883;
             String username = blankToNull(stringOr(connection.get("username"), null));
             String password = blankToNull(stringOr(connection.get("password"), null));
             return new MqttBrokerConnection(host, port, username, password);
+        } catch (IllegalArgumentException ex) {
+            throw ex;
         } catch (Exception ex) {
-            return new MqttBrokerConnection("localhost", 1883, null, null);
+            throw new IllegalArgumentException("无法解析 MQTT broker URI: " + broker, ex);
         }
     }
 

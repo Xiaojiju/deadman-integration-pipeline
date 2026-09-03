@@ -124,6 +124,10 @@ public class CatalogPropertyRepository {
         return devices.listTopicOverrides(deviceId, functionId);
     }
 
+    public Map<String, Map<String, String>> listDeviceTopicOverridesByDevice(String deviceId) {
+        return devices.listTopicOverridesByDevice(deviceId);
+    }
+
     public void replaceDeviceFieldOverrides(String deviceId, String functionId, Map<String, Object> overrides) {
         devices.replaceFieldOverrides(deviceId, functionId, overrides);
     }

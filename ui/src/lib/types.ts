@@ -116,12 +116,17 @@ export type SupportedFunctionView = {
   choiceOptions?: Record<string, ValueOption[]>
 }
 
-export type ProductEntity = {
+export type ProductView = {
   id: string
   code: string
   name: string
   description?: string
+  createdAt?: string
+  updatedAt?: string
 }
+
+/** @deprecated 使用 ProductView；保留别名以免旧组件改名。 */
+export type ProductEntity = ProductView
 
 export type ProductFunctionEntity = {
   id: string

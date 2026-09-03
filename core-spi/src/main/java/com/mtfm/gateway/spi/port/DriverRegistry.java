@@ -3,6 +3,8 @@ package com.mtfm.gateway.spi.port;
 import com.mtfm.gateway.spi.capability.Driver;
 import com.mtfm.gateway.spi.capability.FunctionExecutor;
 
+import java.util.Optional;
+
 /**
  * 南向能力与设备绑定登记端口。
  *
@@ -41,4 +43,7 @@ public interface DriverRegistry {
 
     /** 设备是否已绑定到运行时（已 load）。 */
     boolean isRegistered(String deviceId);
+
+    /** 按能力类型查找已注册的南向执行器。 */
+    Optional<FunctionExecutor> findExecutor(String capabilityType);
 }

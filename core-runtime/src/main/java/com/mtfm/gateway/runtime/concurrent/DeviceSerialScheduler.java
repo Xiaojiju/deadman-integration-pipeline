@@ -130,11 +130,7 @@ public final class DeviceSerialScheduler implements AutoCloseable {
                         Runnable leftover;
                         while ((leftover = queue.poll()) != null) {
                             if (!winner.offer(leftover)) {
-                                try {
-                                    leftover.run();
-                                } catch (Throwable ex) {
-                                    LOG.warn("转移溢出任务失败: {}", ex.getMessage());
-                                }
+                                LOG.warn("设备 {} 转移队列已满，丢弃溢出任务", deviceId);
                             }
                         }
                     }

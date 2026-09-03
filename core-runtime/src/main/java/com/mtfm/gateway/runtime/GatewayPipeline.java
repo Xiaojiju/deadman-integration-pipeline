@@ -7,7 +7,6 @@ import com.mtfm.gateway.runtime.registry.DefaultRegistries;
 import com.mtfm.gateway.runtime.seal.DefaultEnvelopeSealer;
 import com.mtfm.gateway.runtime.stage.PipelineEngine;
 import com.mtfm.gateway.runtime.stage.PipelineEngine.NormalizeOutcome;
-import com.mtfm.gateway.spi.capability.CapabilityRegistrar;
 import com.mtfm.gateway.spi.capability.Driver;
 import com.mtfm.gateway.spi.capability.FunctionExecutor;
 import com.mtfm.gateway.spi.capability.Publisher;
@@ -28,12 +27,9 @@ import com.mtfm.gateway.spi.model.PublishResult;
 import com.mtfm.gateway.spi.model.RawInbound;
 import com.mtfm.gateway.spi.plugin.InboundPlugin;
 import com.mtfm.gateway.spi.plugin.OutboundPlugin;
-import com.mtfm.gateway.spi.port.DriverRegistry;
 import com.mtfm.gateway.spi.port.EnvelopeSealer;
 import com.mtfm.gateway.spi.port.PipelineCommandPort;
 import com.mtfm.gateway.spi.port.PipelineIngress;
-import com.mtfm.gateway.spi.port.PluginRegistry;
-import com.mtfm.gateway.spi.port.PublisherRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,7 +50,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 网关流水线调度核心门面，是运行时唯一入口。
  *
  * <p>负责线程池、有界队列与设备串行调度，将入站草稿经 {@link PipelineEngine} 五阶段处理后，
- * 异步投递到北向 {@link Publisher}。同时实现各类注册表接口，供宿主装配 Driver / Executor / Plugin。
+ * 异步投递到北向 {@link Publisher}。注册表由 {@link DefaultRegistries} 持有，本类只调度入站与命令。
  *
  * <h2>流水线阶段</h2>
  * <ol>
@@ -81,12 +77,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  * pipeline.stop();
  * }</pre>
  *
+ * <p>注册表是独立的 {@link DefaultRegistries}。本类只做入站/命令调度，
+ * 宿主可通过 {@link #registries()} 注入 {@code DriverRegistry} 等 SPI，避免 catalog 与流水线构造环。
+ *
  * @see PipelineEngine
  * @see GatewaySettings
  * @see DefaultRegistries
  */
-public final class GatewayPipeline implements PipelineIngress, PipelineCommandPort,
-        DriverRegistry, PluginRegistry, PublisherRegistry, CapabilityRegistrar, AutoCloseable {
+public final class GatewayPipeline implements PipelineIngress, PipelineCommandPort, AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(GatewayPipeline.class);
 
@@ -114,11 +112,16 @@ public final class GatewayPipeline implements PipelineIngress, PipelineCommandPo
 
     public GatewayPipeline(FunctionCatalog functionCatalog, GatewaySettings settings,
             EnvelopeSealer sealer, CountingGatewayMetrics counters) {
-        this.registries = new DefaultRegistries();
+        this(functionCatalog, settings, sealer, counters, new DefaultRegistries());
+    }
+
+    public GatewayPipeline(FunctionCatalog functionCatalog, GatewaySettings settings,
+            EnvelopeSealer sealer, CountingGatewayMetrics counters, DefaultRegistries registries) {
+        this.registries = registries == null ? new DefaultRegistries() : registries;
         this.settings = settings;
         this.counters = counters;
         this.metrics = counters;
-        this.engine = new PipelineEngine(registries, functionCatalog, sealer);
+        this.engine = new PipelineEngine(this.registries, functionCatalog, sealer);
         this.commandIngress = new ArrayBlockingQueue<>(settings.ingressCommandCapacity());
         this.telemetryIngress = new DropOldestQueue<>(settings.ingressTelemetryCapacity());
         this.rawIngress = new ArrayBlockingQueue<>(settings.ingressRawCapacity());
@@ -269,22 +272,18 @@ public final class GatewayPipeline implements PipelineIngress, PipelineCommandPo
         return counters;
     }
 
-    @Override
     public void registerDriver(Driver driver) {
         registries.registerDriver(driver);
     }
 
-    @Override
     public void registerExecutor(FunctionExecutor executor) {
         registries.registerExecutor(executor);
     }
 
-    @Override
     public boolean register(String deviceId, String capabilityType) {
         return registries.register(deviceId, capabilityType);
     }
 
-    @Override
     public boolean unregister(String deviceId) {
         Optional<String> type = registries.findCapabilityType(deviceId);
         boolean removed = registries.unregister(deviceId);
@@ -292,38 +291,35 @@ public final class GatewayPipeline implements PipelineIngress, PipelineCommandPo
         return removed;
     }
 
-    @Override
     public boolean isRegistered(String deviceId) {
         return registries.isRegistered(deviceId);
     }
 
-    @Override
+    public Optional<FunctionExecutor> findExecutor(String capabilityType) {
+        return registries.findExecutor(capabilityType);
+    }
+
     public boolean register(InboundPlugin plugin) {
         return registries.register(plugin);
     }
 
-    @Override
     public boolean register(OutboundPlugin plugin) {
         return registries.register(plugin);
     }
 
-    @Override
     public boolean register(Publisher publisher) {
         return registries.register(publisher);
     }
 
-    @Override
     public void register(CapabilityDescriptor descriptor, Driver driver, FunctionExecutor executor) {
         registries.register(descriptor, driver, executor);
     }
 
-    @Override
     public Optional<CapabilityDescriptor> find(String capabilityType) {
         return registries.find(capabilityType);
     }
 
-    @Override
-    public java.util.List<CapabilityDescriptor> list() {
+    public List<CapabilityDescriptor> list() {
         return registries.list();
     }
 

@@ -3,6 +3,7 @@ package com.mtfm.gateway.catalog.schema;
 import com.mtfm.gateway.catalog.dto.ChannelView;
 import com.mtfm.gateway.catalog.dto.ChannelWriteRequest;
 import com.mtfm.gateway.catalog.dto.ProductFunctionWriteRequest;
+import com.mtfm.gateway.catalog.dto.ProductView;
 import com.mtfm.gateway.catalog.dto.ProductWriteRequest;
 import com.mtfm.gateway.catalog.dto.SupportedFunctionView;
 import com.mtfm.gateway.catalog.entity.ChannelEntity;
@@ -63,6 +64,20 @@ class CatalogFormServiceRiskTest {
 
         verify(store).findProductByCode("door");
         verify(store, never()).listProducts();
+    }
+
+    @Test
+    void productViewProjectsEntityFields() {
+        ProductEntity entity = new ProductEntity();
+        entity.setId("p1");
+        entity.setCode("door");
+        entity.setName("门禁");
+        entity.setDescription("闸机");
+        ProductView view = forms.toProductView(entity);
+        assertEquals("p1", view.id());
+        assertEquals("door", view.code());
+        assertEquals("门禁", view.name());
+        assertEquals("闸机", view.description());
     }
 
     @Test
@@ -235,6 +250,40 @@ class CatalogFormServiceRiskTest {
                 .attributeValue());
     }
 
+    @Test
+    void createChannelSealsPasswordWithCodec() {
+        when(store.findChannel("mqtt-1")).thenReturn(Optional.empty());
+        when(registrar.find("MQTT")).thenReturn(Optional.of(mqttDescriptor()));
+        when(store.secretCodec()).thenReturn(new com.mtfm.gateway.spi.secret.SecretCodec() {
+            @Override
+            public String seal(String plaintext) {
+                return plaintext == null || plaintext.startsWith("enc:") ? plaintext : "enc:" + plaintext;
+            }
+        });
+        when(store.saveChannel(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(store.properties()).thenReturn(properties);
+
+        forms.createChannel(new ChannelWriteRequest(
+                "mqtt-1",
+                "MQTT",
+                List.of(
+                        PropertyItem.of("host", "broker.local"),
+                        new PropertyItem("password", "s3cret", "password", "密码")),
+                null,
+                true));
+
+        ArgumentCaptor<ChannelEntity> saved = ArgumentCaptor.forClass(ChannelEntity.class);
+        verify(store).saveChannel(saved.capture());
+        assertTrue(saved.getValue().getConnection().contains("enc:s3cret"));
+        ArgumentCaptor<List<PropertyItem>> items = ArgumentCaptor.captor();
+        verify(properties).replaceChannelProperties(any(), items.capture());
+        assertEquals("enc:s3cret", items.getValue().stream()
+                .filter(item -> "password".equals(item.attribute()))
+                .findFirst()
+                .orElseThrow()
+                .attributeValue());
+    }
+
     private void stubCreate() {
         when(store.findProduct("p1")).thenReturn(Optional.of(new ProductEntity()));
         when(store.findFunction("p1", "light.switch")).thenReturn(Optional.empty());
@@ -298,25 +347,25 @@ class CatalogFormServiceRiskTest {
                 List.of(
                         SchemaField.choice("transport", "传输", false, "TCP", List.of("TCP", "RTU")),
                         SchemaField.optional("host", FieldType.STRING, "TCP 主机"),
-                        SchemaField.optional("port", FieldType.INT, "TCP 端口", 502),
+                        SchemaField.optional("port", FieldType.INT, "TCP 端口", 502).range(1, 65535),
                         SchemaField.optional("serialPort", FieldType.STRING, "串口"),
-                        SchemaField.optional("baudRate", FieldType.INT, "波特率", 9600),
-                        SchemaField.optional("dataBits", FieldType.INT, "数据位", 8),
+                        SchemaField.optional("baudRate", FieldType.INT, "波特率", 9600).atLeast(1),
+                        SchemaField.optional("dataBits", FieldType.INT, "数据位", 8).range(5, 8),
                         SchemaField.choice("parity", "校验", false, "NONE", List.of("NONE", "EVEN", "ODD")),
-                        SchemaField.optional("stopBits", FieldType.INT, "停止位", 1)),
-                List.of(SchemaField.required("slaveId", FieldType.INT, "从站号")),
+                        SchemaField.optional("stopBits", FieldType.INT, "停止位", 1).range(1, 2)),
+                List.of(SchemaField.required("slaveId", FieldType.INT, "从站号").range(1, 247)),
                 List.of(
                         FunctionTemplate.of("fn.read", "READ", List.of(
                                 SchemaField.choice("area", "寄存器区", true, "HOLDING",
                                         List.of("HOLDING", "INPUT", "COIL", "DISCRETE")),
-                                SchemaField.required("offset", FieldType.INT, "起始地址", 0),
-                                SchemaField.optional("quantity", FieldType.INT, "数量", 1),
+                                SchemaField.required("offset", FieldType.INT, "起始地址", 0).range(0, 65535),
+                                SchemaField.optional("quantity", FieldType.INT, "数量", 1).range(1, 125),
                                 SchemaField.choice("dataType", "数据类型", false, "INT16",
                                         List.of("INT16", "BOOLEAN")))),
                         FunctionTemplate.of("fn.write", "WRITE", List.of(
                                 SchemaField.choice("area", "寄存器区", true, "HOLDING",
                                         List.of("HOLDING", "INPUT", "COIL", "DISCRETE")),
-                                SchemaField.required("offset", FieldType.INT, "起始地址", 0),
+                                SchemaField.required("offset", FieldType.INT, "起始地址", 0).range(0, 65535),
                                 SchemaField.required("value", FieldType.STRING, "写入值"),
                                 SchemaField.choice("dataType", "数据类型", false, "INT16",
                                         List.of("INT16", "BOOLEAN"))))),

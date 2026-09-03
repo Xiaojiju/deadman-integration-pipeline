@@ -1,5 +1,6 @@
 package com.mtfm.gateway.capability.hikvision;
 
+import com.mtfm.gateway.capability.hikvision.isapi.HikvisionHttpClient;
 import com.mtfm.gateway.spi.capability.FunctionExecutor;
 import com.mtfm.gateway.spi.model.Attributes;
 import com.mtfm.gateway.spi.model.DeviceEndpointBinding;
@@ -272,7 +273,7 @@ public final class HikvisionExecutor implements FunctionExecutor {
 
     /**
      * 释放通道
-     * 
+     *
      * @param channelId 通道 ID
      */
     private void releaseChannel(String channelId) {
@@ -288,6 +289,13 @@ public final class HikvisionExecutor implements FunctionExecutor {
                 client.close();
             }
         }
+    }
+
+    /**
+     * 关闭共享 HTTP 连接池。Spring {@code destroyMethod} 在进程退出时调用。
+     */
+    public void close() {
+        HikvisionHttpClient.shutdown();
     }
 
     /**

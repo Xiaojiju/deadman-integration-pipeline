@@ -15,12 +15,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BiConsumer;
 
 /**
  * 南向 MQTT 执行器：共享 Channel 会话；Address 为 {@link TopicCatalog}。
@@ -56,10 +58,9 @@ public final class MqttExecutor implements FunctionExecutor {
     @Override
     public void bind(DeviceEndpointBinding binding) {
         TopicCatalog catalog = TopicCatalog.fromAddressMap(binding.address().values());
-        Bound previous = bindings.put(binding.deviceId(), new Bound(binding.channelId(), catalog));
+        Bound previous = bindings.remove(binding.deviceId());
         if (previous != null) {
-            unregisterDevice(previous.channelId(), binding.deviceId());
-            transport.release(previous.channelId());
+            dropBinding(previous, binding.deviceId());
         }
         transport.retain(binding.channelId(), MqttBrokerConnection.fromAttributes(binding.connection()));
 
@@ -72,10 +73,16 @@ public final class MqttExecutor implements FunctionExecutor {
             registerTopic(binding.channelId(), route.topic(), binding.deviceId(), route.functionId());
         }
 
+        Map<String, BiConsumer<String, String>> handlers = new LinkedHashMap<>();
+        String deviceId = binding.deviceId();
+        String channelId = binding.channelId();
         for (String topic : topics) {
-            transport.subscribe(binding.channelId(), topic, (receivedTopic, payload) ->
-                    dispatchInbound(binding.channelId(), receivedTopic, payload));
+            BiConsumer<String, String> handler = (receivedTopic, payload) ->
+                    dispatchInbound(channelId, deviceId, receivedTopic, payload);
+            handlers.put(topic, handler);
+            transport.subscribe(channelId, topic, handler);
         }
+        bindings.put(deviceId, new Bound(channelId, catalog, Map.copyOf(handlers)));
     }
 
     @Override
@@ -84,8 +91,7 @@ public final class MqttExecutor implements FunctionExecutor {
         if (previous == null) {
             return false;
         }
-        unregisterDevice(previous.channelId(), deviceId);
-        transport.release(previous.channelId());
+        dropBinding(previous, deviceId);
         return true;
     }
 
@@ -117,7 +123,7 @@ public final class MqttExecutor implements FunctionExecutor {
                 Map.of("topic", topic));
     }
 
-    void dispatchInbound(String channelId, String topic, String payload) {
+    void dispatchInbound(String channelId, String deviceId, String topic, String payload) {
         if (ingress == null) {
             return;
         }
@@ -126,6 +132,9 @@ public final class MqttExecutor implements FunctionExecutor {
             return;
         }
         for (TopicTarget target : targets) {
+            if (!deviceId.equals(target.deviceId())) {
+                continue;
+            }
             ingress.acceptRaw(RawInbound.builder()
                     .capabilityType(MqttCapability.TYPE)
                     .deviceIdHint(target.deviceId())
@@ -141,6 +150,13 @@ public final class MqttExecutor implements FunctionExecutor {
     private void registerTopic(String channelId, String topic, String deviceId, String functionId) {
         topicIndex.computeIfAbsent(indexKey(channelId, topic), key -> new CopyOnWriteArrayList<>())
                 .add(new TopicTarget(deviceId, functionId));
+    }
+
+    private void dropBinding(Bound previous, String deviceId) {
+        previous.handlers().forEach((topic, handler) ->
+                transport.unsubscribe(previous.channelId(), topic, handler));
+        unregisterDevice(previous.channelId(), deviceId);
+        transport.release(previous.channelId());
     }
 
     private void unregisterDevice(String channelId, String deviceId) {
@@ -234,7 +250,10 @@ public final class MqttExecutor implements FunctionExecutor {
         return "\"" + escaped + "\"";
     }
 
-    private record Bound(String channelId, TopicCatalog catalog) {
+    private record Bound(String channelId, TopicCatalog catalog, Map<String, BiConsumer<String, String>> handlers) {
+        Bound {
+            handlers = handlers == null ? Map.of() : Map.copyOf(handlers);
+        }
     }
 
     private record TopicTarget(String deviceId, String functionId) {

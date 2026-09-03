@@ -40,6 +40,38 @@ class MqttInboundTest {
     }
 
     @Test
+    void sharedChannelUnbindRebindDoesNotDuplicateIngress() {
+        InMemoryMqttTransport transport = new InMemoryMqttTransport();
+        RecordingIngress ingress = new RecordingIngress();
+        MqttSubscribeRouteCatalog routes = (deviceCode, address) -> List.of(
+                new MqttSubscribeRoute("shared/state", "readState"));
+        MqttExecutor executor = new MqttExecutor(transport);
+        executor.attach(ingress, routes);
+        executor.bind(binding("door-a", "ch-1", Map.of(
+                "default_pub", "dev/a/cmd",
+                "default_sub", "shared/state")));
+        executor.bind(binding("door-b", "ch-1", Map.of(
+                "default_pub", "dev/b/cmd",
+                "default_sub", "shared/state")));
+
+        transport.publish("ch-1", "shared/state", "first");
+        assertEquals(2, ingress.raws.size());
+        assertEquals(2, transport.handlerCount("ch-1", "shared/state"));
+
+        ingress.raws.clear();
+        executor.unbind("door-a");
+        executor.bind(binding("door-a", "ch-1", Map.of(
+                "default_pub", "dev/a/cmd",
+                "default_sub", "shared/state")));
+
+        transport.publish("ch-1", "shared/state", "second");
+        assertEquals(2, ingress.raws.size());
+        assertEquals(2, transport.handlerCount("ch-1", "shared/state"));
+        assertEquals(1, ingress.raws.stream().filter(raw -> "door-a".equals(raw.deviceIdHint())).count());
+        assertEquals(1, ingress.raws.stream().filter(raw -> "door-b".equals(raw.deviceIdHint())).count());
+    }
+
+    @Test
     void executeWithoutPublishHintIsSubscribeOnly() {
         InMemoryMqttTransport transport = new InMemoryMqttTransport();
         MqttExecutor executor = new MqttExecutor(transport);

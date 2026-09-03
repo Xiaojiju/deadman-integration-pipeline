@@ -62,6 +62,14 @@ class TcpModbusBusTest {
     }
 
     @Test
+    void readHoldingQuantityUsesOnePdu() {
+        bus.writeNumeric(channel, 1, ModbusArea.HOLDING, 0, ModbusDataType.INT16, 11);
+        bus.writeNumeric(channel, 1, ModbusArea.HOLDING, 1, ModbusDataType.INT16, 22);
+        var values = bus.readNumerics(channel, 1, ModbusArea.HOLDING, 0, 2, ModbusDataType.INT16);
+        assertEquals(List.of((short) 11, (short) 22), values);
+    }
+
+    @Test
     void twoUnitIdsShareOneTcpSession() {
         bus.writeNumeric(channel, 1, ModbusArea.HOLDING, 0, ModbusDataType.INT16, 11);
         bus.writeNumeric(channel, 2, ModbusArea.HOLDING, 0, ModbusDataType.INT16, 22);
@@ -168,15 +176,10 @@ class TcpModbusBusTest {
         private byte[] dispatch(int unitId, byte[] pdu) {
             int fc = pdu[0] & 0xFF;
             int offset = ((pdu[1] & 0xFF) << 8) | (pdu[2] & 0xFF);
+            int quantity = pdu.length >= 5 ? ((pdu[3] & 0xFF) << 8) | (pdu[4] & 0xFF) : 1;
             return switch (fc) {
-                case 0x01 -> {
-                    boolean on = Boolean.TRUE.equals(coils.get(key(unitId, offset)));
-                    yield new byte[] { 0x01, 0x01, (byte) (on ? 0x01 : 0x00) };
-                }
-                case 0x03 -> {
-                    int value = holdings.getOrDefault(key(unitId, offset), 0);
-                    yield new byte[] { 0x03, 0x02, (byte) (value >>> 8), (byte) value };
-                }
+                case 0x01 -> coilRead(unitId, offset, quantity);
+                case 0x03 -> holdingRead(unitId, offset, quantity);
                 case 0x05 -> {
                     coils.put(key(unitId, offset), (pdu[3] & 0xFF) == 0xFF);
                     yield pdu;
@@ -188,6 +191,33 @@ class TcpModbusBusTest {
                 }
                 default -> new byte[] { (byte) (fc | 0x80), 0x01 };
             };
+        }
+
+        private byte[] coilRead(int unitId, int offset, int quantity) {
+            int count = Math.max(1, quantity);
+            int bytes = (count + 7) / 8;
+            byte[] resp = new byte[2 + bytes];
+            resp[0] = 0x01;
+            resp[1] = (byte) bytes;
+            for (int i = 0; i < count; i++) {
+                if (Boolean.TRUE.equals(coils.get(key(unitId, offset + i)))) {
+                    resp[2 + i / 8] |= (byte) (1 << (i % 8));
+                }
+            }
+            return resp;
+        }
+
+        private byte[] holdingRead(int unitId, int offset, int quantity) {
+            int count = Math.max(1, quantity);
+            byte[] resp = new byte[2 + count * 2];
+            resp[0] = 0x03;
+            resp[1] = (byte) (count * 2);
+            for (int i = 0; i < count; i++) {
+                int value = holdings.getOrDefault(key(unitId, offset + i), 0);
+                resp[2 + i * 2] = (byte) (value >>> 8);
+                resp[3 + i * 2] = (byte) value;
+            }
+            return resp;
         }
 
         private static String key(int unitId, int offset) {

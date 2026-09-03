@@ -6,6 +6,7 @@ import com.mtfm.gateway.spi.model.FieldFormat;
 import com.mtfm.gateway.spi.model.FieldType;
 import com.mtfm.gateway.spi.model.FunctionTemplate;
 import com.mtfm.gateway.spi.model.SchemaField;
+import com.mtfm.gateway.spi.model.SchemaValidator;
 import com.mtfm.gateway.spi.payload.FieldSource;
 import com.mtfm.gateway.spi.payload.PayloadMode;
 import com.mtfm.gateway.spi.property.PropertyItem;
@@ -29,6 +30,80 @@ import java.util.stream.Collectors;
 final class CatalogFunctionBinding {
 
     private CatalogFunctionBinding() {
+    }
+
+    record FunctionOptionPlan(
+            ValueAccessType writeAccess,
+            List<WriteFieldOption> writeFields,
+            List<WriteFieldOption> readFields,
+            List<ValueOption> writeValueOptions,
+            List<ValueOption> readValueOptions) {
+    }
+
+    static FunctionOptionPlan bindRequest(
+            CapabilityDescriptor descriptor,
+            Optional<FunctionTemplate> template,
+            ProductFunctionWriteRequest request,
+            String accessType,
+            boolean openLockedEmpty) {
+        ValueAccessType writeAccess;
+        List<ValueOption> writeValueOptions;
+        List<WriteFieldOption> writeFields;
+        List<WriteFieldOption> readFields;
+        if (descriptor.fixedFunctions()) {
+            writeAccess = ValueAccessType.STRUCT;
+            writeFields = resolveFixedWriteFields(request.writeFields(), template);
+            writeValueOptions = List.of();
+            readFields = List.of();
+        } else if (openLockedEmpty) {
+            writeAccess = ValueAccessType.STRUCT;
+            writeFields = List.of();
+            writeValueOptions = List.of();
+            readFields = List.of();
+        } else if (descriptor.contractedParameters()) {
+            writeAccess = resolveWriteAccess(request);
+            String access = accessType != null && !accessType.isBlank()
+                    ? accessType
+                    : template.map(t -> t.accessType()).orElse("WRITE");
+            FunctionTemplate contract = requireContractTemplate(descriptor, access);
+            PayloadMode mode = writeAccess == ValueAccessType.VALUE ? PayloadMode.VALUE : PayloadMode.STRUCT;
+            boolean isRead = "READ".equalsIgnoreCase(access);
+            writeFields = isRead ? List.of() : bindContractFields(contract, request.writeFields(), mode);
+            readFields = isRead ? bindContractFields(contract, request.readFields(), mode) : List.of();
+            writeValueOptions = constrainContractValueOptions(
+                    request.writeValueOptions() == null ? List.of() : request.writeValueOptions(),
+                    contract,
+                    mode);
+            SchemaValidator.requireConstraints(contract.parameters(), constantsOf(writeFields), "功能参数");
+            SchemaValidator.requireConstraints(contract.parameters(), constantsOf(readFields), "功能参数");
+        } else {
+            writeAccess = resolveWriteAccess(request);
+            boolean isRead = "READ".equalsIgnoreCase(accessType);
+            writeFields = isRead ? List.of() : nullSafeFields(request.writeFields());
+            readFields = isRead ? nullSafeFields(request.readFields()) : List.of();
+            writeValueOptions = request.writeValueOptions() == null ? List.of() : request.writeValueOptions();
+        }
+        List<ValueOption> readValueOptions = request.readValueOptions() == null
+                ? List.of()
+                : request.readValueOptions();
+        if (openLockedEmpty) {
+            readValueOptions = List.of();
+        } else if (descriptor.fixedFunctions() && template.isPresent()) {
+            readValueOptions = (request.readValueOptions() == null || request.readValueOptions().isEmpty())
+                    ? List.of()
+                    : constrainFixedValueOptions(readValueOptions, template.get());
+        }
+        return new FunctionOptionPlan(writeAccess, writeFields, readFields, writeValueOptions, readValueOptions);
+    }
+
+    static Map<String, Object> constantsOf(List<WriteFieldOption> fields) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        for (WriteFieldOption field : fields == null ? List.<WriteFieldOption>of() : fields) {
+            if (field.constant() != null && !field.constant().isBlank()) {
+                values.put(field.field(), field.constant());
+            }
+        }
+        return values;
     }
 
     static boolean isOpenLockedEmptyTemplate(CapabilityDescriptor descriptor, Optional<FunctionTemplate> template) {
@@ -93,6 +168,10 @@ final class CatalogFunctionBinding {
                 throw new IllegalArgumentException(
                         "属性 " + item.attribute() + " 取值必须是模板规定项: " + field.choices());
             }
+            SchemaValidator.requireConstraints(
+                    List.of(field),
+                    item.attributeValue() == null ? Map.of() : Map.of(field.name(), item.attributeValue()),
+                    "功能属性");
             String description = item.description() == null || item.description().isBlank()
                     ? field.description()
                     : item.description();
@@ -460,7 +539,9 @@ final class CatalogFunctionBinding {
                         existing.defaultValue(),
                         existing.secret(),
                         List.copyOf(merged),
-                        existing.format()));
+                        existing.format(),
+                        existing.minimum(),
+                        existing.maximum()));
                 continue;
             }
             FieldType type = FieldType.from(field.accessDataType());
@@ -475,7 +556,9 @@ final class CatalogFunctionBinding {
                     null,
                     type == FieldType.PASSWORD,
                     choices,
-                    format));
+                    format,
+                    null,
+                    null));
         }
         return List.copyOf(byName.values());
     }

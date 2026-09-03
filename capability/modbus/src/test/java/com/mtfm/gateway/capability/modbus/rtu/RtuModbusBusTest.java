@@ -173,14 +173,32 @@ class RtuModbusBusTest {
         private byte[] dispatch(int unitId, byte[] pdu) {
             int fc = pdu[0] & 0xFF;
             int offset = ((pdu[1] & 0xFF) << 8) | (pdu[2] & 0xFF);
+            int quantity = pdu.length >= 5 ? ((pdu[3] & 0xFF) << 8) | (pdu[4] & 0xFF) : 1;
             return switch (fc) {
                 case 0x01 -> {
-                    boolean on = Boolean.TRUE.equals(coils.get(key(unitId, offset)));
-                    yield new byte[] { 0x01, 0x01, (byte) (on ? 0x01 : 0x00) };
+                    int count = Math.max(1, quantity);
+                    int bytes = (count + 7) / 8;
+                    byte[] resp = new byte[2 + bytes];
+                    resp[0] = 0x01;
+                    resp[1] = (byte) bytes;
+                    for (int i = 0; i < count; i++) {
+                        if (Boolean.TRUE.equals(coils.get(key(unitId, offset + i)))) {
+                            resp[2 + i / 8] |= (byte) (1 << (i % 8));
+                        }
+                    }
+                    yield resp;
                 }
                 case 0x03 -> {
-                    int value = holdings.getOrDefault(key(unitId, offset), 0);
-                    yield new byte[] { 0x03, 0x02, (byte) (value >>> 8), (byte) value };
+                    int count = Math.max(1, quantity);
+                    byte[] resp = new byte[2 + count * 2];
+                    resp[0] = 0x03;
+                    resp[1] = (byte) (count * 2);
+                    for (int i = 0; i < count; i++) {
+                        int value = holdings.getOrDefault(key(unitId, offset + i), 0);
+                        resp[2 + i * 2] = (byte) (value >>> 8);
+                        resp[3 + i * 2] = (byte) value;
+                    }
+                    yield resp;
                 }
                 case 0x05 -> {
                     coils.put(key(unitId, offset), (pdu[3] & 0xFF) == 0xFF);

@@ -30,6 +30,7 @@ import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.plugin.struct.StructInboundPlugin;
 import com.mtfm.gateway.plugin.yaya.YayaInboundPlugin;
 import com.mtfm.gateway.runtime.GatewayPipeline;
+import com.mtfm.gateway.runtime.registry.DefaultRegistries;
 import com.mtfm.gateway.spi.capability.Publisher;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -45,8 +46,7 @@ import org.springframework.context.annotation.Primary;
  * <li>创建各南向 Executor Bean</li>
  * <li>构建 {@link GatewayPipeline} 并 register Driver + Executor + 入站插件</li>
  * <li>register 北向 {@link CloudPublisher}（唯一 CLOUD 通道）</li>
- * <li>{@link CatalogApplyService#attach} 并 registerExecutor，最后
- * {@code pipeline.start()}</li>
+ * <li>{@link CatalogApplyService#attach}，最后 {@code pipeline.start()}</li>
  * </ol>
  *
  * <pre>{@code
@@ -92,7 +92,7 @@ public class GatewayAssembly {
         return new MqttExecutor(mqttTransport);
     }
 
-    @Bean
+    @Bean(destroyMethod = "close")
     public HikvisionExecutor hikvisionExecutor() {
         return new HikvisionExecutor();
     }
@@ -103,14 +103,24 @@ public class GatewayAssembly {
         return new CloudPublisher();
     }
 
+    /**
+     * 能力/驱动/插件注册表。与流水线分离，供 catalog 注入 {@code CapabilityRegistrar} / {@code DriverRegistry}。
+     */
     @Bean
-    public GatewayPipeline gatewayPipeline(CatalogStore catalogStore, CatalogApplyService applyService,
+    public DefaultRegistries gatewayRegistries() {
+        return new DefaultRegistries();
+    }
+
+    @Bean
+    public GatewayPipeline gatewayPipeline(DefaultRegistries gatewayRegistries, CatalogStore catalogStore,
+            CatalogApplyService applyService,
             CatalogMqttSubscribeRoutes mqttSubscribeRoutes,
             LoopbackExecutor loopbackExecutor, ModbusExecutor modbusExecutor,
             MqttExecutor mqttExecutor, HikvisionExecutor hikvisionExecutor,
             Publisher cloudPublisher) {
         GatewayPipeline pipeline = GatewayPipeline.builder()
                 .functionCatalog(catalogStore)
+                .registries(gatewayRegistries)
                 .build();
         pipeline.register(LoopbackCapability.DESCRIPTOR, new LoopbackDriver(), loopbackExecutor);
         pipeline.register(ModbusCapability.DESCRIPTOR, new ModbusDriver(), modbusExecutor);
@@ -122,11 +132,7 @@ public class GatewayAssembly {
         pipeline.register(new MqttReadInboundPlugin(catalogStore));
         pipeline.register(cloudPublisher);
         mqttExecutor.attach(pipeline, mqttSubscribeRoutes);
-        applyService.attach(pipeline);
-        applyService.registerExecutor(loopbackExecutor);
-        applyService.registerExecutor(modbusExecutor);
-        applyService.registerExecutor(mqttExecutor);
-        applyService.registerExecutor(hikvisionExecutor);
+        applyService.attach(gatewayRegistries);
         pipeline.start();
         return pipeline;
     }

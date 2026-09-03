@@ -1,8 +1,8 @@
 package com.mtfm.gateway.app.web;
 
-import com.mtfm.gateway.runtime.GatewayPipeline;
+import com.mtfm.gateway.catalog.apply.CatalogApplyService;
+import com.mtfm.gateway.catalog.dto.DeviceCommandRequest;
 import com.mtfm.gateway.spi.model.ExecutionResult;
-import com.mtfm.gateway.spi.model.FunctionCommand;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -12,9 +12,8 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * 本地命令 HTTP 入口，将 REST 请求转为 {@link FunctionCommand} 提交流水线。
- *
- * <p>路径 {@code POST /commands}，返回 {@link CompletableFuture} 异步结果。
+ * 本地命令 HTTP 入口。与 {@code POST /catalog/devices/{code}/commands} 同一装配路径：
+ * 校验设备已 load、功能权限、端点与覆盖后再提交流水线。
  *
  * <pre>{@code
  * POST /commands
@@ -25,17 +24,24 @@ import java.util.concurrent.CompletableFuture;
 @RequestMapping("/commands")
 public class CommandController {
 
-    private final GatewayPipeline pipeline;
+    private final CatalogApplyService applyService;
 
-    public CommandController(GatewayPipeline pipeline) {
-        this.pipeline = pipeline;
+    public CommandController(CatalogApplyService applyService) {
+        this.applyService = applyService;
     }
 
     /** 提交功能命令到流水线，异步返回 {@link ExecutionResult}。 */
     @PostMapping
     public CompletableFuture<ExecutionResult> submit(@RequestBody CommandRequest request) {
-        return pipeline.submit(FunctionCommand.of(request.deviceId(), request.functionId(),
-                request.arguments() == null ? Map.of() : request.arguments()));
+        if (request == null || request.deviceId() == null || request.deviceId().isBlank()) {
+            throw new IllegalArgumentException("deviceId 不能为空");
+        }
+        if (request.functionId() == null || request.functionId().isBlank()) {
+            throw new IllegalArgumentException("functionId 不能为空");
+        }
+        return applyService.invoke(request.deviceId(),
+                new DeviceCommandRequest(request.functionId(),
+                        request.arguments() == null ? Map.of() : request.arguments()));
     }
 
     /** HTTP 命令请求体。 */

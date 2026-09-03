@@ -162,7 +162,7 @@ public final class IsapiHikvisionClient implements HikvisionClient {
      */
     private File convertImgStrToFile(String imgStr, String filePath) {
         byte[] imgBytes = ImageSupport.resolveImageBytes(imgStr);
-        File tempFile = new File(filePath);
+        File tempFile = new File(System.getProperty("java.io.tmpdir"), filePath);
         try (FileOutputStream fos = new FileOutputStream(tempFile)) {
             fos.write(imgBytes);
         } catch (IOException ex) {

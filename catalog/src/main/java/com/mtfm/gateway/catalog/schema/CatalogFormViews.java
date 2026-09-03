@@ -1,19 +1,21 @@
 package com.mtfm.gateway.catalog.schema;
 
-import com.mtfm.gateway.catalog.apply.CatalogApplyService;
 import com.mtfm.gateway.catalog.dto.ChannelView;
 import com.mtfm.gateway.catalog.dto.DeviceEndpointView;
 import com.mtfm.gateway.catalog.dto.DeviceView;
 import com.mtfm.gateway.catalog.dto.FunctionFormView;
 import com.mtfm.gateway.catalog.dto.ProductFunctionView;
+import com.mtfm.gateway.catalog.dto.ProductView;
 import com.mtfm.gateway.catalog.dto.SupportedFunctionView;
 import com.mtfm.gateway.catalog.entity.ChannelEntity;
 import com.mtfm.gateway.catalog.entity.DeviceEndpointEntity;
 import com.mtfm.gateway.catalog.entity.DeviceEntity;
+import com.mtfm.gateway.catalog.entity.ProductEntity;
 import com.mtfm.gateway.catalog.entity.ProductFunctionEntity;
 import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.catalog.store.FunctionOptionBundle;
 import com.mtfm.gateway.spi.capability.CapabilityRegistrar;
+import com.mtfm.gateway.spi.port.DriverRegistry;
 import com.mtfm.gateway.spi.model.FormField;
 import com.mtfm.gateway.spi.model.FunctionTemplate;
 import com.mtfm.gateway.spi.model.SchemaField;
@@ -37,15 +39,15 @@ final class CatalogFormViews {
 
     private final CatalogStore store;
     private final CapabilityRegistrar registrar;
-    private final ObjectProvider<CatalogApplyService> applyService;
+    private final ObjectProvider<DriverRegistry> driverRegistry;
 
     CatalogFormViews(
             CatalogStore store,
             CapabilityRegistrar registrar,
-            ObjectProvider<CatalogApplyService> applyService) {
+            ObjectProvider<DriverRegistry> driverRegistry) {
         this.store = store;
         this.registrar = registrar;
-        this.applyService = applyService;
+        this.driverRegistry = driverRegistry;
     }
 
     SupportedFunctionView toSupportedFunction(FunctionTemplate template) {
@@ -178,6 +180,16 @@ final class CatalogFormViews {
                 entity.getUpdatedAt());
     }
 
+    ProductView toProductView(ProductEntity entity) {
+        return new ProductView(
+                entity.getId(),
+                entity.getCode(),
+                entity.getName(),
+                entity.getDescription(),
+                entity.getCreatedAt(),
+                entity.getUpdatedAt());
+    }
+
     DeviceView toDeviceView(DeviceEntity entity) {
         return toDeviceView(entity, store.loadAllDeviceOverrides(entity), isLoaded(entity.getDeviceCode()));
     }
@@ -210,8 +222,8 @@ final class CatalogFormViews {
     }
 
     boolean isLoaded(String deviceCode) {
-        CatalogApplyService apply = applyService == null ? null : applyService.getIfAvailable();
-        return apply != null && apply.isLoaded(deviceCode);
+        DriverRegistry registry = driverRegistry == null ? null : driverRegistry.getIfAvailable();
+        return registry != null && registry.isRegistered(deviceCode);
     }
 
     private String resolveDescription(ProductFunctionEntity function) {

@@ -36,10 +36,40 @@ public final class ModbusPdu {
     }
 
     public static int readRegisterValue(byte[] pdu, int expectedFc) {
-        if (pdu.length < 4 || (pdu[0] & 0xFF) != expectedFc || (pdu[1] & 0xFF) < 2) {
+        return readRegisterValues(pdu, expectedFc, 1)[0];
+    }
+
+    public static int[] readRegisterValues(byte[] pdu, int expectedFc, int quantity) {
+        if (pdu.length < 2 + quantity * 2 || (pdu[0] & 0xFF) != expectedFc) {
             throw new ModbusException("寄存器响应无效 fc=" + expectedFc);
         }
-        return ((pdu[2] & 0xFF) << 8) | (pdu[3] & 0xFF);
+        int byteCount = pdu[1] & 0xFF;
+        if (byteCount < quantity * 2) {
+            throw new ModbusException("寄存器响应过短 expectBytes=" + (quantity * 2) + " actual=" + byteCount);
+        }
+        int[] values = new int[quantity];
+        for (int i = 0; i < quantity; i++) {
+            int at = 2 + i * 2;
+            values[i] = ((pdu[at] & 0xFF) << 8) | (pdu[at + 1] & 0xFF);
+        }
+        return values;
+    }
+
+    public static java.util.List<Boolean> readCoilValues(byte[] pdu, int expectedFc, int quantity) {
+        if (pdu.length < 3 || (pdu[0] & 0xFF) != expectedFc) {
+            throw new ModbusException("线圈/离散量响应无效 fc=" + expectedFc);
+        }
+        int byteCount = pdu[1] & 0xFF;
+        int needed = (quantity + 7) / 8;
+        if (byteCount < needed || pdu.length < 2 + needed) {
+            throw new ModbusException("线圈/离散量响应过短");
+        }
+        java.util.List<Boolean> values = new java.util.ArrayList<>(quantity);
+        for (int i = 0; i < quantity; i++) {
+            int packed = pdu[2 + i / 8] & 0xFF;
+            values.add((packed & (1 << (i % 8))) != 0);
+        }
+        return values;
     }
 
     public static void requireSuccess(byte[] pdu) {

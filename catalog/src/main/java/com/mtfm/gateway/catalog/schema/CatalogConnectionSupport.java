@@ -6,6 +6,7 @@ import com.mtfm.gateway.spi.model.SchemaField;
 import com.mtfm.gateway.spi.model.SchemaValidator;
 import com.mtfm.gateway.spi.property.PropertyItem;
 import com.mtfm.gateway.spi.property.PropertySchemas;
+import com.mtfm.gateway.spi.secret.SecretCodec;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -33,7 +34,6 @@ final class CatalogConnectionSupport {
     static void validateAddress(CapabilityDescriptor descriptor, List<PropertyItem> items) {
         Map<String, Object> values = PropertySchemas.toValueMap(items);
         SchemaValidator.require(descriptor.addressSchema(), values, "端点 address");
-        requireModbusAddressFields(descriptor.capabilityType(), values);
     }
 
     /**
@@ -57,18 +57,6 @@ final class CatalogConnectionSupport {
                 throw new IllegalArgumentException("通道 connection 缺少必填字段: host");
             }
         }
-        requireIntRange(safe.get("port"), 1, 65535, "通道 connection port");
-        requirePositiveInt(safe.get("baudRate"), "通道 connection baudRate");
-        requireIntRange(safe.get("dataBits"), 5, 8, "通道 connection dataBits");
-        requireIntRange(safe.get("stopBits"), 1, 2, "通道 connection stopBits");
-    }
-
-    static void requireModbusAddressFields(String capabilityType, Map<String, Object> values) {
-        if (capabilityType == null || !"MODBUS".equalsIgnoreCase(capabilityType)) {
-            return;
-        }
-        Map<String, Object> safe = values == null ? Map.of() : values;
-        requireIntRange(safe.get("slaveId"), 1, 247, "端点 address slaveId");
     }
 
     static List<PropertyItem> redactSecrets(List<PropertyItem> items, List<SchemaField> schema) {
@@ -116,6 +104,47 @@ final class CatalogConnectionSupport {
         return List.copyOf(restored);
     }
 
+    static List<PropertyItem> sealSecrets(List<PropertyItem> items, List<SchemaField> schema, SecretCodec codec) {
+        if (items == null || items.isEmpty()) {
+            return items == null ? List.of() : items;
+        }
+        SecretCodec secrets = codec == null ? SecretCodec.identity() : codec;
+        Set<String> secretNames = secretFieldNames(schema);
+        List<PropertyItem> sealed = new ArrayList<>();
+        for (PropertyItem item : items) {
+            if (isSecretAttribute(item.attribute(), secretNames)
+                    && item.attributeValue() != null
+                    && !item.attributeValue().isBlank()
+                    && !SECRET_MASK.equals(item.attributeValue())) {
+                sealed.add(new PropertyItem(
+                        item.attribute(),
+                        secrets.seal(item.attributeValue()),
+                        item.dataType(),
+                        item.description()));
+            } else {
+                sealed.add(item);
+            }
+        }
+        return List.copyOf(sealed);
+    }
+
+    static Map<String, Object> openSecrets(Map<String, Object> values, SecretCodec codec) {
+        if (values == null || values.isEmpty()) {
+            return values == null ? Map.of() : values;
+        }
+        SecretCodec secrets = codec == null ? SecretCodec.identity() : codec;
+        Map<String, Object> opened = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : values.entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof String text) {
+                opened.put(entry.getKey(), secrets.open(text));
+            } else {
+                opened.put(entry.getKey(), value);
+            }
+        }
+        return opened;
+    }
+
     private static Set<String> secretFieldNames(List<SchemaField> schema) {
         Set<String> names = new LinkedHashSet<>();
         if (schema == null) {
@@ -138,33 +167,5 @@ final class CatalogConnectionSupport {
 
     private static boolean isMaskedOrBlank(String value) {
         return value == null || value.isBlank() || SECRET_MASK.equals(value);
-    }
-
-    private static void requirePositiveInt(Object raw, String label) {
-        Integer value = parseOptionalInt(raw);
-        if (value != null && value <= 0) {
-            throw new IllegalArgumentException(label + " 必须大于 0");
-        }
-    }
-
-    private static void requireIntRange(Object raw, int min, int max, String label) {
-        Integer value = parseOptionalInt(raw);
-        if (value != null && (value < min || value > max)) {
-            throw new IllegalArgumentException(label + " 必须在 " + min + "–" + max + " 之间");
-        }
-    }
-
-    private static Integer parseOptionalInt(Object raw) {
-        if (raw == null || String.valueOf(raw).isBlank()) {
-            return null;
-        }
-        if (raw instanceof Number number) {
-            return number.intValue();
-        }
-        try {
-            return Integer.parseInt(String.valueOf(raw).trim());
-        } catch (NumberFormatException ex) {
-            return null;
-        }
     }
 }

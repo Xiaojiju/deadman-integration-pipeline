@@ -122,15 +122,29 @@ public class CatalogDeviceOverrideRepository {
     }
 
     public Map<String, String> listTopicOverrides(String deviceId, String functionId) {
-        return topicOverrides.selectList(new QueryWrapper<DeviceTopicOverrideEntity>()
-                .eq("device_id", deviceId)
-                .eq("function_id", functionId))
-                .stream()
-                .collect(Collectors.toMap(
-                        override -> override.getTopicSlot(),
-                        override -> override.getTopicValue(),
-                        (a, b) -> b,
-                        LinkedHashMap::new));
+        return listTopicOverridesByDevice(deviceId).getOrDefault(functionId, Map.of());
+    }
+
+    /**
+     * 一次查出某设备全部功能的 topic 覆盖，避免 bind 时按功能逐条查询。
+     */
+    public Map<String, Map<String, String>> listTopicOverridesByDevice(String deviceId) {
+        if (deviceId == null || deviceId.isBlank()) {
+            return Map.of();
+        }
+        List<DeviceTopicOverrideEntity> rows = topicOverrides.selectList(
+                new QueryWrapper<DeviceTopicOverrideEntity>().eq("device_id", deviceId));
+        Map<String, Map<String, String>> byFunction = new LinkedHashMap<>();
+        for (DeviceTopicOverrideEntity row : rows) {
+            if (row.getFunctionId() == null || row.getTopicSlot() == null || row.getTopicValue() == null) {
+                continue;
+            }
+            byFunction.computeIfAbsent(row.getFunctionId(), key -> new LinkedHashMap<>())
+                    .put(row.getTopicSlot(), row.getTopicValue());
+        }
+        Map<String, Map<String, String>> frozen = new LinkedHashMap<>();
+        byFunction.forEach((functionId, slots) -> frozen.put(functionId, Map.copyOf(slots)));
+        return Map.copyOf(frozen);
     }
 
     public void replaceFieldOverrides(String deviceId, String functionId, Map<String, Object> overrides) {

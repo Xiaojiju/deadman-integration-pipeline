@@ -83,6 +83,41 @@ public final class PahoMqttTransport implements MqttTransport {
     }
 
     @Override
+    public void unsubscribe(String channelId, String topic, BiConsumer<String, String> handler) {
+        ChannelSession session = sessions.get(channelId);
+        if (session == null) {
+            return;
+        }
+        CopyOnWriteArrayList<BiConsumer<String, String>> handlers = session.topicHandlers.get(topic);
+        if (handlers == null) {
+            return;
+        }
+        handlers.remove(handler);
+        if (!handlers.isEmpty()) {
+            return;
+        }
+        if (!session.topicHandlers.remove(topic, handlers)) {
+            return;
+        }
+        if (session.client != null && session.client.isConnected()) {
+            try {
+                session.client.unsubscribe(topic);
+            } catch (MqttException ex) {
+                LOG.warn("MQTT 取消订阅失败 channel={} topic={}: {}", channelId, topic, ex.getMessage());
+            }
+        }
+    }
+
+    int handlerCount(String channelId, String topic) {
+        ChannelSession session = sessions.get(channelId);
+        if (session == null) {
+            return 0;
+        }
+        CopyOnWriteArrayList<BiConsumer<String, String>> handlers = session.topicHandlers.get(topic);
+        return handlers == null ? 0 : handlers.size();
+    }
+
+    @Override
     public void close() {
         List<ChannelSession> snapshot = new ArrayList<>(sessions.values());
         sessions.clear();
@@ -94,8 +129,7 @@ public final class PahoMqttTransport implements MqttTransport {
     private void connect(ChannelSession session) {
         MqttBrokerConnection conn = session.connection;
         if (conn == null) {
-            conn = new MqttBrokerConnection("localhost", 1883, null, null);
-            session.connection = conn;
+            throw new IllegalStateException("MQTT 通道未配置 Broker: " + session.channelId);
         }
         String clientId = "gateway-" + sanitizeClientId(session.channelId);
         MqttClient client;

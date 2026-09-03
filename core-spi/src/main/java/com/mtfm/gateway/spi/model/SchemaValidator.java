@@ -37,6 +37,17 @@ public final class SchemaValidator {
         requireKnownFields(schema, values, scope);
         requireTypes(schema, values, scope);
         requireChoices(schema, values, scope);
+        requireRanges(schema, values, scope);
+    }
+
+    /**
+     * 只校验已出现字段的类型、枚举与范围，不要求必填、不拒绝多余键。
+     * 用于指令 payload：结构字段可能比 schema 多。
+     */
+    public static void requireConstraints(List<SchemaField> schema, Map<String, ?> values, String scope) {
+        requireTypes(schema, values, scope);
+        requireChoices(schema, values, scope);
+        requireRanges(schema, values, scope);
     }
 
     /** 返回缺失的必填字段名列表。 */
@@ -131,6 +142,40 @@ public final class SchemaValidator {
         }
         if (!invalid.isEmpty()) {
             throw new IllegalArgumentException(scope + " 取值不合法: " + String.join(", ", invalid));
+        }
+    }
+
+    /**
+     * 按 schema 的 minimum / maximum 校验整数范围；未声明边界的字段跳过。
+     */
+    public static void requireRanges(List<SchemaField> schema, Map<String, ?> values, String scope) {
+        Map<String, ?> safe = values == null ? Map.of() : values;
+        if (schema == null) {
+            return;
+        }
+        List<String> invalid = new ArrayList<>();
+        for (SchemaField field : schema) {
+            if (field.minimum() == null && field.maximum() == null) {
+                continue;
+            }
+            Object value = safe.get(field.name());
+            if (value == null || String.valueOf(value).isBlank()) {
+                continue;
+            }
+            if (!isInteger(value)) {
+                continue;
+            }
+            int parsed = value instanceof Number number
+                    ? number.intValue()
+                    : new BigInteger(String.valueOf(value).trim()).intValue();
+            if (field.minimum() != null && parsed < field.minimum()) {
+                invalid.add(field.name() + "（最小 " + field.minimum() + "）");
+            } else if (field.maximum() != null && parsed > field.maximum()) {
+                invalid.add(field.name() + "（最大 " + field.maximum() + "）");
+            }
+        }
+        if (!invalid.isEmpty()) {
+            throw new IllegalArgumentException(scope + " 超出范围: " + String.join(", ", invalid));
         }
     }
 

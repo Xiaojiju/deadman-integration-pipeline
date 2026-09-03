@@ -2,55 +2,63 @@ package com.mtfm.gateway.catalog.apply;
 
 import com.mtfm.gateway.catalog.dto.DeviceCommandRequest;
 import com.mtfm.gateway.catalog.dto.DeviceRegisterRequest;
-import com.mtfm.gateway.catalog.entity.ChannelEntity;
 import com.mtfm.gateway.catalog.entity.DeviceEntity;
 import com.mtfm.gateway.catalog.schema.CatalogFormService;
 import com.mtfm.gateway.catalog.store.CatalogStore;
-import com.mtfm.gateway.spi.capability.FunctionExecutor;
 import com.mtfm.gateway.spi.model.DeviceEndpointBinding;
 import com.mtfm.gateway.spi.model.ExecutionResult;
 import com.mtfm.gateway.spi.model.FunctionCommand;
 import com.mtfm.gateway.spi.port.DriverRegistry;
 import com.mtfm.gateway.spi.port.PipelineCommandPort;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * 设备运行时加载/卸载与手动指令服务。
  *
- * <p>对 {@link CatalogFormService} / {@link PipelineCommandPort} 使用 {@link ObjectProvider}
- * 延迟获取，避免与 {@code GatewayPipeline}（兼作 CapabilityRegistrar）形成构造期循环依赖。
+ * <p>
+ * 对 {@link CatalogFormService} / {@link PipelineCommandPort} 使用
+ * {@link ObjectProvider}
+ * 延迟获取。设备绑定走独立的 {@link DriverRegistry}（{@code DefaultRegistries}），不再依赖流水线兼五职。
  */
 @Service
 public class CatalogApplyService {
 
+    private static final Logger LOG = LoggerFactory.getLogger(CatalogApplyService.class);
+
     private final CatalogStore store;
     private final ObjectProvider<CatalogFormService> forms;
     private final ObjectProvider<PipelineCommandPort> commandPort;
-    private final Map<String, FunctionExecutor> executors = new ConcurrentHashMap<>();
     private DriverRegistry registry;
 
     public CatalogApplyService(CatalogStore store,
             ObjectProvider<CatalogFormService> forms,
             ObjectProvider<PipelineCommandPort> commandPort) {
+        this(store, forms, commandPort, null);
+    }
+
+    @Autowired
+    public CatalogApplyService(CatalogStore store,
+            ObjectProvider<CatalogFormService> forms,
+            ObjectProvider<PipelineCommandPort> commandPort,
+            ObjectProvider<DriverRegistry> driverRegistry) {
         this.store = store;
         this.forms = forms;
         this.commandPort = commandPort;
+        this.registry = driverRegistry == null ? null : driverRegistry.getIfAvailable();
     }
 
     public void attach(DriverRegistry registry) {
         this.registry = registry;
-    }
-
-    public void registerExecutor(FunctionExecutor executor) {
-        executors.put(executor.capabilityType(), executor);
     }
 
     /**
@@ -84,14 +92,14 @@ public class CatalogApplyService {
         if (Boolean.FALSE.equals(device.getEnabled())) {
             throw new IllegalArgumentException("设备已停用: " + deviceCode);
         }
-        unload(deviceCode);
         List<DeviceEndpointBinding> all = store.findEndpoints(deviceCode);
+        detach(deviceCode, all);
         if (all.isEmpty()) {
             return;
         }
         List<DeviceEndpointBinding> endpoints = all.stream()
-                .filter(this::channelEnabled)
-                .toList();
+                .filter(binding -> binding.channelEnabled())
+                .collect(Collectors.toList());
         if (endpoints.isEmpty()) {
             throw new IllegalArgumentException("设备没有已启用的通道: " + deviceCode);
         }
@@ -104,29 +112,33 @@ public class CatalogApplyService {
         }
         String capabilityType = endpoints.getFirst().capabilityType();
         registry.register(deviceCode, capabilityType);
-        FunctionExecutor executor = executors.get(capabilityType);
-        if (executor != null) {
+        registry.findExecutor(capabilityType).ifPresent(executor -> {
             for (DeviceEndpointBinding endpoint : endpoints) {
                 executor.bind(endpoint);
             }
-        }
-    }
-
-    private boolean channelEnabled(DeviceEndpointBinding endpoint) {
-        ChannelEntity channel = store.findChannel(endpoint.channelId()).orElse(null);
-        return channel != null && !Boolean.FALSE.equals(channel.getEnabled());
+        });
     }
 
     public void unload(String deviceCode) {
         if (registry == null) {
             return;
         }
-        store.findDevice(deviceCode).ifPresent(binding -> {
-            FunctionExecutor executor = executors.get(binding.capabilityType());
-            if (executor != null) {
-                executor.unbind(deviceCode);
+        detach(deviceCode, store.findEndpoints(deviceCode));
+    }
+
+    private void detach(String deviceCode, List<DeviceEndpointBinding> endpoints) {
+        if (registry == null) {
+            return;
+        }
+        Set<String> types = new LinkedHashSet<>();
+        for (DeviceEndpointBinding endpoint : endpoints) {
+            if (endpoint.capabilityType() != null && !endpoint.capabilityType().isBlank()) {
+                types.add(endpoint.capabilityType());
             }
-        });
+        }
+        for (String type : types) {
+            registry.findExecutor(type).ifPresent(executor -> executor.unbind(deviceCode));
+        }
         registry.unregister(deviceCode);
     }
 
@@ -152,7 +164,11 @@ public class CatalogApplyService {
 
     public void reloadAll() {
         for (var device : store.listEnabledDevices()) {
-            load(device.getDeviceCode());
+            try {
+                load(device.getDeviceCode());
+            } catch (RuntimeException ex) {
+                LOG.warn("reloadAll 跳过设备 {}: {}", device.getDeviceCode(), ex.getMessage());
+            }
         }
     }
 }

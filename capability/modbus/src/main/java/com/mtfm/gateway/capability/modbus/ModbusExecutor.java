@@ -86,12 +86,17 @@ public final class ModbusExecutor implements FunctionExecutor {
         int quantity = Math.max(1, intArg(args, ModbusCapability.ARG_QUANTITY, 1));
         ModbusDataType dataType = ModbusDataType.parse(stringArg(args, ModbusCapability.ARG_DATA_TYPE));
         List<Object> values = new ArrayList<>();
-        for (int i = 0; i < quantity; i++) {
-            if (!area.numeric() || dataType == ModbusDataType.BOOLEAN) {
-                values.add(bus.readBoolean(endpoint.channel(), endpoint.unitId(), area, offset + i));
+        if (!area.numeric() || dataType == ModbusDataType.BOOLEAN) {
+            if (area.numeric()) {
+                for (Number number : bus.readNumerics(endpoint.channel(), endpoint.unitId(), area, offset, quantity,
+                        ModbusDataType.BOOLEAN)) {
+                    values.add(number.intValue() != 0);
+                }
             } else {
-                values.add(bus.readNumeric(endpoint.channel(), endpoint.unitId(), area, offset + i, dataType));
+                values.addAll(bus.readBooleans(endpoint.channel(), endpoint.unitId(), area, offset, quantity));
             }
+        } else {
+            values.addAll(bus.readNumerics(endpoint.channel(), endpoint.unitId(), area, offset, quantity, dataType));
         }
         return ExecutionResult.success(command.requestId(), command.deviceId(), command.functionId(),
                 Map.of("values", values, "unitId", endpoint.unitId()));
