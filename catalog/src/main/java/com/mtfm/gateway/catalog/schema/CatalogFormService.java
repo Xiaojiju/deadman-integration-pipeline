@@ -24,20 +24,16 @@ import com.mtfm.gateway.catalog.entity.ProductEntity;
 import com.mtfm.gateway.catalog.entity.ProductFunctionEntity;
 import com.mtfm.gateway.catalog.json.JsonMaps;
 import com.mtfm.gateway.catalog.store.CatalogStore;
+import com.mtfm.gateway.catalog.store.FunctionOptionBundle;
 import com.mtfm.gateway.spi.capability.CapabilityRegistrar;
 import com.mtfm.gateway.spi.model.AccessPermission;
 import com.mtfm.gateway.spi.model.CapabilityDescriptor;
 import com.mtfm.gateway.spi.model.DeviceEndpointBinding;
-import com.mtfm.gateway.spi.model.FieldFormat;
-import com.mtfm.gateway.spi.model.FieldType;
-import com.mtfm.gateway.spi.model.FormField;
 import com.mtfm.gateway.spi.model.FunctionCommand;
 import com.mtfm.gateway.spi.model.FunctionTemplate;
 import com.mtfm.gateway.spi.model.SchemaField;
 import com.mtfm.gateway.spi.model.SchemaForms;
-import com.mtfm.gateway.spi.model.SchemaValidator;
 import com.mtfm.gateway.catalog.payload.PayloadDefinitionResolver;
-import com.mtfm.gateway.spi.payload.FieldSource;
 import com.mtfm.gateway.spi.payload.PayloadEncoding;
 import com.mtfm.gateway.spi.payload.PayloadMode;
 import com.mtfm.gateway.spi.payload.TopicCatalog;
@@ -66,9 +62,12 @@ import java.util.Set;
 @Service
 public class CatalogFormService {
 
+    /** 通道视图脱敏占位；更新时回写原值，避免把掩码存进库。 */
+    static final String SECRET_MASK = CatalogConnectionSupport.SECRET_MASK;
+
     private final CatalogStore store;
     private final CapabilityRegistrar registrar;
-    private final ObjectProvider<CatalogApplyService> applyService;
+    private final CatalogFormViews views;
 
     public CatalogFormService(
             CatalogStore store,
@@ -76,7 +75,7 @@ public class CatalogFormService {
             ObjectProvider<CatalogApplyService> applyService) {
         this.store = store;
         this.registrar = registrar;
-        this.applyService = applyService;
+        this.views = new CatalogFormViews(store, registrar, applyService);
     }
 
     /**
@@ -159,7 +158,7 @@ public class CatalogFormService {
      */
     public List<SupportedFunctionView> supportedFunctions(String capabilityType) {
         return requireCapability(capabilityType).functionTemplates().stream()
-                .map(this::toSupportedFunction)
+                .map(views::toSupportedFunction)
                 .toList();
     }
 
@@ -175,78 +174,7 @@ public class CatalogFormService {
     public SupportedFunctionView supportedFunction(String capabilityType, String functionId) {
         FunctionTemplate template = requireCapability(capabilityType).functionTemplate(functionId)
                 .orElseThrow(() -> new IllegalArgumentException("功能模板不存在: " + functionId));
-        return toSupportedFunction(template);
-    }
-
-    /**
-     * 转换功能模板为支持功能视图
-     * 这个方式是转换指定功能模板为支持功能视图，支持功能视图包含了功能ID、描述、访问类型、访问权限、值访问类型、参数、写选项、选择选项等。
-     * 
-     * @param template 功能模板
-     * @return 支持功能视图
-     */
-    private SupportedFunctionView toSupportedFunction(FunctionTemplate template) {
-        List<SchemaField> schema = template.parameters();
-        List<PropertyItem> properties = PropertySchemas.toPropertyItems(schema);
-        Map<String, List<ValueOption>> choices = PropertySchemas.choiceOptionsByField(schema);
-        List<ValueOption> writeOptions = flattenChoiceOptions(choices);
-        return new SupportedFunctionView(
-                template.functionId(),
-                template.description(),
-                template.accessType(),
-                template.accessPermission(),
-                ValueAccessType.VALUE.name(),
-                SchemaForms.bind(schema, Map.of()),
-                properties,
-                writeOptions,
-                choices);
-    }
-
-    /**
-     * 扁平化选择选项
-     * 这个方式是扁平化选择选项，选择选项包含了选择选项ID、描述、值等。
-     * 
-     * @param choices 选择选项
-     * @return 扁平化选择选项列表
-     */
-    private static List<ValueOption> flattenChoiceOptions(Map<String, List<ValueOption>> choices) {
-        if (choices == null || choices.isEmpty()) {
-            return List.of();
-        }
-        // VALUE 模式：若仅一个字段有 choices，直接作为 writeValueOptions
-        if (choices.size() == 1) {
-            return choices.values().iterator().next();
-        }
-        List<ValueOption> all = new ArrayList<>();
-        choices.values().forEach(all::addAll);
-        return List.copyOf(all);
-    }
-
-    /**
-     * 扁平化写选项
-     * 这个方式是扁平化写选项，写选项包含了写选项ID、描述、值等。
-     * 
-     * @param writeFields 写选项
-     * @return 扁平化写选项列表
-     */
-    private static List<ValueOption> flattenWriteFieldOptions(List<WriteFieldOption> writeFields) {
-        if (writeFields == null || writeFields.isEmpty()) {
-            return List.of();
-        }
-        List<WriteFieldOption> withOptions = writeFields.stream()
-                .filter(field -> field.options() != null && !field.options().isEmpty())
-                .toList();
-        if (withOptions.isEmpty()) {
-            return List.of();
-        }
-        if (withOptions.size() == 1) {
-            return withOptions.get(0).options();
-        }
-        List<ValueOption> all = new ArrayList<>();
-        for (WriteFieldOption field : withOptions) {
-            all.addAll(field.options());
-        }
-        return List.copyOf(all);
+        return views.toSupportedFunction(template);
     }
 
     // ——— Channel ———
@@ -273,8 +201,7 @@ public class CatalogFormService {
         // 获取能力描述符
         CapabilityDescriptor descriptor = requireCapability(request.capabilityType());
         List<PropertyItem> items = resolveProperties(request.properties(), request.connection());
-        SchemaValidator.require(descriptor.connectionSchema(), PropertySchemas.toValueMap(items), "通道 connection");
-        requireModbusTransportFields(descriptor.capabilityType(), PropertySchemas.toValueMap(items));
+        CatalogConnectionSupport.validateConnection(descriptor, items);
         ChannelEntity entity = new ChannelEntity();
         entity.setCode(request.code());
         entity.setCapabilityType(request.capabilityType());
@@ -301,10 +228,11 @@ public class CatalogFormService {
         CapabilityDescriptor descriptor = requireCapability(entity.getCapabilityType());
         if (request != null) {
             if (request.properties() != null || request.connection() != null) {
-                List<PropertyItem> items = resolveProperties(request.properties(), request.connection());
-                SchemaValidator.require(descriptor.connectionSchema(), PropertySchemas.toValueMap(items),
-                        "通道 connection");
-                requireModbusTransportFields(descriptor.capabilityType(), PropertySchemas.toValueMap(items));
+                List<PropertyItem> items = CatalogConnectionSupport.restoreSecrets(
+                        resolveProperties(request.properties(), request.connection()),
+                        store.loadChannelProperties(entity),
+                        descriptor.connectionSchema());
+                CatalogConnectionSupport.validateConnection(descriptor, items);
                 entity.setConnection(JsonMaps.write(PropertySchemas.toValueMap(items)));
                 store.properties().replaceChannelProperties(entity.getId(), items);
             }
@@ -313,32 +241,6 @@ public class CatalogFormService {
             }
         }
         return store.updateChannel(entity);
-    }
-
-    /**
-     * MODBUS：TCP 必填 host，RTU 必填 serialPort。schema 里两者都是可选，避免互相卡住。
-     * 
-     * @param capabilityType 能力类型
-     * @param values         值
-     * @throws IllegalArgumentException 如果能力类型为空或能力类型不为MODBUS或值为空或值不包含transport字段或transport字段为空或transport字段不为RTU或transport字段不为TCP或serialPort字段为空或serialPort字段不为RTU或host字段为空或host字段不为TCP
-     */
-    private static void requireModbusTransportFields(String capabilityType, Map<String, Object> values) {
-        if (capabilityType == null || !"MODBUS".equalsIgnoreCase(capabilityType)) {
-            return;
-        }
-        Map<String, Object> safe = values == null ? Map.of() : values;
-        String transport = String.valueOf(safe.getOrDefault("transport", "TCP"));
-        if ("RTU".equalsIgnoreCase(transport)) {
-            Object serial = safe.get("serialPort");
-            if (serial == null || String.valueOf(serial).isBlank()) {
-                throw new IllegalArgumentException("通道 connection 缺少必填字段: serialPort");
-            }
-            return;
-        }
-        Object host = safe.get("host");
-        if (host == null || String.valueOf(host).isBlank()) {
-            throw new IllegalArgumentException("通道 connection 缺少必填字段: host");
-        }
     }
 
     // ——— Product ———
@@ -359,7 +261,7 @@ public class CatalogFormService {
         if (request.name() == null || request.name().isBlank()) {
             throw new IllegalArgumentException("产品 name 不能为空");
         }
-        if (store.listProducts().stream().anyMatch(item -> request.code().equals(item.getCode()))) {
+        if (store.findProductByCode(request.code()).isPresent()) {
             throw new IllegalArgumentException("产品编码已存在: " + request.code());
         }
         ProductEntity entity = new ProductEntity();
@@ -413,10 +315,16 @@ public class CatalogFormService {
         if (descriptor.functionTemplates().isEmpty()) {
             throw new IllegalArgumentException("能力无预置功能模板: " + capabilityType);
         }
-        return descriptor.functionTemplates().stream()
-                .filter(template -> store.findFunction(productId, template.functionId()).isEmpty())
-                .map(template -> createFunctionFromTemplate(productId, capabilityType, template))
-                .toList();
+        List<ProductFunctionEntity> imported = new ArrayList<>();
+        for (FunctionTemplate template : descriptor.functionTemplates()) {
+            Optional<ProductFunctionEntity> existing = store.findFunction(productId, template.functionId());
+            if (existing.isEmpty()) {
+                imported.add(createFunctionFromTemplate(productId, capabilityType, template));
+            } else {
+                imported.add(refreshFunctionFromTemplate(capabilityType, template, existing.get()));
+            }
+        }
+        return List.copyOf(imported);
     }
 
     /**
@@ -434,8 +342,8 @@ public class CatalogFormService {
         CapabilityDescriptor descriptor = requireCapability(capabilityType);
         List<PropertyItem> properties = PropertySchemas.toPropertyItems(template.parameters());
         List<WriteFieldOption> writeFields = descriptor.contractedParameters()
-                ? bindContractFields(template, null, PayloadMode.STRUCT)
-                : templateWriteFields(template);
+                ? CatalogFunctionBinding.bindContractFields(template, null, PayloadMode.STRUCT)
+                : CatalogFunctionBinding.templateWriteFields(template);
         boolean read = "READ".equalsIgnoreCase(template.accessType());
         return createFunction(productId, new ProductFunctionWriteRequest(
                 template.functionId(),
@@ -454,6 +362,50 @@ public class CatalogFormService {
                 null,
                 null,
                 null));
+    }
+
+    /**
+     * 模板升级时按现有绑定重刷契约字段：保留用户 constant/mapping，补上模板新增参数，丢掉已删除参数。
+     */
+    private ProductFunctionEntity refreshFunctionFromTemplate(
+            String capabilityType, FunctionTemplate template, ProductFunctionEntity entity) {
+        if (entity.getCapabilityType() != null
+                && !entity.getCapabilityType().equalsIgnoreCase(capabilityType)) {
+            return entity;
+        }
+        CapabilityDescriptor descriptor = requireCapability(capabilityType);
+        Optional<FunctionTemplate> locked = Optional.of(template);
+        if (CatalogFunctionBinding.isOpenLockedEmptyTemplate(descriptor, locked)) {
+            return entity;
+        }
+        PayloadMode mode = PayloadMode.from(entity.getPayloadMode());
+        boolean read = "READ".equalsIgnoreCase(entity.getAccessType());
+        if (descriptor.contractedParameters()) {
+            FunctionTemplate contract = CatalogFunctionBinding.requireContractTemplate(descriptor,
+                    entity.getAccessType());
+            List<WriteFieldOption> existing = read
+                    ? store.properties().listReadFields(entity.getId())
+                    : store.properties().listWriteFields(entity.getId());
+            List<WriteFieldOption> known = CatalogFunctionBinding.filterKnownFields(existing, contract);
+            List<WriteFieldOption> bound = CatalogFunctionBinding.bindContractFields(contract,
+                    known.isEmpty() ? null : known, mode);
+            if (read) {
+                store.properties().replaceReadFields(entity.getId(), bound);
+            } else {
+                store.properties().replaceWriteOptions(
+                        entity.getId(),
+                        ValueAccessType.from(entity.getWriteAccessType()),
+                        store.properties().listWriteValueOptions(entity.getId()),
+                        bound);
+            }
+        } else if (descriptor.fixedFunctions()) {
+            List<WriteFieldOption> existing = store.properties().listWriteFields(entity.getId());
+            List<WriteFieldOption> known = CatalogFunctionBinding.filterKnownFields(existing, template);
+            List<WriteFieldOption> bound = CatalogFunctionBinding.constrainFixedWriteFields(
+                    known.isEmpty() ? CatalogFunctionBinding.templateWriteFields(template) : known, template);
+            store.properties().replaceWriteOptions(entity.getId(), ValueAccessType.STRUCT, List.of(), bound);
+        }
+        return entity;
     }
 
     /**
@@ -487,15 +439,15 @@ public class CatalogFormService {
                 && (request.accessType() == null || request.accessType().isBlank())) {
             throw new IllegalArgumentException("自定义功能须指定 accessType（READ/WRITE）");
         }
-        boolean openLockedEmpty = isOpenLockedEmptyTemplate(descriptor, template);
+        boolean openLockedEmpty = CatalogFunctionBinding.isOpenLockedEmptyTemplate(descriptor, template);
         if (openLockedEmpty) {
-            rejectOpenLockedStructureMutation(request);
+            CatalogFunctionBinding.rejectOpenLockedStructureMutation(request);
         }
         List<PropertyItem> items = descriptor.fixedFunctions()
-                ? resolveFunctionProperties(request, template)
+                ? CatalogFunctionBinding.resolveFunctionProperties(request, template)
                 : List.of();
         if (descriptor.fixedFunctions() && template.isPresent()) {
-            items = constrainFixedProperties(items, template.get());
+            items = CatalogFunctionBinding.constrainFixedProperties(items, template.get());
         }
         if (openLockedEmpty) {
             items = List.of();
@@ -506,7 +458,7 @@ public class CatalogFormService {
         List<WriteFieldOption> readFields;
         if (descriptor.fixedFunctions()) {
             writeAccess = ValueAccessType.STRUCT;
-            writeFields = resolveFixedWriteFields(request.writeFields(), template);
+            writeFields = CatalogFunctionBinding.resolveFixedWriteFields(request.writeFields(), template);
             writeValueOptions = List.of();
             readFields = List.of();
         } else if (openLockedEmpty) {
@@ -515,21 +467,26 @@ public class CatalogFormService {
             writeValueOptions = List.of();
             readFields = List.of();
         } else if (descriptor.contractedParameters()) {
-            writeAccess = resolveWriteAccess(request);
+            writeAccess = CatalogFunctionBinding.resolveWriteAccess(request);
             String access = request.accessType() != null && !request.accessType().isBlank()
                     ? request.accessType()
                     : template.map(t -> t.accessType()).orElse("WRITE");
-            FunctionTemplate contract = requireContractTemplate(descriptor, access);
+            FunctionTemplate contract = CatalogFunctionBinding.requireContractTemplate(descriptor, access);
             PayloadMode mode = writeAccess == ValueAccessType.VALUE ? PayloadMode.VALUE : PayloadMode.STRUCT;
             boolean isRead = "READ".equalsIgnoreCase(access);
-            writeFields = isRead ? List.of() : bindContractFields(contract, request.writeFields(), mode);
-            readFields = isRead ? bindContractFields(contract, request.readFields(), mode) : List.of();
-            writeValueOptions = request.writeValueOptions() == null ? List.of() : request.writeValueOptions();
+            writeFields = isRead ? List.of()
+                    : CatalogFunctionBinding.bindContractFields(contract, request.writeFields(), mode);
+            readFields = isRead ? CatalogFunctionBinding.bindContractFields(contract, request.readFields(), mode)
+                    : List.of();
+            writeValueOptions = CatalogFunctionBinding.constrainContractValueOptions(
+                    request.writeValueOptions() == null ? List.of() : request.writeValueOptions(),
+                    contract,
+                    mode);
         } else {
-            writeAccess = resolveWriteAccess(request);
+            writeAccess = CatalogFunctionBinding.resolveWriteAccess(request);
             boolean isRead = "READ".equalsIgnoreCase(request.accessType());
-            writeFields = isRead ? List.of() : nullSafeFields(request.writeFields());
-            readFields = isRead ? nullSafeFields(request.readFields()) : List.of();
+            writeFields = isRead ? List.of() : CatalogFunctionBinding.nullSafeFields(request.writeFields());
+            readFields = isRead ? CatalogFunctionBinding.nullSafeFields(request.readFields()) : List.of();
             writeValueOptions = request.writeValueOptions() == null ? List.of() : request.writeValueOptions();
         }
         List<ValueOption> readValueOptions = request.readValueOptions() == null
@@ -541,7 +498,7 @@ public class CatalogFormService {
             // 空列表表示无读选项，不要回落成模板全量 choices
             readValueOptions = (request.readValueOptions() == null || request.readValueOptions().isEmpty())
                     ? List.of()
-                    : constrainFixedValueOptions(readValueOptions, template.get());
+                    : CatalogFunctionBinding.constrainFixedValueOptions(readValueOptions, template.get());
         }
 
         ProductFunctionEntity entity = new ProductFunctionEntity();
@@ -605,9 +562,9 @@ public class CatalogFormService {
         }
         CapabilityDescriptor descriptor = requireCapability(entity.getCapabilityType());
         Optional<FunctionTemplate> template = descriptor.functionTemplate(functionId);
-        boolean openLockedEmpty = isOpenLockedEmptyTemplate(descriptor, template);
+        boolean openLockedEmpty = CatalogFunctionBinding.isOpenLockedEmptyTemplate(descriptor, template);
         if (openLockedEmpty) {
-            rejectOpenLockedStructureMutation(request);
+            CatalogFunctionBinding.rejectOpenLockedStructureMutation(request);
         }
         if (request.properties() != null) {
             List<PropertyItem> items = openLockedEmpty
@@ -616,11 +573,17 @@ public class CatalogFormService {
                             ? request.properties()
                             : List.of());
             if (descriptor.fixedFunctions() && template.isPresent()) {
-                items = constrainFixedProperties(items, template.get());
+                items = CatalogFunctionBinding.constrainFixedProperties(items, template.get());
             }
             entity.setOptionSchema(JsonMaps.write(PropertySchemas.toValueMap(items)));
             store.properties().replaceFunctionProperties(entity.getId(), items);
         }
+        String previousAccess = entity.getAccessType();
+        String effectiveAccess = request.accessType() != null && !request.accessType().isBlank()
+                ? request.accessType()
+                : previousAccess;
+        boolean accessChanged = request.accessType() != null && !request.accessType().isBlank()
+                && !request.accessType().equalsIgnoreCase(previousAccess);
         if (request.accessType() != null && !request.accessType().isBlank()) {
             if (descriptor.fixedFunctions() && template.isPresent()
                     && !template.get().accessType().equalsIgnoreCase(request.accessType())) {
@@ -630,7 +593,14 @@ public class CatalogFormService {
                     && !template.get().accessType().equalsIgnoreCase(request.accessType())) {
                 throw new IllegalArgumentException("能力预置无参功能不允许修改 accessType");
             }
-            entity.setAccessType(request.accessType());
+            if (accessChanged && !descriptor.fixedFunctions() && !openLockedEmpty) {
+                boolean hasBinding = request.writeFields() != null || request.readFields() != null
+                        || request.writeValueOptions() != null;
+                if (!hasBinding) {
+                    throw new IllegalArgumentException("修改 accessType 时必须同时提交 writeFields 或 readFields");
+                }
+            }
+            entity.setAccessType(effectiveAccess);
         }
         if (request.accessPermission() != null) {
             entity.setAccessPermission(request.accessPermission());
@@ -643,42 +613,44 @@ public class CatalogFormService {
         }
         if (request.writeAccessType() != null
                 || request.writeValueOptions() != null
-                || request.writeFields() != null) {
+                || request.writeFields() != null
+                || accessChanged) {
             ValueAccessType writeAccess;
             List<ValueOption> writeOpts;
             List<WriteFieldOption> fields;
             if (descriptor.fixedFunctions()) {
                 writeAccess = ValueAccessType.STRUCT;
-                fields = resolveFixedWriteFields(request.writeFields(), template);
+                fields = CatalogFunctionBinding.resolveFixedWriteFields(request.writeFields(), template);
                 writeOpts = List.of();
             } else if (openLockedEmpty) {
                 writeAccess = ValueAccessType.STRUCT;
                 fields = List.of();
                 writeOpts = List.of();
             } else if (descriptor.contractedParameters()) {
-                writeAccess = resolveWriteAccess(request);
-                String access = request.accessType() != null && !request.accessType().isBlank()
-                        ? request.accessType()
-                        : entity.getAccessType();
-                FunctionTemplate contract = requireContractTemplate(descriptor, access);
+                writeAccess = CatalogFunctionBinding.resolveWriteAccess(request);
+                FunctionTemplate contract = CatalogFunctionBinding.requireContractTemplate(descriptor, effectiveAccess);
                 PayloadMode mode = writeAccess == ValueAccessType.VALUE ? PayloadMode.VALUE : PayloadMode.STRUCT;
-                boolean isRead = "READ".equalsIgnoreCase(access);
-                fields = isRead ? List.of() : bindContractFields(contract, request.writeFields(), mode);
-                writeOpts = request.writeValueOptions() == null ? List.of() : request.writeValueOptions();
+                boolean isRead = "READ".equalsIgnoreCase(effectiveAccess);
+                fields = isRead ? List.of()
+                        : CatalogFunctionBinding.bindContractFields(contract, request.writeFields(), mode);
+                writeOpts = CatalogFunctionBinding.constrainContractValueOptions(
+                        request.writeValueOptions() == null ? List.of() : request.writeValueOptions(),
+                        contract,
+                        mode);
                 if (isRead) {
                     store.properties().replaceReadFields(entity.getId(),
-                            bindContractFields(contract, request.readFields(), mode));
+                            CatalogFunctionBinding.bindContractFields(contract, request.readFields(), mode));
                 } else {
                     store.properties().replaceReadFields(entity.getId(), List.of());
                 }
             } else {
-                writeAccess = resolveWriteAccess(request);
-                boolean isRead = "READ".equalsIgnoreCase(
-                        request.accessType() != null ? request.accessType() : entity.getAccessType());
-                fields = isRead ? List.of() : nullSafeFields(request.writeFields());
+                writeAccess = CatalogFunctionBinding.resolveWriteAccess(request);
+                boolean isRead = "READ".equalsIgnoreCase(effectiveAccess);
+                fields = isRead ? List.of() : CatalogFunctionBinding.nullSafeFields(request.writeFields());
                 writeOpts = request.writeValueOptions() == null ? List.of() : request.writeValueOptions();
                 if (isRead && request.readFields() != null) {
-                    store.properties().replaceReadFields(entity.getId(), nullSafeFields(request.readFields()));
+                    store.properties().replaceReadFields(entity.getId(),
+                            CatalogFunctionBinding.nullSafeFields(request.readFields()));
                 }
             }
             entity.setWriteAccessType(writeAccess.name());
@@ -686,7 +658,8 @@ public class CatalogFormService {
         }
         if (request.readFields() != null && !descriptor.fixedFunctions() && !openLockedEmpty
                 && !descriptor.contractedParameters()) {
-            store.properties().replaceReadFields(entity.getId(), nullSafeFields(request.readFields()));
+            store.properties().replaceReadFields(entity.getId(),
+                    CatalogFunctionBinding.nullSafeFields(request.readFields()));
         }
         if (request.publishTopicSlot() != null) {
             entity.setPublishTopicSlot(request.publishTopicSlot());
@@ -717,416 +690,11 @@ public class CatalogFormService {
             } else if (descriptor.fixedFunctions() && template.isPresent()) {
                 readOpts = readOpts.isEmpty()
                         ? List.of()
-                        : constrainFixedValueOptions(readOpts, template.get());
+                        : CatalogFunctionBinding.constrainFixedValueOptions(readOpts, template.get());
             }
             store.properties().replaceReadValueOptions(entity.getId(), readOpts);
         }
         return store.updateFunction(entity);
-    }
-
-    /**
-     * OPEN 且命中预置模板、且模板无参：结构锁定（如 MQTT publish/subscribe）。
-     * 
-     * @param descriptor 能力描述符
-     * @param template   功能模板
-     * @return 是否为空模板
-     */
-    private static boolean isOpenLockedEmptyTemplate(
-            CapabilityDescriptor descriptor, Optional<FunctionTemplate> template) {
-        return !descriptor.fixedFunctions()
-                && template.isPresent()
-                && template.get().parameters().isEmpty();
-    }
-
-    /**
-     * 拒绝打开锁定结构修改
-     * 这个方式是拒绝打开锁定结构修改，打开锁定结构修改包含了功能ID、功能类型、功能参数、功能写选项、功能读选项、功能值访问类型、功能值访问权限、功能值访问选项等。
-     * 
-     * @param request 产品功能写请求
-     * @throws IllegalArgumentException 如果产品功能ID为空或产品功能类型为空或产品功能已存在
-     */
-    private static void rejectOpenLockedStructureMutation(ProductFunctionWriteRequest request) {
-        if (request.properties() != null && !request.properties().isEmpty()) {
-            throw new IllegalArgumentException("能力预置无参功能不允许配置 properties");
-        }
-        if (request.writeFields() != null && !request.writeFields().isEmpty()) {
-            throw new IllegalArgumentException("能力预置无参功能不允许配置 writeFields");
-        }
-        if (request.readFields() != null && !request.readFields().isEmpty()) {
-            throw new IllegalArgumentException("能力预置无参功能不允许配置 readFields");
-        }
-        if (request.writeValueOptions() != null && !request.writeValueOptions().isEmpty()) {
-            throw new IllegalArgumentException("能力预置无参功能不允许配置 writeValueOptions");
-        }
-    }
-
-    /**
-     * 空安全字段
-     * 这个方式是空安全字段，字段包含了字段ID、字段名称、字段类型、字段描述等。
-     * 
-     * @param fields 字段列表
-     * @return 空安全字段列表
-     */
-    private static List<WriteFieldOption> nullSafeFields(List<WriteFieldOption> fields) {
-        return fields == null ? List.of() : fields;
-    }
-
-    /**
-     * 解析写访问类型
-     * 这个方式是解析写访问类型，写访问类型包含了写访问类型ID、写访问类型名称、写访问类型描述等。
-     * 
-     * @param request 产品功能写请求
-     * @return 写访问类型
-     */
-    private static ValueAccessType resolveWriteAccess(ProductFunctionWriteRequest request) {
-        if (request.payloadMode() != null && !request.payloadMode().isBlank()) {
-            return PayloadMode.from(request.payloadMode()) == PayloadMode.VALUE
-                    ? ValueAccessType.VALUE
-                    : ValueAccessType.STRUCT;
-        }
-        if (request.writeAccessType() != null && !request.writeAccessType().isBlank()) {
-            return ValueAccessType.from(request.writeAccessType());
-        }
-        return ValueAccessType.STRUCT;
-    }
-
-    /**
-     * 解析功能属性
-     * 这个方式是解析功能属性，功能属性包含了功能属性ID、功能属性名称、功能属性类型、功能属性描述等。
-     * 
-     * @param request  产品功能写请求
-     * @param template 功能模板
-     * @return 功能属性列表
-     */
-    private List<PropertyItem> resolveFunctionProperties(
-            ProductFunctionWriteRequest request, Optional<FunctionTemplate> template) {
-        if (request.properties() != null) {
-            return request.properties();
-        }
-        return template.map(item -> PropertySchemas.toPropertyItems(item.parameters())).orElse(List.of());
-    }
-
-    /**
-     * FIXED：属性名必须落在模板 parameters 内；带 choices 的字段取值必须是规定枚举。
-     * 
-     * @param items    属性列表
-     * @param template 功能模板
-     * @return 约束固定属性列表
-     */
-    private static List<PropertyItem> constrainFixedProperties(
-            List<PropertyItem> items, FunctionTemplate template) {
-        Map<String, SchemaField> allowed = new LinkedHashMap<>();
-        for (SchemaField field : template.parameters()) {
-            allowed.put(field.name(), field);
-        }
-        List<PropertyItem> result = new ArrayList<>();
-        for (PropertyItem item : items == null ? List.<PropertyItem>of() : items) {
-            SchemaField field = allowed.get(item.attribute());
-            if (field == null) {
-                throw new IllegalArgumentException(
-                        "FIXED 功能不允许自定义属性: " + item.attribute() + "（功能 " + template.functionId() + "）");
-            }
-            if (field.choices() != null && !field.choices().isEmpty()
-                    && !field.choices().contains(item.attributeValue())) {
-                throw new IllegalArgumentException(
-                        "属性 " + item.attribute() + " 取值必须是模板规定项: " + field.choices());
-            }
-            // 保留调用方自定义说明；取值/类型仍受模板约束
-            String description = item.description() == null || item.description().isBlank()
-                    ? field.description()
-                    : item.description();
-            result.add(new PropertyItem(
-                    field.name(),
-                    item.attributeValue(),
-                    field.type().code(),
-                    description));
-        }
-        return List.copyOf(result);
-    }
-
-    /**
-     * 模板 parameters → STRUCT 写字段（含 choices 子选项）。
-     * 
-     * @param template 功能模板
-     * @return 写字段列表
-     */
-    private static List<WriteFieldOption> templateWriteFields(FunctionTemplate template) {
-        if (template == null || template.parameters() == null || template.parameters().isEmpty()) {
-            return List.of();
-        }
-        List<WriteFieldOption> fields = new ArrayList<>();
-        for (SchemaField field : template.parameters()) {
-            fields.add(new WriteFieldOption(
-                    field.name(),
-                    field.description(),
-                    field.type().code(),
-                    field.type().code(),
-                    false,
-                    PropertySchemas.choicesToValueOptions(field),
-                    field.format().code()));
-        }
-        return List.copyOf(fields);
-    }
-
-    private static FunctionTemplate requireContractTemplate(CapabilityDescriptor descriptor, String accessType) {
-        return descriptor.functionTemplateByAccessType(accessType)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "能力未定义 " + accessType + " 参数契约: " + descriptor.capabilityType()));
-    }
-
-    /**
-     * CONTRACT：字段名锁死为模板 parameters，只合并来源/常量/映射。
-     * 寻址字段默认 constant（取模板 defaultValue）；value 在 VALUE 模式下 mapped，否则 caller。
-     * 
-     * @param template  功能模板
-     * @param requested 请求字段列表
-     * @param mode      负载模式
-     * @return 绑定合同字段列表
-     */
-    private static List<WriteFieldOption> bindContractFields(
-            FunctionTemplate template,
-            List<WriteFieldOption> requested,
-            PayloadMode mode) {
-        List<WriteFieldOption> seeded = seedContractFields(template, mode);
-        if (requested == null || requested.isEmpty()) {
-            return seeded;
-        }
-        Map<String, WriteFieldOption> byField = new LinkedHashMap<>();
-        for (WriteFieldOption field : requested) {
-            byField.put(field.field(), field);
-        }
-        List<WriteFieldOption> result = new ArrayList<>();
-        for (WriteFieldOption seed : seeded) {
-            WriteFieldOption req = byField.remove(seed.field());
-            if (req == null) {
-                result.add(seed);
-                continue;
-            }
-            FieldSource source = FieldSource.from(req.source());
-            if (source == FieldSource.MAPPED && !"value".equals(seed.field())) {
-                throw new IllegalArgumentException("契约字段 " + seed.field() + " 不允许 mapped，仅 value 可映射");
-            }
-            String constant = req.constant();
-            if (source == FieldSource.CONSTANT && (constant == null || constant.isBlank())) {
-                constant = seed.constant();
-            }
-            List<ValueOption> options = seed.options();
-            if ("value".equals(seed.field()) && req.options() != null && !req.options().isEmpty()) {
-                options = req.options();
-            } else if (req.options() != null && !req.options().isEmpty() && !seed.options().isEmpty()) {
-                options = mergeFixedFieldOptions(req.options(), seed.options());
-            }
-            result.add(new WriteFieldOption(
-                    seed.field(),
-                    req.description() != null && !req.description().isBlank() ? req.description() : seed.description(),
-                    seed.accessDataType(),
-                    seed.transformDataType(),
-                    source != FieldSource.CALLER,
-                    options,
-                    seed.format(),
-                    req.valueGenerator(),
-                    source.wire(),
-                    constant,
-                    source == FieldSource.MAPPED
-                            ? (req.callerField() == null || req.callerField().isBlank() ? "value" : req.callerField())
-                            : req.callerField()));
-        }
-        if (!byField.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "CONTRACT 功能不允许自定义字段: " + byField.keySet() + "（功能 " + template.functionId() + "）");
-        }
-        return List.copyOf(result);
-    }
-
-    /**
-     * 种子合同字段
-     * 这个方式是种子合同字段，种子合同字段包含了种子合同字段ID、种子合同字段名称、种子合同字段类型、种子合同字段描述等。
-     * 
-     * @param template 功能模板
-     * @param mode     负载模式
-     * @return 种子合同字段列表
-     */
-    private static List<WriteFieldOption> seedContractFields(FunctionTemplate template, PayloadMode mode) {
-        List<WriteFieldOption> fields = new ArrayList<>();
-        for (SchemaField field : template.parameters()) {
-            boolean valueField = "value".equals(field.name());
-            boolean valueMode = mode == PayloadMode.VALUE;
-            FieldSource source = valueField
-                    ? (valueMode ? FieldSource.MAPPED : FieldSource.CALLER)
-                    : FieldSource.CONSTANT;
-            String constant = valueField || field.defaultValue() == null
-                    ? null
-                    : String.valueOf(field.defaultValue());
-            fields.add(new WriteFieldOption(
-                    field.name(),
-                    field.description(),
-                    field.type().code(),
-                    field.type().code(),
-                    source != FieldSource.CALLER,
-                    PropertySchemas.choicesToValueOptions(field),
-                    field.format().code(),
-                    null,
-                    source.wire(),
-                    constant,
-                    source == FieldSource.MAPPED ? "value" : null));
-        }
-        return List.copyOf(fields);
-    }
-
-    /**
-     * 解析固定写字段
-     * 这个方式是解析固定写字段，固定写字段包含了固定写字段ID、固定写字段名称、固定写字段类型、固定写字段描述等。
-     * 
-     * @param requested 请求字段列表
-     * @param template  功能模板
-     * @return 固定写字段列表
-     */
-    private List<WriteFieldOption> resolveFixedWriteFields(
-            List<WriteFieldOption> requested, Optional<FunctionTemplate> template) {
-        if (template.isEmpty()) {
-            return List.of();
-        }
-        if (requested == null || requested.isEmpty()) {
-            return templateWriteFields(template.get());
-        }
-        return constrainFixedWriteFields(requested, template.get());
-    }
-
-    /**
-     * FIXED：writeFields 的 field 必须 ⊆ 模板 parameters；options 取值 ⊆ choices；可改
-     * description。
-     * 
-     * @param requested 请求字段列表
-     * @param template  功能模板
-     * @return 约束固定写字段列表
-     */
-    private static List<WriteFieldOption> constrainFixedWriteFields(
-            List<WriteFieldOption> requested, FunctionTemplate template) {
-        Map<String, WriteFieldOption> byField = new LinkedHashMap<>();
-        for (WriteFieldOption field : requested == null ? List.<WriteFieldOption>of() : requested) {
-            byField.put(field.field(), field);
-        }
-        List<WriteFieldOption> result = new ArrayList<>();
-        for (SchemaField schemaField : template.parameters()) {
-            WriteFieldOption req = byField.remove(schemaField.name());
-            List<ValueOption> allowedOptions = PropertySchemas.choicesToValueOptions(schemaField);
-            String description = schemaField.description();
-            List<ValueOption> options = allowedOptions;
-            if (req != null) {
-                if (req.description() != null && !req.description().isBlank()) {
-                    description = req.description();
-                }
-                if (req.options() != null && !req.options().isEmpty()) {
-                    options = mergeFixedFieldOptions(req.options(), allowedOptions);
-                }
-            }
-            result.add(new WriteFieldOption(
-                    schemaField.name(),
-                    description,
-                    schemaField.type().code(),
-                    schemaField.type().code(),
-                    req != null && req.ignoreRequest(),
-                    options,
-                    req != null && req.format() != null && !req.format().isBlank()
-                            ? req.format()
-                            : schemaField.format().code(),
-                    req != null ? req.valueGenerator() : null));
-        }
-        if (!byField.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "FIXED 功能不允许自定义写字段: " + byField.keySet() + "（功能 " + template.functionId() + "）");
-        }
-        return List.copyOf(result);
-    }
-
-    /**
-     * 合并固定字段选项
-     * 这个方式是合并固定字段选项，固定字段选项包含了固定字段选项ID、固定字段选项名称、固定字段选项类型、固定字段选项描述等。
-     * 
-     * @param requested 请求字段列表
-     * @param allowed   允许字段列表
-     * @return 合并固定字段选项列表
-     */
-    private static List<ValueOption> mergeFixedFieldOptions(
-            List<ValueOption> requested, List<ValueOption> allowed) {
-        if (allowed.isEmpty()) {
-            if (requested != null && !requested.isEmpty()) {
-                throw new IllegalArgumentException("该写字段未定义枚举选项，不允许自定义 ValueOption");
-            }
-            return List.of();
-        }
-        Map<String, ValueOption> allowedByValue = new LinkedHashMap<>();
-        for (ValueOption option : allowed) {
-            allowedByValue.put(option.optionValue(), option);
-        }
-        Map<String, ValueOption> resultByValue = new LinkedHashMap<>();
-        for (ValueOption option : requested == null ? List.<ValueOption>of() : requested) {
-            ValueOption base = allowedByValue.get(option.optionValue());
-            if (base == null) {
-                throw new IllegalArgumentException(
-                        "FIXED 功能选项取值非法: " + option.optionValue() + "，允许: " + allowedByValue.keySet());
-            }
-            String description = option.description() == null || option.description().isBlank()
-                    ? base.description()
-                    : option.description();
-            Boolean isDefault = option.isDefault() != null ? option.isDefault() : base.isDefault();
-            resultByValue.put(option.optionValue(), new ValueOption(
-                    base.optionValue(),
-                    option.mappingValue() == null || option.mappingValue().isBlank()
-                            ? base.mappingValue()
-                            : option.mappingValue(),
-                    description,
-                    base.accessDataType(),
-                    base.transformDataType(),
-                    isDefault));
-        }
-        for (ValueOption option : allowed) {
-            resultByValue.putIfAbsent(option.optionValue(), option);
-        }
-        return List.copyOf(resultByValue.values());
-    }
-
-    /**
-     * FIXED：读写选项取值必须 ⊆ 模板所有 choices；空入参则回落为模板全量 choices。
-     * 
-     * @param requested 请求字段列表
-     * @param template  功能模板
-     * @return 约束固定字段选项列表
-     */
-    private static List<ValueOption> constrainFixedValueOptions(
-            List<ValueOption> requested, FunctionTemplate template) {
-        Map<String, List<ValueOption>> byField = PropertySchemas.choiceOptionsByField(template.parameters());
-        List<ValueOption> allowed = flattenChoiceOptions(byField);
-        if (allowed.isEmpty()) {
-            if (requested != null && !requested.isEmpty()) {
-                throw new IllegalArgumentException(
-                        "FIXED 功能 " + template.functionId() + " 未定义枚举选项，不允许自定义 ValueOption");
-            }
-            return List.of();
-        }
-        if (requested == null || requested.isEmpty()) {
-            return allowed;
-        }
-        java.util.Set<String> allowedValues = allowed.stream()
-                .map(option -> option.optionValue())
-                .collect(java.util.stream.Collectors.toSet());
-        List<ValueOption> result = new ArrayList<>();
-        for (ValueOption option : requested) {
-            if (!allowedValues.contains(option.optionValue())) {
-                throw new IllegalArgumentException(
-                        "FIXED 功能选项取值非法: " + option.optionValue() + "，允许: " + allowedValues);
-            }
-            result.add(option);
-        }
-        java.util.Set<String> submitted = result.stream()
-                .map(option -> option.optionValue())
-                .collect(java.util.stream.Collectors.toSet());
-        for (ValueOption option : allowed) {
-            if (!submitted.contains(option.optionValue())) {
-                result.add(option);
-            }
-        }
-        return List.copyOf(result);
     }
 
     // ——— Device ———
@@ -1220,7 +788,7 @@ public class CatalogFormService {
             if (request.properties() != null || request.address() != null) {
                 List<PropertyItem> items = resolveProperties(request.properties(), request.address());
                 CapabilityDescriptor descriptor = requireCapability(channel.getCapabilityType());
-                SchemaValidator.require(descriptor.addressSchema(), PropertySchemas.toValueMap(items), "端点 address");
+                CatalogConnectionSupport.validateAddress(descriptor, items);
                 entity.setAddress(JsonMaps.write(PropertySchemas.toValueMap(items)));
                 store.properties().replaceEndpointProperties(entity.getId(), items);
             }
@@ -1275,7 +843,7 @@ public class CatalogFormService {
                 .orElseThrow(() -> new IllegalArgumentException("通道不存在: " + request.channelId()));
         CapabilityDescriptor descriptor = requireCapability(channel.getCapabilityType());
         List<PropertyItem> items = resolveProperties(request.properties(), request.address());
-        SchemaValidator.require(descriptor.addressSchema(), PropertySchemas.toValueMap(items), "端点 address");
+        CatalogConnectionSupport.validateAddress(descriptor, items);
         DeviceEndpointEntity entity = new DeviceEndpointEntity();
         entity.setDeviceId(device.getId());
         entity.setChannelId(channel.getId());
@@ -1395,110 +963,59 @@ public class CatalogFormService {
      */
     public List<FunctionFormView> productFunctions(String productId) {
         store.findProduct(productId).orElseThrow(() -> new IllegalArgumentException("产品不存在: " + productId));
-        return store.listFunctions(productId).stream()
-                .map(function -> toForm(function, Map.of()))
-                .toList();
+        return projectFunctionForms(store.listFunctions(productId), Map.of());
     }
 
-    /**
-     * 列出产品功能视图
-     * 这个方式是列出指定产品功能视图，产品功能视图包含了产品功能视图ID、产品功能视图类型、产品功能视图参数、产品功能视图写选项、产品功能视图读选项、产品功能视图值访问类型、产品功能视图值访问权限、产品功能视图值访问选项等。
-     * 
-     * @param productId 产品ID
-     * @return 产品功能视图实体列表
-     */
     public List<ProductFunctionView> listProductFunctionViews(String productId) {
         store.findProduct(productId).orElseThrow(() -> new IllegalArgumentException("产品不存在: " + productId));
-        return store.listFunctions(productId).stream()
-                .map(this::toProductFunctionView)
+        List<ProductFunctionEntity> functions = store.listFunctions(productId);
+        Map<String, List<PropertyItem>> props = store.loadFunctionProperties(functions);
+        Map<String, FunctionOptionBundle> options = store.properties().loadFunctionOptions(
+                functions.stream().map(f -> f.getId()).toList());
+        return functions.stream()
+                .map(function -> views.toProductFunctionView(
+                        function,
+                        props.getOrDefault(function.getId(), List.of()),
+                        options.getOrDefault(function.getId(), FunctionOptionBundle.empty())))
                 .toList();
     }
 
-    /**
-     * 获取产品功能
-     * 这个方式是获取指定产品功能，产品功能包含了产品功能ID、产品功能类型、产品功能参数、产品功能写选项、产品功能读选项、产品功能值访问类型、产品功能值访问权限、产品功能值访问选项等。
-     * 
-     * @param productId  产品ID
-     * @param functionId 功能ID
-     * @return 产品功能实体
-     */
     public FunctionFormView productFunction(String productId, String functionId) {
         ProductFunctionEntity function = store.findFunction(productId, functionId)
                 .orElseThrow(() -> new IllegalArgumentException("功能不存在: " + productId + "/" + functionId));
-        return toForm(function, Map.of());
+        return views.toForm(function, Map.of());
     }
 
-    /**
-     * 列出设备功能
-     * 这个方式是列出指定设备功能，设备功能包含了设备功能ID、设备功能类型、设备功能参数、设备功能写选项、设备功能读选项、设备功能值访问类型、设备功能值访问权限、设备功能值访问选项等。
-     * 
-     * @param deviceCode 设备编码
-     * @return 设备功能实体列表
-     */
     public List<FunctionFormView> deviceFunctions(String deviceCode) {
         DeviceEntity device = store.findDeviceByCode(deviceCode)
                 .orElseThrow(() -> new IllegalArgumentException("设备不存在: " + deviceCode));
-        Map<String, List<PropertyItem>> overrides = store.loadAllDeviceOverrides(device);
-        return store.listFunctions(device.getProductId()).stream()
-                .map(function -> toForm(function, overrides))
-                .toList();
+        return projectFunctionForms(store.listFunctions(device.getProductId()), store.loadAllDeviceOverrides(device));
     }
 
-    /**
-     * 获取设备功能
-     * 这个方式是获取指定设备功能，设备功能包含了设备功能ID、设备功能类型、设备功能参数、设备功能写选项、设备功能读选项、设备功能值访问类型、设备功能值访问权限、设备功能值访问选项等。
-     * 
-     * @param deviceCode 设备编码
-     * @param functionId 功能ID
-     * @return 设备功能实体
-     */
     public FunctionFormView deviceFunction(String deviceCode, String functionId) {
         DeviceEntity device = store.findDeviceByCode(deviceCode)
                 .orElseThrow(() -> new IllegalArgumentException("设备不存在: " + deviceCode));
         ProductFunctionEntity function = store.findFunction(device.getProductId(), functionId)
                 .orElseThrow(() -> new IllegalArgumentException("功能不存在: " + functionId));
-        return toForm(function, store.loadAllDeviceOverrides(device));
+        return views.toForm(function, store.loadAllDeviceOverrides(device));
     }
 
-    /**
-     * 转换产品功能视图
-     * 这个方式是转换指定产品功能视图，产品功能视图包含了产品功能视图ID、产品功能视图类型、产品功能视图参数、产品功能视图写选项、产品功能视图读选项、产品功能视图值访问类型、产品功能视图值访问权限、产品功能视图值访问选项等。
-     * 
-     * @param function 产品功能实体
-     * @return 产品功能视图实体
-     */
     public ProductFunctionView toProductFunctionView(ProductFunctionEntity function) {
-        List<PropertyItem> props = store.loadFunctionProperties(function);
-        ValueAccessType writeAccess = ValueAccessType.from(function.getWriteAccessType());
-        return new ProductFunctionView(
-                function.getId(),
-                function.getProductId(),
-                function.getFunctionId(),
-                resolveDescription(function),
-                function.getAccessType(),
-                function.getAccessPermission(),
-                function.getCapabilityType(),
-                writeAccess.name(),
-                props,
-                store.properties().listWriteValueOptions(function.getId()),
-                store.properties().listWriteFields(function.getId()),
-                store.properties().listReadFields(function.getId()),
-                store.properties().listReadValueOptions(function.getId()),
-                function.getSortIndex(),
-                function.getPublishTopicSlot(),
-                function.getSubscribeTopicSlot(),
-                function.getPayloadMode(),
-                function.getPayloadEncoding());
+        return views.toProductFunctionView(function);
     }
 
-    /**
-     * 获取设备字段覆盖
-     * 这个方式是获取指定设备字段覆盖，设备字段覆盖包含了设备字段覆盖ID、设备字段覆盖名称、设备字段覆盖类型、设备字段覆盖描述等。
-     * 
-     * @param deviceCode 设备编码
-     * @param functionId 功能ID
-     * @return 设备字段覆盖实体
-     */
+    public ChannelView toChannelView(ChannelEntity entity) {
+        return views.toChannelView(entity);
+    }
+
+    public DeviceView toDeviceView(DeviceEntity entity) {
+        return views.toDeviceView(entity);
+    }
+
+    public DeviceEndpointView toEndpointView(DeviceEndpointEntity entity) {
+        return views.toEndpointView(entity);
+    }
+
     public Map<String, Object> deviceFieldOverrides(String deviceCode, String functionId) {
         DeviceEntity device = requireDevice(deviceCode);
         store.findFunction(device.getProductId(), functionId)
@@ -1506,14 +1023,6 @@ public class CatalogFormService {
         return store.properties().listDeviceFieldOverrides(device.getId(), functionId);
     }
 
-    /**
-     * 替换设备字段覆盖
-     * 这个方式是替换指定设备字段覆盖，设备字段覆盖包含了设备字段覆盖ID、设备字段覆盖名称、设备字段覆盖类型、设备字段覆盖描述等。
-     * 
-     * @param deviceCode 设备编码
-     * @param functionId 功能ID
-     * @param overrides  设备字段覆盖
-     */
     @Transactional
     public void replaceDeviceFieldOverrides(String deviceCode, String functionId, Map<String, Object> overrides) {
         DeviceEntity device = requireDevice(deviceCode);
@@ -1524,14 +1033,6 @@ public class CatalogFormService {
         store.properties().replaceDeviceFieldOverrides(device.getId(), functionId, safe);
     }
 
-    /**
-     * 获取设备主题覆盖
-     * 这个方式是获取指定设备主题覆盖，设备主题覆盖包含了设备主题覆盖ID、设备主题覆盖名称、设备主题覆盖类型、设备主题覆盖描述等。
-     * 
-     * @param deviceCode 设备编码
-     * @param functionId 功能ID
-     * @return 设备主题覆盖实体
-     */
     public Map<String, String> deviceTopicOverrides(String deviceCode, String functionId) {
         DeviceEntity device = requireDevice(deviceCode);
         store.findFunction(device.getProductId(), functionId)
@@ -1539,14 +1040,6 @@ public class CatalogFormService {
         return store.properties().listDeviceTopicOverrides(device.getId(), functionId);
     }
 
-    /**
-     * 替换设备主题覆盖
-     * 这个方式是替换指定设备主题覆盖，设备主题覆盖包含了设备主题覆盖ID、设备主题覆盖名称、设备主题覆盖类型、设备主题覆盖描述等。
-     * 
-     * @param deviceCode 设备编码
-     * @param functionId 功能ID
-     * @param overrides  设备主题覆盖
-     */
     @Transactional
     public void replaceDeviceTopicOverrides(String deviceCode, String functionId, Map<String, String> overrides) {
         DeviceEntity device = requireDevice(deviceCode);
@@ -1561,289 +1054,58 @@ public class CatalogFormService {
         store.properties().replaceDeviceTopicOverrides(device.getId(), functionId, safe);
     }
 
-    /**
-     * 转换通道视图
-     * 这个方式是转换指定通道视图，通道视图包含了通道视图ID、通道视图类型、通道视图参数、通道视图写选项、通道视图读选项、通道视图值访问类型、通道视图值访问权限、通道视图值访问选项等。
-     * 
-     * @param entity 通道实体
-     * @return 通道视图实体
-     */
-    public ChannelView toChannelView(ChannelEntity entity) {
-        return new ChannelView(
-                entity.getId(),
-                entity.getCode(),
-                entity.getCapabilityType(),
-                store.loadChannelProperties(entity),
-                entity.getEnabled(),
-                entity.getCreatedAt(),
-                entity.getUpdatedAt());
+    public List<DeviceEndpointView> deviceEndpoints(String deviceCode) {
+        DeviceEntity device = requireDevice(deviceCode);
+        List<DeviceEndpointEntity> rows = store.listEndpointEntities(device.getId());
+        Map<String, List<PropertyItem>> props = store.loadEndpointProperties(rows);
+        return rows.stream()
+                .map(row -> views.toEndpointView(row, props.getOrDefault(row.getId(), List.of())))
+                .toList();
     }
 
-    /**
-     * 转换设备视图
-     * 这个方式是转换指定设备视图，设备视图包含了设备视图ID、设备视图类型、设备视图参数、设备视图写选项、设备视图读选项、设备视图值访问类型、设备视图值访问权限、设备视图值访问选项等。
-     * 
-     * @param entity 设备实体
-     * @return 设备视图实体
-     */
-    public DeviceView toDeviceView(DeviceEntity entity) {
-        CatalogApplyService apply = applyService == null ? null : applyService.getIfAvailable();
-        boolean loaded = apply != null && apply.isLoaded(entity.getDeviceCode());
-        return new DeviceView(
-                entity.getId(),
-                entity.getDeviceCode(),
-                entity.getProductId(),
-                entity.getName(),
-                store.loadAllDeviceOverrides(entity),
-                entity.getEnabled(),
-                entity.getCreatedAt(),
-                entity.getUpdatedAt(),
-                loaded);
-    }
-
-    /**
-     * 转换设备端点视图
-     * 这个方式是转换指定设备端点视图，设备端点视图包含了设备端点视图ID、设备端点视图类型、设备端点视图参数、设备端点视图写选项、设备端点视图读选项、设备端点视图值访问类型、设备端点视图值访问权限、设备端点视图值访问选项等。
-     * 
-     * @param entity 设备端点实体
-     * @return 设备端点视图实体
-     */
-    public DeviceEndpointView toEndpointView(DeviceEndpointEntity entity) {
-        return new DeviceEndpointView(
-                entity.getId(),
-                entity.getDeviceId(),
-                entity.getChannelId(),
-                store.loadEndpointProperties(entity),
-                entity.getCreatedAt());
-    }
-
-    /**
-     * 分页通道视图
-     * 这个方式是分页通道视图，通道视图包含了通道视图ID、通道视图类型、通道视图参数、通道视图写选项、通道视图读选项、通道视图值访问类型、通道视图值访问权限、通道视图值访问选项等。
-     * 
-     * @param page 页码
-     * @param size 每页大小
-     * @return 通道视图实体列表
-     */
     public PageResult<ChannelView> pageChannelViews(int page, int size) {
         PageResult<ChannelEntity> raw = store.pageChannels(page, size);
+        Map<String, List<PropertyItem>> props = store.loadChannelProperties(raw.items());
         return new PageResult<>(
-                raw.items().stream().map(this::toChannelView).toList(),
+                raw.items().stream()
+                        .map(item -> views.toChannelView(item, props.getOrDefault(item.getId(), List.of())))
+                        .toList(),
                 raw.total(),
                 raw.page(),
                 raw.size(),
                 raw.totalPages());
     }
 
-    /**
-     * 分页设备视图
-     * 这个方式是分页设备视图，设备视图包含了设备视图ID、设备视图类型、设备视图参数、设备视图写选项、设备视图读选项、设备视图值访问类型、设备视图值访问权限、设备视图值访问选项等。
-     * 
-     * @param page 页码
-     * @param size 每页大小
-     * @return 设备视图实体列表
-     */
     public PageResult<DeviceView> pageDeviceViews(int page, int size) {
         PageResult<DeviceEntity> raw = store.pageDevices(page, size);
+        Map<String, Map<String, List<PropertyItem>>> overrides = store.loadAllDeviceOverrides(raw.items());
         return new PageResult<>(
-                raw.items().stream().map(this::toDeviceView).toList(),
+                raw.items().stream()
+                        .map(item -> views.toDeviceView(
+                                item,
+                                overrides.getOrDefault(item.getId(), Map.of()),
+                                views.isLoaded(item.getDeviceCode())))
+                        .toList(),
                 raw.total(),
                 raw.page(),
                 raw.size(),
                 raw.totalPages());
     }
 
-    /**
-     * 转换产品功能视图
-     * 这个方式是转换指定产品功能视图，产品功能视图包含了产品功能视图ID、产品功能视图类型、产品功能视图参数、产品功能视图写选项、产品功能视图读选项、产品功能视图值访问类型、产品功能视图值访问权限、产品功能视图值访问选项等。
-     * 
-     * @param function        产品功能实体
-     * @param deviceOverrides 设备覆盖
-     * @return 产品功能视图实体
-     */
-    private FunctionFormView toForm(ProductFunctionEntity function, Map<String, List<PropertyItem>> deviceOverrides) {
-        List<PropertyItem> base = store.loadFunctionProperties(function);
-        List<PropertyItem> overrideItems = deviceOverrides.getOrDefault(function.getFunctionId(), List.of());
-        Map<String, Object> values = new LinkedHashMap<>(PropertySchemas.toValueMap(base));
-        values.putAll(PropertySchemas.toValueMap(overrideItems));
-        ValueAccessType writeAccess = ValueAccessType.from(function.getWriteAccessType());
-        boolean isRead = "READ".equalsIgnoreCase(function.getAccessType());
-        List<WriteFieldOption> structFields = isRead
-                ? store.properties().listReadFields(function.getId())
-                : store.properties().listWriteFields(function.getId());
-        List<SchemaField> schema = inferSchema(values);
-        Optional<FunctionTemplate> template = findTemplate(function.getCapabilityType(), function.getFunctionId());
-        boolean contracted = registrar != null && function.getCapabilityType() != null
-                && registrar.find(function.getCapabilityType()).map(descriptor -> descriptor.contractedParameters())
-                        .orElse(false);
-        if (contracted && !structFields.isEmpty()) {
-            schema = schemaFromWriteFields(structFields, true);
-        } else if (template.isPresent()) {
-            schema = template.get().parameters();
-        } else if (!structFields.isEmpty()) {
-            schema = schemaFromWriteFields(structFields, true);
-        }
-        List<FormField> fields = SchemaForms.bind(schema, values);
-        List<ValueOption> writeOptions = store.properties().listWriteValueOptions(function.getId());
-        boolean openStructForm = template.isEmpty() && !structFields.isEmpty();
-        if (!contracted && writeOptions.isEmpty() && !openStructForm) {
-            writeOptions = flattenWriteFieldOptions(structFields);
-        }
-        if (!contracted && writeOptions.isEmpty() && template.isPresent()) {
-            writeOptions = flattenChoiceOptions(PropertySchemas.choiceOptionsByField(template.get().parameters()));
-        }
-        return new FunctionFormView(
-                function.getFunctionId(),
-                resolveDescription(function),
-                function.getAccessType(),
-                function.getAccessPermission() == null ? 2 : function.getAccessPermission(),
-                function.getCapabilityType(),
-                writeAccess.name(),
-                fields,
-                PropertySchemas.fromValueMap(values),
-                writeOptions,
-                values,
-                null,
-                resolvePayloadMode(function, writeOptions));
+    private List<FunctionFormView> projectFunctionForms(
+            List<ProductFunctionEntity> functions, Map<String, List<PropertyItem>> overrides) {
+        Map<String, List<PropertyItem>> props = store.loadFunctionProperties(functions);
+        Map<String, FunctionOptionBundle> options = store.properties().loadFunctionOptions(
+                functions.stream().map(f -> f.getId()).toList());
+        return functions.stream()
+                .map(function -> views.toForm(
+                        function,
+                        overrides,
+                        props.getOrDefault(function.getId(), List.of()),
+                        options.getOrDefault(function.getId(), FunctionOptionBundle.empty())))
+                .toList();
     }
 
-    /**
-     * 解析负载模式
-     * 这个方式是解析指定负载模式，负载模式包含了负载模式ID、负载模式名称、负载模式描述等。
-     * 
-     * @param function     产品功能实体
-     * @param writeOptions 写选项
-     * @return 负载模式
-     */
-    private static String resolvePayloadMode(ProductFunctionEntity function, List<ValueOption> writeOptions) {
-        if (function.getPayloadMode() != null && !function.getPayloadMode().isBlank()) {
-            return function.getPayloadMode();
-        }
-        if (writeOptions != null && !writeOptions.isEmpty()
-                && "VALUE".equalsIgnoreCase(function.getWriteAccessType())) {
-            return com.mtfm.gateway.spi.payload.PayloadMode.VALUE.wire();
-        }
-        return com.mtfm.gateway.spi.payload.PayloadMode.STRUCT.wire();
-    }
-
-    /**
-     * STRUCT/READ 字段 → 下发表单 SchemaField。callerOnly 时只暴露调用方需要填的字段。
-     * 
-     * @param writeFields 写字段列表
-     * @param callerOnly  是否只暴露调用方需要填的字段
-     * @return 下发表单 SchemaField 列表
-     */
-    private static List<SchemaField> schemaFromWriteFields(List<WriteFieldOption> writeFields, boolean callerOnly) {
-        if (writeFields == null || writeFields.isEmpty()) {
-            return List.of();
-        }
-        Map<String, SchemaField> byName = new LinkedHashMap<>();
-        for (WriteFieldOption field : writeFields) {
-            if (field == null || field.field() == null || field.field().isBlank()) {
-                continue;
-            }
-            FieldSource source = FieldSource.from(field.source());
-            if (callerOnly) {
-                if (source == FieldSource.PLATFORM || source == FieldSource.DEVICE || source == FieldSource.CONSTANT) {
-                    continue;
-                }
-                if (field.platformGenerated()) {
-                    continue;
-                }
-            }
-            boolean mapped = source == FieldSource.MAPPED;
-            String name = mapped
-                    ? (field.callerField() == null || field.callerField().isBlank()
-                            ? "value"
-                            : field.callerField())
-                    : field.field();
-            List<String> choices = field.options() == null
-                    ? List.of()
-                    : field.options().stream()
-                            .map(option -> mapped
-                                    ? (option.mappingValue() == null || option.mappingValue().isBlank()
-                                            ? option.optionValue()
-                                            : option.mappingValue())
-                                    : option.optionValue())
-                            .filter(v -> v != null && !v.isBlank())
-                            .toList();
-            SchemaField existing = byName.get(name);
-            if (existing != null) {
-                List<String> merged = new ArrayList<>(existing.choices() == null ? List.of() : existing.choices());
-                for (String choice : choices) {
-                    if (!merged.contains(choice)) {
-                        merged.add(choice);
-                    }
-                }
-                byName.put(name, new SchemaField(
-                        existing.name(),
-                        existing.type(),
-                        existing.required(),
-                        existing.description(),
-                        existing.label(),
-                        existing.defaultValue(),
-                        existing.secret(),
-                        List.copyOf(merged),
-                        existing.format()));
-                continue;
-            }
-            FieldType type = FieldType.from(field.accessDataType());
-            FieldFormat format = FieldFormat.from(field.format());
-            String description = field.description() == null ? "" : field.description();
-            byName.put(name, new SchemaField(
-                    name,
-                    type,
-                    mapped,
-                    description,
-                    name,
-                    null,
-                    type == FieldType.PASSWORD,
-                    choices,
-                    format));
-        }
-        return List.copyOf(byName.values());
-    }
-
-    /**
-     * 解析描述
-     * 这个方式是解析指定描述，描述包含了描述ID、描述名称、描述类型、描述描述等。
-     * 
-     * @param function 产品功能实体
-     * @return 描述
-     */
-    private String resolveDescription(ProductFunctionEntity function) {
-        if (function.getDescription() != null && !function.getDescription().isBlank()) {
-            return function.getDescription();
-        }
-        return findTemplate(function.getCapabilityType(), function.getFunctionId())
-                .map(t -> t.description())
-                .filter(text -> text != null && !text.isBlank())
-                .orElse(function.getFunctionId());
-    }
-
-    /**
-     * 查找模板
-     * 这个方式是查找指定模板，模板包含了模板ID、模板名称、模板类型、模板描述等。
-     * 
-     * @param capabilityType 能力类型
-     * @param functionId     功能ID
-     * @return 模板实体
-     */
-    private Optional<FunctionTemplate> findTemplate(String capabilityType, String functionId) {
-        if (capabilityType == null || capabilityType.isBlank() || registrar == null) {
-            return Optional.empty();
-        }
-        return registrar.find(capabilityType).flatMap(descriptor -> descriptor.functionTemplate(functionId));
-    }
-
-    /**
-     * 解析属性
-     * 这个方式是解析指定属性，属性包含了属性ID、属性名称、属性类型、属性描述等。
-     * 
-     * @param properties 属性列表
-     * @param legacy     遗产属性
-     * @return 属性列表
-     */
     private static List<PropertyItem> resolveProperties(List<PropertyItem> properties, Map<String, Object> legacy) {
         if (properties != null) {
             return properties;
@@ -1984,35 +1246,5 @@ public class CatalogFormService {
             throw new IllegalArgumentException(
                     "设备主题覆盖不在已知 slot 内: " + unknown + "（功能 " + function.getFunctionId() + "）");
         }
-    }
-
-    /**
-     * 推断模式
-     * 这个方式是推断指定模式，模式包含了模式ID、模式名称、模式类型、模式描述等。
-     * 
-     * @param values 值
-     * @return 模式列表
-     */
-    private static List<SchemaField> inferSchema(Map<String, Object> values) {
-        return values.entrySet().stream()
-                .map(entry -> SchemaField.optional(entry.getKey(), inferType(entry.getValue()), "", entry.getValue()))
-                .toList();
-    }
-
-    /**
-     * 推断类型
-     * 这个方式是推断指定类型，类型包含了类型ID、类型名称、类型类型、类型描述等。
-     * 
-     * @param value 值
-     * @return 类型
-     */
-    private static FieldType inferType(Object value) {
-        if (value instanceof Number) {
-            return FieldType.INT;
-        }
-        if (value instanceof Boolean) {
-            return FieldType.BOOLEAN;
-        }
-        return FieldType.STRING;
     }
 }

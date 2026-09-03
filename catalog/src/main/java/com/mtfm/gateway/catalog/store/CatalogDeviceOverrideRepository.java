@@ -8,10 +8,12 @@ import com.mtfm.gateway.catalog.mapper.DeviceFieldOverrideMapper;
 import com.mtfm.gateway.catalog.mapper.DeviceFunctionOverrideMapper;
 import com.mtfm.gateway.catalog.mapper.DeviceTopicOverrideMapper;
 import com.mtfm.gateway.catalog.id.SnowflakeIds;
+import com.mtfm.gateway.catalog.store.support.BatchMaps;
 import com.mtfm.gateway.catalog.store.support.EavPropertySupport;
 import com.mtfm.gateway.spi.property.PropertyItem;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,10 +46,24 @@ public class CatalogDeviceOverrideRepository {
     }
 
     public List<DeviceFunctionOverrideEntity> listAllFunctionOverrides(String deviceId) {
-        return functionOverrides.selectList(new QueryWrapper<DeviceFunctionOverrideEntity>()
-                .eq("device_id", deviceId)
-                .orderByAsc("function_id")
-                .orderByAsc("attribute"));
+        return listAllFunctionOverridesByDeviceIds(List.of(deviceId)).getOrDefault(deviceId, List.of());
+    }
+
+    public Map<String, List<DeviceFunctionOverrideEntity>> listAllFunctionOverridesByDeviceIds(
+            Collection<String> deviceIds) {
+        Map<String, List<DeviceFunctionOverrideEntity>> buckets = BatchMaps.buckets(deviceIds);
+        if (buckets.isEmpty()) {
+            return Map.of();
+        }
+        List<DeviceFunctionOverrideEntity> rows = functionOverrides.selectList(
+                new QueryWrapper<DeviceFunctionOverrideEntity>()
+                        .in("device_id", buckets.keySet())
+                        .orderByAsc("function_id")
+                        .orderByAsc("attribute"));
+        for (DeviceFunctionOverrideEntity row : rows) {
+            buckets.computeIfAbsent(row.getDeviceId(), key -> new java.util.ArrayList<>()).add(row);
+        }
+        return BatchMaps.freeze(buckets);
     }
 
     public void replaceFunctionOverrides(String deviceId, String functionId, List<PropertyItem> items) {

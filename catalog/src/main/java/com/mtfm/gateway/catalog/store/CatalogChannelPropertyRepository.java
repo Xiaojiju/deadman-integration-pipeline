@@ -5,10 +5,13 @@ import com.mtfm.gateway.catalog.entity.ChannelPropertyEntity;
 import com.mtfm.gateway.catalog.mapper.ChannelPropertyMapper;
 import com.mtfm.gateway.catalog.id.SnowflakeIds;
 import com.mtfm.gateway.catalog.store.support.EavPropertySupport;
+import com.mtfm.gateway.catalog.store.support.BatchMaps;
 import com.mtfm.gateway.spi.property.PropertyItem;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 @Repository
 public class CatalogChannelPropertyRepository {
@@ -20,12 +23,22 @@ public class CatalogChannelPropertyRepository {
     }
 
     public List<PropertyItem> list(String channelId) {
-        return channelProperties.selectList(new QueryWrapper<ChannelPropertyEntity>()
-                        .eq("channel_id", channelId)
-                        .orderByAsc("attribute"))
-                .stream()
-                .map(EavPropertySupport::toItem)
-                .toList();
+        return listByChannelIds(List.of(channelId)).getOrDefault(channelId, List.of());
+    }
+
+    public Map<String, List<PropertyItem>> listByChannelIds(Collection<String> channelIds) {
+        Map<String, List<PropertyItem>> buckets = BatchMaps.buckets(channelIds);
+        if (buckets.isEmpty()) {
+            return Map.of();
+        }
+        List<ChannelPropertyEntity> rows = channelProperties.selectList(new QueryWrapper<ChannelPropertyEntity>()
+                .in("channel_id", buckets.keySet())
+                .orderByAsc("attribute"));
+        for (ChannelPropertyEntity row : rows) {
+            buckets.computeIfAbsent(row.getChannelId(), key -> new java.util.ArrayList<>())
+                    .add(EavPropertySupport.toItem(row));
+        }
+        return BatchMaps.freeze(buckets);
     }
 
     public void replace(String channelId, List<PropertyItem> items) {

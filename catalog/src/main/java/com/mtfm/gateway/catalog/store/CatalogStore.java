@@ -30,6 +30,7 @@ import com.mtfm.gateway.spi.property.ValueAccessType;
 import com.mtfm.gateway.spi.property.ValueOption;
 import com.mtfm.gateway.spi.property.WriteFieldOption;
 import com.mtfm.gateway.catalog.id.SnowflakeIds;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -42,7 +43,8 @@ import java.util.Optional;
 /**
  * 配置域持久化与 SPI 目录投影。
  *
- * <p>负责 MyBatis CRUD，并实现 {@link FunctionCatalog} / {@link DeviceBindingCatalog}。
+ * <p>
+ * 负责 MyBatis CRUD，并实现 {@link FunctionCatalog} / {@link DeviceBindingCatalog}。
  * 属性优先读 EAV；若 EAV 为空则从旧 JSON 列懒迁移。
  */
 @Service
@@ -79,7 +81,11 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
         if (entity.getId() == null) {
             entity.setId(SnowflakeIds.next());
         }
-        products.insert(entity);
+        try {
+            products.insert(entity);
+        } catch (DuplicateKeyException ex) {
+            throw new IllegalArgumentException("产品编码已存在: " + entity.getCode(), ex);
+        }
         return entity;
     }
 
@@ -105,7 +111,11 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
         if (entity.getEnabled() == null) {
             entity.setEnabled(Boolean.TRUE);
         }
-        channels.insert(entity);
+        try {
+            channels.insert(entity);
+        } catch (DuplicateKeyException ex) {
+            throw new IllegalArgumentException("通道编码已存在: " + entity.getCode(), ex);
+        }
         return entity;
     }
 
@@ -117,7 +127,11 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
         if (entity.getEnabled() == null) {
             entity.setEnabled(Boolean.TRUE);
         }
-        devices.insert(entity);
+        try {
+            devices.insert(entity);
+        } catch (DuplicateKeyException ex) {
+            throw new IllegalArgumentException("设备编码已存在: " + entity.getDeviceCode(), ex);
+        }
         return entity;
     }
 
@@ -203,6 +217,21 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
         }).toList();
     }
 
+    /** 批量读取通道属性：EAV 优先，空则按通道懒迁移。 */
+    public Map<String, List<PropertyItem>> loadChannelProperties(List<ChannelEntity> channels) {
+        if (channels == null || channels.isEmpty()) {
+            return Map.of();
+        }
+        List<String> ids = channels.stream().map(c -> c.getId()).toList();
+        Map<String, List<PropertyItem>> eav = properties.listChannelPropertiesByIds(ids);
+        Map<String, List<PropertyItem>> result = new LinkedHashMap<>();
+        for (ChannelEntity channel : channels) {
+            List<PropertyItem> items = eav.getOrDefault(channel.getId(), List.of());
+            result.put(channel.getId(), items.isEmpty() ? loadChannelProperties(channel) : items);
+        }
+        return result;
+    }
+
     /** 读取通道属性：EAV 优先，空则从 connection JSON 懒迁移。 */
     public List<PropertyItem> loadChannelProperties(ChannelEntity channel) {
         List<PropertyItem> items = properties.listChannelProperties(channel.getId());
@@ -218,6 +247,21 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
         return migrated;
     }
 
+    /** 批量读取端点属性：EAV 优先，空则按端点懒迁移。 */
+    public Map<String, List<PropertyItem>> loadEndpointProperties(List<DeviceEndpointEntity> endpoints) {
+        if (endpoints == null || endpoints.isEmpty()) {
+            return Map.of();
+        }
+        List<String> ids = endpoints.stream().map(e -> e.getId()).toList();
+        Map<String, List<PropertyItem>> eav = properties.listEndpointPropertiesByIds(ids);
+        Map<String, List<PropertyItem>> result = new LinkedHashMap<>();
+        for (DeviceEndpointEntity endpoint : endpoints) {
+            List<PropertyItem> items = eav.getOrDefault(endpoint.getId(), List.of());
+            result.put(endpoint.getId(), items.isEmpty() ? loadEndpointProperties(endpoint) : items);
+        }
+        return result;
+    }
+
     /** 读取端点属性：EAV 优先，空则从 address JSON 懒迁移。 */
     public List<PropertyItem> loadEndpointProperties(DeviceEndpointEntity endpoint) {
         List<PropertyItem> items = properties.listEndpointProperties(endpoint.getId());
@@ -231,6 +275,21 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
         List<PropertyItem> migrated = PropertySchemas.fromValueMap(legacy);
         properties.replaceEndpointProperties(endpoint.getId(), migrated);
         return migrated;
+    }
+
+    /** 批量读取功能属性：EAV 优先，空则按功能懒迁移。 */
+    public Map<String, List<PropertyItem>> loadFunctionProperties(List<ProductFunctionEntity> functions) {
+        if (functions == null || functions.isEmpty()) {
+            return Map.of();
+        }
+        List<String> ids = functions.stream().map(f -> f.getId()).toList();
+        Map<String, List<PropertyItem>> eav = properties.listFunctionPropertiesByIds(ids);
+        Map<String, List<PropertyItem>> result = new LinkedHashMap<>();
+        for (ProductFunctionEntity function : functions) {
+            List<PropertyItem> items = eav.getOrDefault(function.getId(), List.of());
+            result.put(function.getId(), items.isEmpty() ? loadFunctionProperties(function) : items);
+        }
+        return result;
     }
 
     /** 读取功能属性：EAV 优先，空则从 optionSchema JSON 懒迁移。 */
@@ -249,7 +308,8 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
     }
 
     /**
-     * 读取设备对某功能的覆盖：EAV 优先；若该 function 无 EAV，尝试从 option_overrides JSON 按 functionId 迁移。
+     * 读取设备对某功能的覆盖：EAV 优先；若该 function 无 EAV，尝试从 option_overrides JSON 按 functionId
+     * 迁移。
      */
     public List<PropertyItem> loadDeviceOverrides(DeviceEntity device, String functionId) {
         List<PropertyItem> items = properties.listDeviceOverrides(device.getId(), functionId);
@@ -275,16 +335,7 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
     public Map<String, List<PropertyItem>> loadAllDeviceOverrides(DeviceEntity device) {
         List<DeviceFunctionOverrideEntity> rows = properties.listAllDeviceOverrides(device.getId());
         if (!rows.isEmpty()) {
-            Map<String, List<PropertyItem>> result = new LinkedHashMap<>();
-            for (DeviceFunctionOverrideEntity row : rows) {
-                result.computeIfAbsent(row.getFunctionId(), key -> new ArrayList<>())
-                        .add(new PropertyItem(
-                                row.getAttribute(),
-                                row.getAttributeValue(),
-                                row.getDataType(),
-                                row.getDescription()));
-            }
-            return result;
+            return groupOverrideRows(rows);
         }
         Map<String, Object> legacy = JsonMaps.readMap(device.getOptionOverrides());
         Map<String, List<PropertyItem>> byFunction = parseLegacyOverrides(legacy);
@@ -294,11 +345,43 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
         return byFunction;
     }
 
+    /** 批量读取一页设备的功能覆盖。 */
+    public Map<String, Map<String, List<PropertyItem>>> loadAllDeviceOverrides(List<DeviceEntity> devices) {
+        if (devices == null || devices.isEmpty()) {
+            return Map.of();
+        }
+        List<String> ids = devices.stream().map(d -> d.getId()).toList();
+        Map<String, List<DeviceFunctionOverrideEntity>> rowsByDevice = properties.listAllDeviceOverridesByIds(ids);
+        Map<String, Map<String, List<PropertyItem>>> result = new LinkedHashMap<>();
+        for (DeviceEntity device : devices) {
+            List<DeviceFunctionOverrideEntity> rows = rowsByDevice.getOrDefault(device.getId(), List.of());
+            if (!rows.isEmpty()) {
+                result.put(device.getId(), groupOverrideRows(rows));
+            } else {
+                result.put(device.getId(), loadAllDeviceOverrides(device));
+            }
+        }
+        return result;
+    }
+
+    private static Map<String, List<PropertyItem>> groupOverrideRows(List<DeviceFunctionOverrideEntity> rows) {
+        Map<String, List<PropertyItem>> result = new LinkedHashMap<>();
+        for (DeviceFunctionOverrideEntity row : rows) {
+            result.computeIfAbsent(row.getFunctionId(), key -> new ArrayList<>())
+                    .add(new PropertyItem(
+                            row.getAttribute(),
+                            row.getAttributeValue(),
+                            row.getDataType(),
+                            row.getDescription()));
+        }
+        return result;
+    }
+
     /**
      * 解析旧 option_overrides：
      * <ul>
-     *   <li>{@code { "remoteControlDoor": { "a": 1 } }} → 按 functionId（值为 Map）</li>
-     *   <li>{@code { "a": 1 }} 扁平标量 → 无法归属，忽略</li>
+     * <li>{@code { "remoteControlDoor": { "a": 1 } }} → 按 functionId（值为 Map）</li>
+     * <li>{@code { "a": 1 }} 扁平标量 → 无法归属，忽略</li>
      * </ul>
      */
     public static Map<String, List<PropertyItem>> parseLegacyOverrides(Map<String, Object> legacy) {
@@ -323,6 +406,13 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
 
     public Optional<ProductEntity> findProduct(String productId) {
         return Optional.ofNullable(products.selectById(productId));
+    }
+
+    public Optional<ProductEntity> findProductByCode(String code) {
+        if (code == null || code.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(products.selectOne(new QueryWrapper<ProductEntity>().eq("code", code)));
     }
 
     public List<ProductFunctionEntity> listFunctions(String productId) {

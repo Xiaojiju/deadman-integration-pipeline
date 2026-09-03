@@ -7,6 +7,7 @@ import com.mtfm.gateway.spi.property.WriteFieldOption;
 import com.mtfm.gateway.spi.property.PropertyItem;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
@@ -41,6 +42,10 @@ public class CatalogPropertyRepository {
         return channels.list(channelId);
     }
 
+    public Map<String, List<PropertyItem>> listChannelPropertiesByIds(Collection<String> channelIds) {
+        return channels.listByChannelIds(channelIds);
+    }
+
     public void replaceChannelProperties(String channelId, List<PropertyItem> items) {
         channels.replace(channelId, items);
     }
@@ -55,6 +60,10 @@ public class CatalogPropertyRepository {
         return endpoints.list(endpointId);
     }
 
+    public Map<String, List<PropertyItem>> listEndpointPropertiesByIds(Collection<String> endpointIds) {
+        return endpoints.listByEndpointIds(endpointIds);
+    }
+
     public void replaceEndpointProperties(String endpointId, List<PropertyItem> items) {
         endpoints.replace(endpointId, items);
     }
@@ -67,6 +76,10 @@ public class CatalogPropertyRepository {
 
     public List<PropertyItem> listFunctionProperties(String productFunctionId) {
         return functions.list(productFunctionId);
+    }
+
+    public Map<String, List<PropertyItem>> listFunctionPropertiesByIds(Collection<String> productFunctionIds) {
+        return functions.listByFunctionIds(productFunctionIds);
     }
 
     public void replaceFunctionProperties(String productFunctionId, List<PropertyItem> items) {
@@ -85,6 +98,10 @@ public class CatalogPropertyRepository {
 
     public List<DeviceFunctionOverrideEntity> listAllDeviceOverrides(String deviceId) {
         return devices.listAllFunctionOverrides(deviceId);
+    }
+
+    public Map<String, List<DeviceFunctionOverrideEntity>> listAllDeviceOverridesByIds(Collection<String> deviceIds) {
+        return devices.listAllFunctionOverridesByDeviceIds(deviceIds);
     }
 
     public void replaceDeviceOverrides(String deviceId, String functionId, List<PropertyItem> items) {
@@ -131,6 +148,14 @@ public class CatalogPropertyRepository {
 
     public List<ValueOption> listReadValueOptions(String productFunctionId) {
         return options.listReadValueOptions(productFunctionId);
+    }
+
+    public FunctionOptionBundle loadFunctionOptions(String productFunctionId) {
+        return options.loadBundle(productFunctionId);
+    }
+
+    public Map<String, FunctionOptionBundle> loadFunctionOptions(Collection<String> productFunctionIds) {
+        return options.loadBundles(productFunctionIds);
     }
 
     public void replaceWriteOptions(

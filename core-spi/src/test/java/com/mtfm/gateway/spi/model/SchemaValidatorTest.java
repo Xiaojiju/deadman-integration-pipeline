@@ -27,4 +27,30 @@ class SchemaValidatorTest {
         List<SchemaField> schema = List.of(SchemaField.required("slaveId", FieldType.INT, "从站号"));
         assertDoesNotThrow(() -> SchemaValidator.require(schema, Map.of("slaveId", 1), "端点 address"));
     }
+
+    @Test
+    void rejectsUnknownFields() {
+        List<SchemaField> schema = List.of(SchemaField.required("host", FieldType.STRING, "主机"));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> SchemaValidator.require(schema, Map.of("host", "127.0.0.1", "extra", "x"), "通道 connection"));
+        assertTrue(ex.getMessage().contains("extra"));
+    }
+
+    @Test
+    void acceptsIntegerStringsAndRejectsNonIntegers() {
+        List<SchemaField> schema = List.of(SchemaField.optional("port", FieldType.INT, "端口"));
+        assertDoesNotThrow(() -> SchemaValidator.require(schema, Map.of("port", "502"), "通道 connection"));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> SchemaValidator.require(schema, Map.of("port", "abc"), "通道 connection"));
+        assertTrue(ex.getMessage().contains("port"));
+    }
+
+    @Test
+    void acceptsBooleanAliases() {
+        List<SchemaField> schema = List.of(SchemaField.optional("enabled", FieldType.BOOLEAN, "启用"));
+        assertDoesNotThrow(() -> SchemaValidator.require(schema, Map.of("enabled", "true"), "通道 connection"));
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> SchemaValidator.require(schema, Map.of("enabled", "yes"), "通道 connection"));
+        assertTrue(ex.getMessage().contains("enabled"));
+    }
 }

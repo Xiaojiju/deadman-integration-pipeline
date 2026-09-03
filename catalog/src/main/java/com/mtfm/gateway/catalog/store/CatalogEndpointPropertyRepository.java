@@ -5,10 +5,13 @@ import com.mtfm.gateway.catalog.entity.EndpointPropertyEntity;
 import com.mtfm.gateway.catalog.mapper.EndpointPropertyMapper;
 import com.mtfm.gateway.catalog.id.SnowflakeIds;
 import com.mtfm.gateway.catalog.store.support.EavPropertySupport;
+import com.mtfm.gateway.catalog.store.support.BatchMaps;
 import com.mtfm.gateway.spi.property.PropertyItem;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 @Repository
 public class CatalogEndpointPropertyRepository {
@@ -20,12 +23,22 @@ public class CatalogEndpointPropertyRepository {
     }
 
     public List<PropertyItem> list(String endpointId) {
-        return endpointProperties.selectList(new QueryWrapper<EndpointPropertyEntity>()
-                        .eq("endpoint_id", endpointId)
-                        .orderByAsc("attribute"))
-                .stream()
-                .map(EavPropertySupport::toItem)
-                .toList();
+        return listByEndpointIds(List.of(endpointId)).getOrDefault(endpointId, List.of());
+    }
+
+    public Map<String, List<PropertyItem>> listByEndpointIds(Collection<String> endpointIds) {
+        Map<String, List<PropertyItem>> buckets = BatchMaps.buckets(endpointIds);
+        if (buckets.isEmpty()) {
+            return Map.of();
+        }
+        List<EndpointPropertyEntity> rows = endpointProperties.selectList(new QueryWrapper<EndpointPropertyEntity>()
+                .in("endpoint_id", buckets.keySet())
+                .orderByAsc("attribute"));
+        for (EndpointPropertyEntity row : rows) {
+            buckets.computeIfAbsent(row.getEndpointId(), key -> new java.util.ArrayList<>())
+                    .add(EavPropertySupport.toItem(row));
+        }
+        return BatchMaps.freeze(buckets);
     }
 
     public void replace(String endpointId, List<PropertyItem> items) {

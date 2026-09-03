@@ -255,10 +255,7 @@ public class CatalogController {
 
     @GetMapping("/devices/{deviceCode}/endpoints")
     public List<DeviceEndpointView> listEndpoints(@PathVariable String deviceCode) {
-        var device = forms.requireDevice(deviceCode);
-        return store.listEndpointEntities(device.getId()).stream()
-                .map(forms::toEndpointView)
-                .toList();
+        return forms.deviceEndpoints(deviceCode);
     }
 
     @PostMapping("/devices/{deviceCode}/endpoints")
