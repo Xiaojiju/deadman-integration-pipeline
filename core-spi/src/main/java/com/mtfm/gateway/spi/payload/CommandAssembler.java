@@ -133,10 +133,7 @@ public final class CommandAssembler {
             if (node.source() != FieldSource.CALLER) {
                 continue;
             }
-            Object caller = request.callerArguments().get(leaf.path());
-            if (caller == null) {
-                caller = request.callerArguments().get(node.name());
-            }
+            Object caller = callerValueForLeaf(request.callerArguments(), node, leaf.path());
             if (caller != null) {
                 FieldTreePaths.setFlat(flat, leaf.path(), caller);
             }
@@ -222,6 +219,23 @@ public final class CommandAssembler {
             }
             applied.put(callerField, Boolean.TRUE);
         }
+    }
+
+    private static Object callerValueForLeaf(Map<String, Object> caller, FieldNode node, String path) {
+        if (caller == null || caller.isEmpty()) {
+            return null;
+        }
+        if (node.callerField() != null && !node.callerField().isBlank()) {
+            Object named = caller.get(node.callerField());
+            if (named != null) {
+                return named;
+            }
+        }
+        Object byPath = caller.get(path);
+        if (byPath != null) {
+            return byPath;
+        }
+        return caller.get(node.name());
     }
 
     private static boolean mappingMatches(ValueMapping mapping, Object raw) {

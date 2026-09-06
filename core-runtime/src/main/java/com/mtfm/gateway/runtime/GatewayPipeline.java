@@ -28,6 +28,7 @@ import com.mtfm.gateway.spi.model.OutboundDraft;
 import com.mtfm.gateway.spi.model.OutboundMessage;
 import com.mtfm.gateway.spi.model.PublishResult;
 import com.mtfm.gateway.spi.model.RawInbound;
+import com.mtfm.gateway.spi.payload.PayloadDisassembler;
 import com.mtfm.gateway.spi.payload.TopicRouteResolver;
 import com.mtfm.gateway.spi.plugin.InboundPlugin;
 import com.mtfm.gateway.spi.plugin.OutboundPlugin;
@@ -541,23 +542,53 @@ public final class GatewayPipeline implements PipelineIngress, PipelineCommandPo
             return false;
         }
         Duration timeout = replyTimeout(command);
-        String resultPath = command.deliveryHints().get(TopicRouteResolver.MQTT_RESULT_PATH_HINT)
-                .map(String::valueOf)
-                .orElse(null);
         return replyWaiter.tryRegister(new ReplyWaiter.Pending(
                 command.requestId() == null ? corr : command.requestId(),
                 command.deviceId(),
                 command.functionId(),
                 corr,
-                resultPath,
+                null,
                 Instant.now().plus(timeout)));
     }
 
     private static String correlationValue(FunctionCommand command) {
+        String commandPath = hint(command, TopicRouteResolver.MQTT_CORRELATION_COMMAND_PATH_HINT);
+        String fromCommand = extractCorrelation(command, commandPath);
+        if (fromCommand != null) {
+            return fromCommand;
+        }
+        String replyPath = hint(command, TopicRouteResolver.MQTT_CORRELATION_PATH_HINT);
+        fromCommand = extractCorrelation(command, replyPath);
+        if (fromCommand != null) {
+            return fromCommand;
+        }
         if (command.requestId() != null && !command.requestId().isBlank()) {
             return command.requestId();
         }
         return null;
+    }
+
+    private static String hint(FunctionCommand command, String key) {
+        return command.deliveryHints().get(key).map(String::valueOf).orElse(null);
+    }
+
+    private static String extractCorrelation(FunctionCommand command, String path) {
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        String trimmed = path.trim();
+        if ("$deviceCode".equalsIgnoreCase(trimmed)) {
+            return command.deviceId();
+        }
+        if ("$requestId".equalsIgnoreCase(trimmed)) {
+            return command.requestId() == null || command.requestId().isBlank() ? null : command.requestId();
+        }
+        Object raw = PayloadDisassembler.extractPath(command.arguments().values(), trimmed);
+        if (raw == null) {
+            return null;
+        }
+        String text = String.valueOf(raw);
+        return text.isBlank() ? null : text;
     }
 
     private static Duration replyTimeout(FunctionCommand command) {

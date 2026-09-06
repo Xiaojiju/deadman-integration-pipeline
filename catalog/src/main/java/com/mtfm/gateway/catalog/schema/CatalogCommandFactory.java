@@ -111,8 +111,10 @@ final class CatalogCommandFactory {
         if (function.getCorrelationPath() != null && !function.getCorrelationPath().isBlank()) {
             deliveryHints.put(TopicRouteResolver.MQTT_CORRELATION_PATH_HINT, function.getCorrelationPath().trim());
         }
-        if (function.getResultPath() != null && !function.getResultPath().isBlank()) {
-            deliveryHints.put(TopicRouteResolver.MQTT_RESULT_PATH_HINT, function.getResultPath().trim());
+        if (function.getCorrelationCommandPath() != null && !function.getCorrelationCommandPath().isBlank()) {
+            deliveryHints.put(
+                    TopicRouteResolver.MQTT_CORRELATION_COMMAND_PATH_HINT,
+                    function.getCorrelationCommandPath().trim());
         }
         if (function.getReplyTimeoutMs() != null && function.getReplyTimeoutMs() > 0) {
             deliveryHints.put(TopicRouteResolver.MQTT_REPLY_TIMEOUT_MS_HINT, function.getReplyTimeoutMs());

@@ -36,6 +36,7 @@ type ProductFunctionWriteBody = {
   payloadEncoding?: string
   replyTopicSlot?: string
   correlationPath?: string
+  correlationCommandPath?: string
   resultPath?: string
   replyTimeoutMs?: number
   scheduleIntervalMs?: number

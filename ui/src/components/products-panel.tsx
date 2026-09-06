@@ -48,7 +48,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty"
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import {
@@ -81,12 +81,11 @@ import type {
 import type { FieldNodeModel, ValueMappingModel } from "@/lib/payload-form"
 import {
   emptyObjectRoot,
+  editMappingsFromFunction,
   fieldNodeToWriteFields,
-  fieldOptionsToMappings,
   mergeMappingsIntoFields,
   mappingsToValueOptions,
   resolvePayloadMode,
-  valueOptionsToMappings,
   writeFieldsToFieldNode,
 } from "@/lib/payload-form"
 import {
@@ -139,7 +138,7 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
   const [subscribeTopicSlot, setSubscribeTopicSlot] = useState("")
   const [replyTopicSlot, setReplyTopicSlot] = useState("")
   const [correlationPath, setCorrelationPath] = useState("")
-  const [resultPath, setResultPath] = useState("")
+  const [correlationCommandPath, setCorrelationCommandPath] = useState("")
   const [replyTimeoutMs, setReplyTimeoutMs] = useState("")
   const [scheduleEnabled, setScheduleEnabled] = useState(false)
   const [scheduleIntervalMs, setScheduleIntervalMs] = useState("")
@@ -336,7 +335,7 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
     setSubscribeTopicSlot("")
     setReplyTopicSlot("")
     setCorrelationPath("")
-    setResultPath("")
+    setCorrelationCommandPath("")
     setReplyTimeoutMs("")
     setScheduleEnabled(false)
     setScheduleIntervalMs("")
@@ -365,7 +364,7 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
     setSubscribeTopicSlot(fn.subscribeTopicSlot ?? "")
     setReplyTopicSlot(fn.replyTopicSlot ?? "")
     setCorrelationPath(fn.correlationPath ?? "")
-    setResultPath(fn.resultPath ?? "")
+    setCorrelationCommandPath(fn.correlationCommandPath ?? "")
     setReplyTimeoutMs(fn.replyTimeoutMs != null ? String(fn.replyTimeoutMs) : "")
     setScheduleEnabled(fn.scheduleEnabled === true)
     setScheduleIntervalMs(fn.scheduleIntervalMs != null ? String(fn.scheduleIntervalMs) : "")
@@ -374,12 +373,7 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
     const encoding = (fn.payloadEncoding || "JSON").toUpperCase()
     setPayloadEncoding(encoding === "HEX" || encoding === "BINARY" ? encoding : "JSON")
     setStructRoot(writeFieldsToFieldNode(fn.writeFields ?? []))
-    const fromFields = fieldOptionsToMappings(fn.writeFields ?? [])
-    setValueMappings(
-      fromFields.length > 0
-        ? fromFields
-        : valueOptionsToMappings(fn.writeValueOptions ?? [], fn.writeFields ?? [])
-    )
+    setValueMappings(editMappingsFromFunction(fn.writeFields ?? [], fn.writeValueOptions ?? []))
     setFnOpen(true)
   }
 
@@ -493,7 +487,9 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
       ? []
       : accessType === "READ"
         ? (isContracted ? filterValidWriteFields(contractBound) : filterValidWriteFields(readFields))
-        : []
+        : capabilityType === "MQTT"
+          ? filterValidWriteFields(readFields)
+          : []
     const readOpts = isFixed && !lockedOpenDefault ? filterValidValueOptions(readValueOptions) : []
 
     const intervalValue = scheduleIntervalMs.trim() === "" ? 0 : Number(scheduleIntervalMs)
@@ -529,7 +525,8 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
         payloadEncoding: isFixed || lockedOpenDefault || isContracted ? undefined : payloadEncoding,
         replyTopicSlot: capabilityType === "MQTT" ? replyTopicSlot.trim() : undefined,
         correlationPath: capabilityType === "MQTT" ? correlationPath.trim() : undefined,
-        resultPath: capabilityType === "MQTT" ? resultPath.trim() : undefined,
+        correlationCommandPath: capabilityType === "MQTT" ? correlationCommandPath.trim() : undefined,
+        resultPath: capabilityType === "MQTT" ? "" : undefined,
         replyTimeoutMs: capabilityType === "MQTT" ? timeoutValue : undefined,
         scheduleEnabled,
         scheduleIntervalMs: intervalValue,
@@ -1042,7 +1039,7 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                 ) : null}
                 <ContractFieldEditor
                   label={accessType === "READ" ? "读点位契约" : "写点位契约"}
-                  description="字段名不可改。area/offset/dataType 建议 constant 或 device；WRITE 的 value 建议 mapped。"
+                  description="字段名不可改。area/offset/dataType 建议 constant 或 device；WRITE 的 value 建议 mapped。映射枚举只在下方 VALUE 映射填写。"
                   schema={contractSchema}
                   value={accessType === "READ" ? readFields : writeFields}
                   onChange={accessType === "READ" ? setReadFields : setWriteFields}
@@ -1050,7 +1047,7 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                 {accessType === "WRITE" && payloadMode === "VALUE" ? (
                   <ValueMappingEditor
                     label="VALUE 映射"
-                    description="调用方简值 → 写入寄存器/线圈的协议值，例如 on→true。patch path 填 value。"
+                    description="调用方字段（请求 JSON 的 key，可改成 lock）+ 业务值 → 写入协议 path。patch path 填 value。不必在契约行再配 callerField。"
                     value={valueMappings}
                     onChange={setValueMappings}
                     defaultPatchPath="value"
@@ -1062,12 +1059,13 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                 label="读字段 readFields"
                 description={
                   payloadEncoding === "JSON"
-                    ? "从设备上报 JSON 里取哪些 path。字段名与协议 path 一致，如 temp、status.door。"
+                    ? "从上报 JSON 拾取多个 path。没有的字段跳过；一个都没有则本条监听不北向。返回名是北向键，选项把 optionValue（设备值）翻成 mappingValue（业务值）。"
                     : "按字段顺序从 hex/二进制帧切片。每个叶子配置 byteLength，顺序即帧布局。"
                 }
                 value={readFields}
                 onChange={setReadFields}
                 showByteLayout={payloadEncoding !== "JSON"}
+                showOutputName={payloadEncoding === "JSON"}
               />
             ) : (
               <>
@@ -1097,10 +1095,17 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                         。
                       </p>
                       <p>
-                        协议里 <CodeSample>params.0</CodeSample> 设为 mapped，调用方字段填{" "}
-                        <CodeSample>lock</CodeSample>；下方映射把业务值 open 写成协议值 open。
+                        协议里 <CodeSample>params.0</CodeSample> 设为 mapped；下方 VALUE 映射把调用方字段{" "}
+                        <CodeSample>lock</CodeSample>、业务值 open 写成协议值 open。
                       </p>
-                      <p>at / seq 用 platform 生成，devId 用 device 覆盖，密码用 constant，都不必出现在调用参数里。</p>
+                      <p>
+                        密码、生效时间这类任意字符串：叶子 source 选 CALLER，调用方字段填{" "}
+                        <CodeSample>password</CodeSample> / <CodeSample>beginTime</CodeSample>
+                        ，或在下方 VALUE 映射选「调用方原样填入」。调用方传{" "}
+                        <CodeSample>{`{ "lock": "add", "password": "112233", "beginTime": "2024-08-01 19:20:15" }`}</CodeSample>
+                        。
+                      </p>
+                      <p>at / seq 用 platform 生成，devId 用 device 覆盖，固定口令用 constant，都不必出现在调用参数里。</p>
                     </ConfigExample>
                   ) : (
                     <ConfigExample title="示例 · STRUCT 直接填字段">
@@ -1127,7 +1132,7 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                 {payloadMode === "VALUE" ? (
                   <ValueMappingEditor
                     label="VALUE 映射"
-                    description="调用方字段 + 业务值 → 写入协议 path。同一 callerField 的多条映射就是该参数的枚举。"
+                    description="调用方字段 + 业务值 → 写入协议 path。同一 callerField 的多条映射就是该参数的枚举。密码等任意值选「调用方原样填入」。协议叶子选 MAPPED 后，调用方字段在这里填。"
                     value={valueMappings}
                     onChange={setValueMappings}
                   />
@@ -1137,54 +1142,76 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
             {capabilityType === "MQTT" ? (
               <>
                 <Field>
-                  <FieldLabel htmlFor="publishTopicSlot">发布 Topic Slot</FieldLabel>
+                  <FieldLabel htmlFor="publishTopicSlot">发布 Topic</FieldLabel>
                   <Input
                     id="publishTopicSlot"
                     value={publishTopicSlot}
                     onChange={(e) => setPublishTopicSlot(e.target.value)}
-                    placeholder="留空则用 default_pub；或填 topics 中的 slot 名"
+                    placeholder="ydlink/FFFA25101101/thing/action/execute"
                     disabled={accessType === "READ"}
                   />
+                  <FieldDescription>
+                    下发指令的完整 topic，层级必须用 <CodeSample>/</CodeSample>
+                    ，不要用点号。写成
+                    <CodeSample>ydlink.xxx.execute</CodeSample> 会自动变成
+                    <CodeSample>ydlink/xxx/execute</CodeSample>
+                    。也可只填设备 Address 里的 slot 名，如 <CodeSample>default_pub</CodeSample>。
+                  </FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="subscribeTopicSlot">订阅 Topic Slot</FieldLabel>
+                  <FieldLabel htmlFor="subscribeTopicSlot">订阅 Topic</FieldLabel>
                   <Input
                     id="subscribeTopicSlot"
                     value={subscribeTopicSlot}
                     onChange={(e) => setSubscribeTopicSlot(e.target.value)}
-                    placeholder="留空则用 default_sub；READ 功能常用"
+                    placeholder="ydlink/FFFA25101101/thing/event/property/post"
                     disabled={accessType === "WRITE"}
                   />
+                  <FieldDescription>
+                    READ 监听用。同样只用 <CodeSample>/</CodeSample>
+                    ，或填 slot 名 <CodeSample>default_sub</CodeSample>。WRITE 应答请填下面的应答 Topic。
+                  </FieldDescription>
                 </Field>
-                <p className="text-sm text-muted-foreground">
-                  Topic 实际路径在设备 Address 里配（default_pub / default_sub / topics JSON）。这里只填 slot 名。
-                </p>
                 <Field>
-                  <FieldLabel htmlFor="replyTopicSlot">应答 Topic Slot</FieldLabel>
+                  <FieldLabel htmlFor="replyTopicSlot">应答 Topic</FieldLabel>
                   <Input
                     id="replyTopicSlot"
                     value={replyTopicSlot}
                     onChange={(e) => setReplyTopicSlot(e.target.value)}
-                    placeholder="设备回包订阅 slot，如 default_sub 或 topics 中的名"
+                    placeholder="ydlink/FFFA25101101/thing/action/execute_response"
                   />
+                  <FieldDescription>
+                    设备回包订阅的完整路径，可直接填 topic，不必先在 Address 里登记。留空则不等待回包，指令发出即结束。
+                  </FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="correlationPath">关联号 path</FieldLabel>
+                  <FieldLabel htmlFor="correlationCommandPath">指令关联 path</FieldLabel>
+                  <Input
+                    id="correlationCommandPath"
+                    value={correlationCommandPath}
+                    onChange={(e) => setCorrelationCommandPath(e.target.value)}
+                    placeholder="$deviceCode 或 seq 或 params.3"
+                  />
+                  <FieldDescription>
+                    从<strong>下发 JSON</strong>里取用来对上的值。回包装设备编码时填
+                    <CodeSample>$deviceCode</CodeSample>
+                    ；回包带回序列号时填 <CodeSample>seq</CodeSample>
+                    ；数组下标写成 <CodeSample>params.3</CodeSample>
+                    。留空则先试「回包关联 path」在下发里的同名字段，再退回 requestId。
+                  </FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="correlationPath">回包关联 path</FieldLabel>
                   <Input
                     id="correlationPath"
                     value={correlationPath}
                     onChange={(e) => setCorrelationPath(e.target.value)}
-                    placeholder="回包里 requestId 的字段，如 seq"
+                    placeholder="params.0 或 seq"
                   />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="resultPath">成败 path</FieldLabel>
-                  <Input
-                    id="resultPath"
-                    value={resultPath}
-                    onChange={(e) => setResultPath(e.target.value)}
-                    placeholder="回包里表示成功/失败的字段，如 ok"
-                  />
+                  <FieldDescription>
+                    从<strong>回包 JSON</strong>里取与上面同一含义的字段，必须和指令关联 path
+                    对得上。支持 <CodeSample>params.0</CodeSample> 这种数组下标。
+                  </FieldDescription>
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="replyTimeoutMs">应答超时（毫秒）</FieldLabel>
@@ -1194,16 +1221,37 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                     min={0}
                     value={replyTimeoutMs}
                     onChange={(e) => setReplyTimeoutMs(e.target.value)}
-                    placeholder="留空则用流水线默认"
+                    placeholder="例如 8000，留空用默认 8 秒"
                   />
+                  <FieldDescription>
+                    超时未匹配回包则返回 TIMEOUT。填 0 或留空使用流水线默认。
+                  </FieldDescription>
                 </Field>
-                <ConfigExample title="示例 · MQTT 应答闭环">
+                {accessType === "WRITE" ? (
+                  <WriteFieldListEditor
+                    label="应答取值"
+                    description="从回包抽出给调用方的值，并用来判定成败。每条：字段名=回包 path，返回名=北向键。选项：optionValue=设备值，mappingValue=北向业务值。协议值为 0 / false / fail / error / ng 时命令 FAILED。没有的字段跳过。"
+                    value={readFields}
+                    onChange={setReadFields}
+                    showOutputName
+                  />
+                ) : null}
+                <ConfigExample title="怎么填 · 远程控门应答">
                   <p>
-                    WRITE 发布 execute 后，把应答 slot 指到设备回包 topic。关联号 path 填
-                    <CodeSample>seq</CodeSample>
-                    ，与字段生成器 <CodeSample>request_id</CodeSample> 对应。
+                    发布 Topic 填 <CodeSample>ydlink/网关号/thing/action/execute</CodeSample>
+                    ，应答 Topic 填 <CodeSample>…/execute_response</CodeSample>，中间用 / 不用点。
                   </p>
-                  <p>READ 监听仍走订阅 slot；应答 slot 与订阅 slot 可以相同，未匹配的回包当遥测。</p>
+                  <p>
+                    回包装设备编码：指令关联填 <CodeSample>$deviceCode</CodeSample>
+                    ，回包关联填回包里的设备编码字段（如 <CodeSample>params.0</CodeSample>）。
+                    回包带回 seq：两边都填 <CodeSample>seq</CodeSample>。
+                  </p>
+                  <p>
+                    应答取值配回包里要带回的字段：path <CodeSample>params.1</CodeSample> 返回名
+                    <CodeSample>success</CodeSample>；path <CodeSample>params.2</CodeSample> 返回名
+                    <CodeSample>message</CodeSample>。其中协议值 <CodeSample>0</CodeSample> /
+                    <CodeSample>false</CodeSample> / <CodeSample>fail</CodeSample> 会使命令 FAILED；对上关联号且这些字段都不是失败值则为成功。
+                  </p>
                 </ConfigExample>
               </>
             ) : null}

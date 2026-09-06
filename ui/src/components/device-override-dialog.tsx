@@ -11,7 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { ConfigExample, CodeSample } from "@/components/config-example"
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -355,9 +356,13 @@ export function DeviceOverrideDialog({ open, onOpenChange, device, product }: Pr
             {isMqtt ? (
               <div className="space-y-3">
                 <FieldLabel>本设备 Topic</FieldLabel>
+                <FieldDescription>
+                  覆盖本设备的实际路径。层级必须用 <CodeSample>/</CodeSample>
+                  ，不要用点号。留空则沿用产品功能上的发布 / 订阅 / 应答 Topic。
+                </FieldDescription>
                 {topicRows.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
-                    该功能未配置 topic slot，一般使用设备 Address 里的 default_pub / default_sub。
+                    该功能未配置 topic，一般使用设备 Address 里的 default_pub / default_sub。
                   </p>
                 ) : (
                   topicRows.map((row, index) => (
@@ -373,7 +378,7 @@ export function DeviceOverrideDialog({ open, onOpenChange, device, product }: Pr
                       <div className="flex gap-2">
                         <Input
                           id={`dev-topic-${index}`}
-                          placeholder="本设备实际 topic"
+                          placeholder="ydlink/本设备/thing/action/execute"
                           value={row.value}
                           onChange={(e) => updateValue("topic", index, e.target.value)}
                         />
@@ -393,6 +398,13 @@ export function DeviceOverrideDialog({ open, onOpenChange, device, product }: Pr
                     </Field>
                   ))
                 )}
+                <ConfigExample title="怎么填 · 本设备 Topic">
+                  <p>
+                    发布填下发 topic，应答填回包 topic，例如
+                    <CodeSample>ydlink/F123/thing/action/execute</CodeSample> 与
+                    <CodeSample>…/execute_response</CodeSample>。点号会按 / 处理。
+                  </p>
+                </ConfigExample>
               </div>
             ) : null}
             <Field>

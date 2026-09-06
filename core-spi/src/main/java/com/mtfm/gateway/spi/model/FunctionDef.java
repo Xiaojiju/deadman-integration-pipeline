@@ -25,7 +25,7 @@ import java.util.List;
  * @param payloadEncoding    南向载荷编码，默认 JSON
  * @param replyTopicSlot     MQTT 应答订阅 slot，空则不等待设备回包
  * @param correlationPath    回包中关联号字段 path
- * @param resultPath         回包中成败字段 path，空则匹配即成功
+ * @param resultPath         已废弃；成败由 {@code readFields} 应答取值判定
  * @param replyTimeoutMs     等待设备应答毫秒数
  * @param scheduleIntervalMs 定时下发间隔（阶段 C）
  * @param scheduleEnabled    是否启用定时下发（阶段 C）

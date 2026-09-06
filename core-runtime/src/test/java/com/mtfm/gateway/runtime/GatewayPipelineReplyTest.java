@@ -83,6 +83,53 @@ class GatewayPipelineReplyTest {
         assertEquals("req-open-1", responses.get(0).requestId());
     }
 
+    @Test
+    void correlatesDeviceCodeWithArrayIndexPath() throws Exception {
+        AcceptingExecutor executor = new AcceptingExecutor();
+        StubPublisher publisher = new StubPublisher();
+        InMemoryFunctionCatalog catalog = new InMemoryFunctionCatalog().allow("F123", "fn.open");
+        pipeline = GatewayPipeline.builder().functionCatalog(catalog).build();
+        pipeline.register(new CapabilityDescriptor("PROTO", List.of(), List.of()), new StubDriver(), executor);
+        pipeline.register("F123", "PROTO");
+        pipeline.register(publisher);
+        pipeline.start();
+
+        ExecutionResult accepted = pipeline.submit(FunctionCommand.of(
+                "req-ignored",
+                "F123",
+                "fn.open",
+                Map.of("params", List.of("open")),
+                Map.of(
+                        TopicRouteResolver.MQTT_REPLY_TOPIC_HINT, "ydlink/dev/execute_response",
+                        TopicRouteResolver.MQTT_CORRELATION_COMMAND_PATH_HINT, "$deviceCode",
+                        TopicRouteResolver.MQTT_CORRELATION_PATH_HINT, "params.0",
+                        TopicRouteResolver.MQTT_RESULT_PATH_HINT, "params.1")))
+                .get(3, TimeUnit.SECONDS);
+        assertEquals(ExecutionStatus.ACCEPTED, accepted.status());
+
+        assertTrue(pipeline.accept(EnvelopeDraft.builder()
+                .kind(EnvelopeKind.TELEMETRY)
+                .deviceId("F123")
+                .functionId("fn.open")
+                .capabilityType("PROTO")
+                .payload(Map.of("params", List.of("F123", "1")))
+                .headers(Map.of(
+                        "mqtt.reply", "true",
+                        "mqtt.correlationPath", "params.0",
+                        "mqtt.resultPath", "params.1"))
+                .build()));
+        assertTrue(awaitResponse(publisher, Duration.ofSeconds(2)));
+
+        List<CommandResponse> responses = publisher.published.stream()
+                .map(OutboundMessage::body)
+                .filter(CommandResponse.class::isInstance)
+                .map(CommandResponse.class::cast)
+                .toList();
+        assertEquals(1, responses.size());
+        assertEquals(ExecutionStatus.SUCCESS, responses.get(0).status());
+        assertEquals("req-ignored", responses.get(0).requestId());
+    }
+
     private static boolean awaitResponse(StubPublisher publisher, Duration timeout) throws InterruptedException {
         Instant deadline = Instant.now().plus(timeout);
         while (Instant.now().isBefore(deadline)) {

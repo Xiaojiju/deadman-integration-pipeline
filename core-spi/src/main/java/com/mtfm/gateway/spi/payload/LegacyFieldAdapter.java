@@ -30,49 +30,54 @@ public final class LegacyFieldAdapter {
     }
 
     /**
-     * 优先从字段 options（MAPPED 叶子）推导 VALUE 映射；否则回落功能级 writeValueOptions。
+     * VALUE 映射以功能级 writeValueOptions 为准。
+     * 没有 writeValueOptions 时，仅回落 MAPPED 叶子上的 options（兼容旧数据）。
+     * CONSTANT 上的枚举是契约可选值，不参与映射。
      */
     public static List<ValueMapping> fromFieldAndValueOptions(
             List<WriteFieldOption> fields, List<ValueOption> valueOptions) {
+        WriteFieldOption mapped = firstMapped(fields);
+        String target = mapped != null ? mapped.field() : guessMappedOrFirst(fields);
+        String callerField = mapped != null && mapped.callerField() != null && !mapped.callerField().isBlank()
+                ? mapped.callerField()
+                : CommandAssembler.CALLER_VALUE_KEY;
+        if (valueOptions != null && !valueOptions.isEmpty()) {
+            return fromWriteValueOptions(valueOptions, target, callerField);
+        }
         record GroupKey(String callerField, String mappingValue) {
         }
         Map<GroupKey, List<FieldPatch>> byKey = new LinkedHashMap<>();
         Map<GroupKey, String> descriptions = new LinkedHashMap<>();
         if (fields != null) {
             for (WriteFieldOption field : fields) {
+                if (FieldSource.from(field.source()) != FieldSource.MAPPED) {
+                    continue;
+                }
                 if (field.options() == null || field.options().isEmpty()) {
                     continue;
                 }
-                String callerField = field.callerField() == null || field.callerField().isBlank()
+                String fieldCaller = field.callerField() == null || field.callerField().isBlank()
                         ? CommandAssembler.CALLER_VALUE_KEY
                         : field.callerField();
                 for (ValueOption option : field.options()) {
                     String mappingValue = option.mappingValue() != null && !option.mappingValue().isBlank()
                             ? option.mappingValue()
                             : option.optionValue();
-                    GroupKey key = new GroupKey(callerField, mappingValue);
+                    GroupKey key = new GroupKey(fieldCaller, mappingValue);
                     byKey.computeIfAbsent(key, ignored -> new ArrayList<>())
                             .add(new FieldPatch(field.field(), option.optionValue()));
                     descriptions.putIfAbsent(key, option.description());
                 }
             }
         }
-        if (!byKey.isEmpty()) {
-            List<ValueMapping> result = new ArrayList<>();
-            byKey.forEach((key, patches) -> result.add(
-                    ValueMapping.patch(
-                            key.callerField(),
-                            key.mappingValue(),
-                            descriptions.getOrDefault(key, ""),
-                            patches)));
-            return List.copyOf(result);
-        }
-        WriteFieldOption mapped = firstMapped(fields);
-        String target = mapped != null ? mapped.field() : guessMappedOrFirst(fields);
-        String callerField = mapped != null && mapped.callerField() != null && !mapped.callerField().isBlank()
-                ? mapped.callerField()
-                : CommandAssembler.CALLER_VALUE_KEY;
-        return fromWriteValueOptions(valueOptions, target, callerField);
+        List<ValueMapping> result = new ArrayList<>();
+        byKey.forEach((key, patches) -> result.add(
+                ValueMapping.patch(
+                        key.callerField(),
+                        key.mappingValue(),
+                        descriptions.getOrDefault(key, ""),
+                        patches)));
+        return List.copyOf(result);
     }
 
     /** writeValueOptions → VALUE 映射（optionValue 即协议值，patch 到目标 path）。 */
@@ -196,6 +201,7 @@ public final class LegacyFieldAdapter {
         node.description = field.description() == null ? "" : field.description();
         node.byteLength = field.byteLength();
         node.byteOrder = field.byteOrder();
+        node.callerField = field.callerField();
     }
 
     private static MutableNode findChild(MutableNode parent, String name) {
@@ -243,7 +249,7 @@ public final class LegacyFieldAdapter {
                 node.valueGenerator(),
                 node.source() == null ? null : node.source().wire(),
                 constantToString(node.constant()),
-                null,
+                node.callerField(),
                 node.byteLength(),
                 node.byteOrder()));
     }
@@ -313,6 +319,7 @@ public final class LegacyFieldAdapter {
         private String description = "";
         private Integer byteLength;
         private String byteOrder;
+        private String callerField;
 
         private static MutableNode object(String name) {
             MutableNode node = new MutableNode();
@@ -341,7 +348,8 @@ public final class LegacyFieldAdapter {
                     List.copyOf(choices),
                     description,
                     byteLength,
-                    byteOrder);
+                    byteOrder,
+                    callerField);
         }
     }
 }

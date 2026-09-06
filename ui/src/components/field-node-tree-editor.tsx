@@ -418,11 +418,17 @@ function FieldNodeCard({
             />
           </FieldCell>
         ) : row.source === "mapped" ? (
+          <FieldCell label="调用方字段">
+            <p className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+              在下方 VALUE 映射填写调用方字段（请求 JSON 的 key）。
+            </p>
+          </FieldCell>
+        ) : row.source === "caller" ? (
           <FieldCell label="调用方字段 callerField">
             <Input
-              value={row.callerField || "value"}
+              value={row.callerField || ""}
               disabled={readOnly}
-              placeholder="value / lock"
+              placeholder="password / beginTime"
               onChange={(e) => onUpdate({ callerField: e.target.value })}
             />
           </FieldCell>
@@ -547,9 +553,13 @@ function FieldNodeCard({
                   </SelectContent>
                 </Select>
               ) : child.source === "mapped" ? (
+                <p className="self-center text-xs text-muted-foreground">
+                  调用方字段在下方 VALUE 映射填写
+                </p>
+              ) : child.source === "caller" ? (
                 <Input
-                  placeholder="调用方字段，如 lock"
-                  value={child.callerField || "value"}
+                  placeholder="调用方字段，如 password"
+                  value={child.callerField || ""}
                   disabled={readOnly}
                   onChange={(e) => onUpdateNested(ci, { callerField: e.target.value })}
                 />

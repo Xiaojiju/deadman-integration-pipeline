@@ -20,6 +20,7 @@ import java.util.List;
  * @param description     说明
  * @param byteLength      HEX/BINARY 占用字节数
  * @param byteOrder       字节序 big / little
+ * @param callerField     CALLER / MAPPED 时调用方 JSON 键，空则用协议 path
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record FieldNode(
@@ -34,7 +35,8 @@ public record FieldNode(
         List<String> choices,
         String description,
         Integer byteLength,
-        String byteOrder
+        String byteOrder,
+        String callerField
 ) {
 
     public FieldNode {
@@ -53,6 +55,25 @@ public record FieldNode(
         if (byteOrder != null && byteOrder.isBlank()) {
             byteOrder = null;
         }
+        callerField = (callerField == null || callerField.isBlank()) ? null : callerField.trim();
+    }
+
+    /** 兼容旧 12 参构造（无 callerField）。 */
+    public FieldNode(
+            String name,
+            String type,
+            String format,
+            FieldSource source,
+            String valueGenerator,
+            Object constant,
+            List<FieldNode> children,
+            FieldNode element,
+            List<String> choices,
+            String description,
+            Integer byteLength,
+            String byteOrder) {
+        this(name, type, format, source, valueGenerator, constant, children, element, choices, description,
+                byteLength, byteOrder, null);
     }
 
     /** 兼容旧 10 参构造（无 byteLength / byteOrder）。 */
@@ -67,7 +88,8 @@ public record FieldNode(
             FieldNode element,
             List<String> choices,
             String description) {
-        this(name, type, format, source, valueGenerator, constant, children, element, choices, description, null, null);
+        this(name, type, format, source, valueGenerator, constant, children, element, choices, description, null, null,
+                null);
     }
 
     public boolean isObject() {
@@ -84,7 +106,7 @@ public record FieldNode(
     /** 创建 object 根。 */
     public static FieldNode objectRoot(String name, List<FieldNode> children) {
         return new FieldNode(name, "object", "none", FieldSource.CALLER, null, null, children, null, List.of(), "",
-                null, null);
+                null, null, null);
     }
 
     /** 扁平字段叶子。 */

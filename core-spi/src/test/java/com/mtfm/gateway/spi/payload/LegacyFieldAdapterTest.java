@@ -99,6 +99,95 @@ class LegacyFieldAdapterTest {
     }
 
     @Test
+    void constantFieldOptionsAreNotValueMappings() {
+        List<WriteFieldOption> fields = List.of(
+                new WriteFieldOption(
+                        "area",
+                        "寄存器区",
+                        "select",
+                        "select",
+                        true,
+                        List.of(
+                                new ValueOption("HOLDING", "HOLDING", "HOLDING", "string", "string", true),
+                                new ValueOption("COIL", "COIL", "COIL", "string", "string", false)),
+                        "none",
+                        null,
+                        "constant",
+                        "HOLDING"),
+                new WriteFieldOption(
+                        "value",
+                        "写入值",
+                        "string",
+                        "string",
+                        true,
+                        List.of(),
+                        "none",
+                        null,
+                        "mapped",
+                        null,
+                        "value"));
+        List<ValueOption> writeValueOptions = List.of(
+                new ValueOption("1", "open", "开", "string", "string", false),
+                new ValueOption("0", "close", "关", "string", "string", false));
+        List<ValueMapping> mappings = LegacyFieldAdapter.fromFieldAndValueOptions(fields, writeValueOptions);
+        assertEquals(2, mappings.size());
+        assertEquals("open", mappings.get(0).mappingValue());
+        assertEquals("1", mappings.get(0).patches().get(0).value());
+        assertEquals("value", mappings.get(0).patches().get(0).path());
+        assertTrue(mappings.stream().noneMatch(item -> "area".equals(item.patches().get(0).path())));
+    }
+
+    @Test
+    void writeValueOptionsWinOverMappedFieldOptions() {
+        List<WriteFieldOption> fields = List.of(
+                new WriteFieldOption(
+                        "value",
+                        "写入值",
+                        "string",
+                        "string",
+                        true,
+                        List.of(new ValueOption("HOLDING", "HOLDING", "HOLDING", "string", "string", false)),
+                        "none",
+                        null,
+                        "mapped",
+                        null,
+                        "lock"));
+        List<ValueOption> writeValueOptions = List.of(
+                new ValueOption("1", "open", "开", "string", "string", false));
+        List<ValueMapping> mappings = LegacyFieldAdapter.fromFieldAndValueOptions(fields, writeValueOptions);
+        assertEquals(1, mappings.size());
+        assertEquals("open", mappings.get(0).mappingValue());
+        assertEquals("lock", mappings.get(0).callerField());
+        assertEquals("1", mappings.get(0).patches().get(0).value());
+    }
+
+    @Test
+    void callerFieldRoundTripsOnCallerLeaves() {
+        List<WriteFieldOption> fields = List.of(
+                new WriteFieldOption(
+                        "params.2",
+                        "密码",
+                        "string",
+                        "string",
+                        false,
+                        List.of(),
+                        "none",
+                        null,
+                        "caller",
+                        null,
+                        "password"));
+        FieldNode root = LegacyFieldAdapter.fromWriteFields(fields);
+        FieldNode params = root.children().stream()
+                .filter(child -> "params".equals(child.name()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("password", params.children().get(0).callerField());
+        List<WriteFieldOption> roundTrip = LegacyFieldAdapter.toWriteFields(root);
+        assertEquals("password", roundTrip.get(0).callerField());
+        assertEquals("caller", roundTrip.get(0).source());
+    }
+
+    @Test
     void fromWriteFieldsKeepsConfiguredOrderNotAlphabetical() {
         List<WriteFieldOption> fields = List.of(
                 new WriteFieldOption("seq", "", "string", "string", true, List.of(), "none", "uuid", "platform", null),

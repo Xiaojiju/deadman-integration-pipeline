@@ -4,7 +4,21 @@ import { ConfigExample, CodeSample } from "@/components/config-example"
 import { Button } from "@/components/ui/button"
 import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { emptyValueMapping, filterValidMappings, type ValueMappingModel } from "@/lib/payload-form"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  CALLER_PASSTHROUGH,
+  emptyValueMapping,
+  filterValidMappings,
+  isPassthroughMapping,
+  type ValueMappingModel,
+} from "@/lib/payload-form"
 
 type Props = {
   label: string
@@ -57,15 +71,18 @@ export function ValueMappingEditor({
           </Button>
         ) : null}
       </div>
-      <ConfigExample title="示例 · lock 开门">
+      <ConfigExample title="示例 · 枚举 + 调用方输入">
         <p>
           调用方字段 <CodeSample>lock</CodeSample>，业务值 <CodeSample>open</CodeSample>，patch path{" "}
           <CodeSample>params.0</CodeSample>，patch value <CodeSample>open</CodeSample>。
         </p>
         <p>
-          调用 <CodeSample>{`{ "lock": "open" }`}</CodeSample> 后，协议 JSON 的 params 第 0 项变成 open。
+          密码、时间这类任意字符串：类型选「调用方原样填入」，调用方字段填{" "}
+          <CodeSample>password</CodeSample>，patch path 填 <CodeSample>params.2</CodeSample>
+          ，不必填业务值。调用{" "}
+          <CodeSample>{`{ "lock": "open", "password": "112233" }`}</CodeSample>{" "}
+          后，params 第 2 项就是 112233。
         </p>
-        <p>再加一条 callerField=mode 即可让调用方同时传第二个参数。</p>
       </ConfigExample>
       {value.length === 0 ? (
         <p className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
@@ -85,32 +102,73 @@ export function ValueMappingEditor({
               </div>
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="flex flex-col gap-1.5">
+                  <FieldLabel className="text-xs">类型</FieldLabel>
+                  <Select
+                    value={isPassthroughMapping(row) ? "passthrough" : "enum"}
+                    disabled={readOnly}
+                    onValueChange={(next) =>
+                      updateRow(index, {
+                        mappingValue: next === "passthrough" ? CALLER_PASSTHROUGH : "",
+                        callerField: next === "passthrough" ? (row.callerField === "value" ? "password" : row.callerField) : row.callerField,
+                        patches: (row.patches ?? [{ path: "", value: "" }]).map((patch) => ({
+                          ...patch,
+                          value: next === "passthrough" ? "" : patch.value,
+                        })),
+                      })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="enum">枚举映射</SelectItem>
+                        <SelectItem value="passthrough">调用方原样填入</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-1.5">
                   <FieldLabel className="text-xs">调用方字段 *（请求 JSON 的 key）</FieldLabel>
                   <Input
-                    placeholder="value / lock / mode"
+                    placeholder="value / lock / password"
                     value={row.callerField ?? "value"}
                     disabled={readOnly}
                     onChange={(e) => updateRow(index, { callerField: e.target.value })}
                   />
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <FieldLabel className="text-xs">业务值 mappingValue *</FieldLabel>
-                  <Input
-                    placeholder="如 1 / open"
-                    value={row.mappingValue}
-                    disabled={readOnly}
-                    onChange={(e) => updateRow(index, { mappingValue: e.target.value })}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <FieldLabel className="text-xs">说明</FieldLabel>
-                  <Input
-                    placeholder="如 开门"
-                    value={row.description ?? ""}
-                    disabled={readOnly}
-                    onChange={(e) => updateRow(index, { description: e.target.value })}
-                  />
-                </div>
+                {isPassthroughMapping(row) ? (
+                  <div className="flex flex-col gap-1.5">
+                    <FieldLabel className="text-xs">说明</FieldLabel>
+                    <Input
+                      placeholder="如 门锁密码"
+                      value={row.description ?? ""}
+                      disabled={readOnly}
+                      onChange={(e) => updateRow(index, { description: e.target.value })}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    <FieldLabel className="text-xs">业务值 mappingValue *</FieldLabel>
+                    <Input
+                      placeholder="如 1 / open"
+                      value={row.mappingValue}
+                      disabled={readOnly}
+                      onChange={(e) => updateRow(index, { mappingValue: e.target.value })}
+                    />
+                  </div>
+                )}
+                {isPassthroughMapping(row) ? null : (
+                  <div className="flex flex-col gap-1.5">
+                    <FieldLabel className="text-xs">说明</FieldLabel>
+                    <Input
+                      placeholder="如 开门"
+                      value={row.description ?? ""}
+                      disabled={readOnly}
+                      onChange={(e) => updateRow(index, { description: e.target.value })}
+                    />
+                  </div>
+                )}
               </div>
               {(row.patches ?? [{ path: "", value: "" }]).map((patch, pi) => (
                 <div key={pi} className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -124,13 +182,21 @@ export function ValueMappingEditor({
                     />
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <FieldLabel className="text-xs">patch value</FieldLabel>
-                    <Input
-                      placeholder="协议字段值"
-                      value={patch.value == null ? "" : String(patch.value)}
-                      disabled={readOnly}
-                      onChange={(e) => updatePatch(index, pi, patch.path, e.target.value)}
-                    />
+                    <FieldLabel className="text-xs">
+                      {isPassthroughMapping(row) ? "写入方式" : "patch value"}
+                    </FieldLabel>
+                    {isPassthroughMapping(row) ? (
+                      <p className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+                        不填固定值，下发时把调用方字段的内容原样写入该 path。
+                      </p>
+                    ) : (
+                      <Input
+                        placeholder="协议字段值"
+                        value={patch.value == null ? "" : String(patch.value)}
+                        disabled={readOnly}
+                        onChange={(e) => updatePatch(index, pi, patch.path, e.target.value)}
+                      />
+                    )}
                   </div>
                 </div>
               ))}

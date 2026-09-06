@@ -127,14 +127,9 @@ export function ContractFieldEditor({ label, description, schema, value, onChang
                   )}
                 </div>
               ) : source === "mapped" ? (
-                <div className="flex flex-col gap-1.5">
-                  <FieldLabel>调用方字段 callerField</FieldLabel>
-                  <Input
-                    value={row.callerField || "value"}
-                    placeholder="value"
-                    onChange={(e) => updateField(row.field, { callerField: e.target.value })}
-                  />
-                </div>
+                <p className="self-center text-xs text-muted-foreground">
+                  调用方字段在下方 VALUE 映射填写，不必在契约行重复。
+                </p>
               ) : (
                 <p className="self-center text-xs text-muted-foreground">
                   {source === "device" ? "由本设备参数覆盖" : "由调用方传入"}
@@ -193,10 +188,7 @@ export function mergeContractFields(
       constant: existing.constant ?? base.constant,
       callerField: existing.callerField ?? base.callerField,
       ignoreRequest: existing.ignoreRequest ?? base.ignoreRequest,
-      options:
-        base.field === "value" && (existing.options ?? []).length > 0
-          ? existing.options
-          : base.options,
+      options: base.options,
     }
   })
 }

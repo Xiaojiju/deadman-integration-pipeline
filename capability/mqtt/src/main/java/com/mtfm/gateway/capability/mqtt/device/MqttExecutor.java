@@ -147,24 +147,26 @@ public final class MqttExecutor implements FunctionExecutor {
             return;
         }
         TopicTarget reply = mine.stream().filter(TopicTarget::reply).findFirst().orElse(null);
-        TopicTarget listen = mine.stream().filter(target -> !target.reply()).findFirst().orElse(null);
-        TopicTarget chosen = reply != null ? reply : listen;
-        if (chosen == null) {
-            return;
-        }
-        java.util.Map<String, String> headers = new LinkedHashMap<>();
-        headers.put("topic", topic);
-        headers.put("functionId", chosen.functionId());
-        headers.put("kind", "TELEMETRY");
+        List<TopicTarget> listens = mine.stream().filter(target -> !target.reply()).toList();
         if (reply != null) {
+            acceptInbound(reply.deviceId(), reply.functionId(), topic, payload, true);
+        }
+        for (TopicTarget listen : listens) {
+            acceptInbound(listen.deviceId(), listen.functionId(), topic, payload, false);
+        }
+    }
+
+    private void acceptInbound(String deviceId, String functionId, String topic, String payload, boolean reply) {
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("topic", topic);
+        headers.put("functionId", functionId);
+        headers.put("kind", "TELEMETRY");
+        if (reply) {
             headers.put("mqtt.reply", "true");
-            if (listen != null && !listen.functionId().equals(reply.functionId())) {
-                headers.put("mqtt.listenFunctionId", listen.functionId());
-            }
         }
         ingress.acceptRaw(RawInbound.builder()
                 .capabilityType(MqttCapability.TYPE)
-                .deviceIdHint(chosen.deviceId())
+                .deviceIdHint(deviceId)
                 .text(payload)
                 .headers(headers)
                 .build());

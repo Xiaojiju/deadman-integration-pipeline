@@ -54,11 +54,33 @@ class MqttInboundTest {
 
         transport.publish("ch-1", "ydlink/F1111/response", "{\"seq\":\"orphan\",\"ok\":true}");
 
-        assertEquals(1, ingress.raws.size());
-        RawInbound raw = ingress.raws.get(0);
-        assertEquals("fn.open", raw.headers().get("functionId"));
-        assertEquals("true", raw.headers().get("mqtt.reply"));
-        assertEquals("fn.listen", raw.headers().get("mqtt.listenFunctionId"));
+        assertEquals(2, ingress.raws.size());
+        RawInbound reply = ingress.raws.get(0);
+        assertEquals("fn.open", reply.headers().get("functionId"));
+        assertEquals("true", reply.headers().get("mqtt.reply"));
+        RawInbound listen = ingress.raws.get(1);
+        assertEquals("fn.listen", listen.headers().get("functionId"));
+        assertEquals(null, listen.headers().get("mqtt.reply"));
+    }
+
+    @Test
+    void sharedTopicDispatchesEachListenFunction() {
+        InMemoryMqttTransport transport = new InMemoryMqttTransport();
+        RecordingIngress ingress = new RecordingIngress();
+        MqttSubscribeRouteCatalog routes = (deviceCode, address) -> List.of(
+                new MqttSubscribeRoute("ydlink/F1111/post", "fn.temp", false),
+                new MqttSubscribeRoute("ydlink/F1111/post", "fn.door", false));
+        MqttExecutor executor = new MqttExecutor(transport);
+        executor.attach(ingress, routes);
+        executor.bind(binding("door-1", "ch-1", Map.of(
+                "default_pub", "ydlink/F1111/execute",
+                "default_sub", "ydlink/F1111/post")));
+
+        transport.publish("ch-1", "ydlink/F1111/post", "{\"temp\":25}");
+
+        assertEquals(2, ingress.raws.size());
+        assertEquals("fn.temp", ingress.raws.get(0).headers().get("functionId"));
+        assertEquals("fn.door", ingress.raws.get(1).headers().get("functionId"));
     }
 
     @Test

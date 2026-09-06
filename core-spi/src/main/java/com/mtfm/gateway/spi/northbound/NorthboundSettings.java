@@ -1,5 +1,7 @@
 package com.mtfm.gateway.spi.northbound;
 
+import com.mtfm.gateway.spi.payload.TopicCatalog;
+
 /**
  * 北向运行时配置（密码已解密）。由 catalog 落库，宿主热切换会话与扇出。
  */
@@ -53,15 +55,15 @@ public record NorthboundSettings(
     }
 
     public String commandTopicOrDefault() {
-        return blankToDefault(mqttCommandTopic, DEFAULT_COMMAND_TOPIC);
+        return TopicCatalog.normalizeTopic(blankToDefault(mqttCommandTopic, DEFAULT_COMMAND_TOPIC));
     }
 
     public String responseTopicOrDefault() {
-        return blankToDefault(mqttResponseTopic, DEFAULT_RESPONSE_TOPIC);
+        return TopicCatalog.normalizeTopic(blankToDefault(mqttResponseTopic, DEFAULT_RESPONSE_TOPIC));
     }
 
     public String telemetryTopicOrDefault() {
-        return blankToDefault(mqttTelemetryTopic, DEFAULT_TELEMETRY_TOPIC);
+        return TopicCatalog.normalizeTopic(blankToDefault(mqttTelemetryTopic, DEFAULT_TELEMETRY_TOPIC));
     }
 
     public String clientIdOrDefault() {

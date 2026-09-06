@@ -361,6 +361,9 @@ final class CatalogProductCommands {
         if (request.correlationPath() != null) {
             entity.setCorrelationPath(blankToNull(request.correlationPath()));
         }
+        if (request.correlationCommandPath() != null) {
+            entity.setCorrelationCommandPath(blankToNull(request.correlationCommandPath()));
+        }
         if (request.resultPath() != null) {
             entity.setResultPath(blankToNull(request.resultPath()));
         }

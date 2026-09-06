@@ -158,6 +158,7 @@ final class CatalogFormViews {
                 function.getPayloadEncoding(),
                 function.getReplyTopicSlot(),
                 function.getCorrelationPath(),
+                function.getCorrelationCommandPath(),
                 function.getResultPath(),
                 function.getReplyTimeoutMs(),
                 function.getScheduleIntervalMs(),

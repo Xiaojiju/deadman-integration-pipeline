@@ -40,6 +40,27 @@ class TopicCatalogTest {
     }
 
     @Test
+    void literalTopicDoesNotNeedCatalogKey() {
+        TopicCatalog catalog = TopicCatalog.fromAddressMap(Map.of("default_pub", "a/cmd"));
+        assertEquals(
+                "ydlink/FFFA25101101/thing/action/execute_response",
+                catalog.resolveSubscribe("ydlink/FFFA25101101/thing/action/execute_response"));
+    }
+
+    @Test
+    void dotsBecomeSlashes() {
+        TopicCatalog catalog = TopicCatalog.fromAddressMap(Map.of(
+                "default_pub", "ydlink.FFFA25101101.thing.action.execute"));
+        assertEquals(
+                "ydlink/FFFA25101101/thing/action/execute",
+                catalog.resolvePublish(null));
+        assertEquals(
+                "ydlink/FFFA25101101/thing/action/execute",
+                catalog.resolvePublish("ydlink.FFFA25101101.thing.action.execute"));
+        assertTrue(catalog.allTopics().contains("ydlink/FFFA25101101/thing/action/execute"));
+    }
+
+    @Test
     void routeResolverWrite() {
         TopicCatalog catalog = TopicCatalog.fromAddressMap(Map.of(
                 "topics", Map.of("default_pub", "a/cmd", "door_cmd", "a/door/write")));

@@ -30,6 +30,7 @@ public record ProductFunctionView(
         String payloadEncoding,
         String replyTopicSlot,
         String correlationPath,
+        String correlationCommandPath,
         String resultPath,
         Integer replyTimeoutMs,
         Long scheduleIntervalMs,

@@ -16,7 +16,8 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * MQTT READ 入站：JSON 按 readFields 抽点；HEX/BINARY 按 byteLength 切片。
+ * MQTT READ 入站：JSON 按 readFields 拾取并映射；HEX/BINARY 按 byteLength 切片。
+ * 配了拾取字段但一个都没有时静默丢弃，避免把整段报文当成该功能遥测。
  */
 public final class MqttReadInboundPlugin implements InboundPlugin {
 
@@ -58,14 +59,21 @@ public final class MqttReadInboundPlugin implements InboundPlugin {
             if (function.correlationPath() != null) {
                 headers = headers.with("mqtt.correlationPath", function.correlationPath());
             }
-            if (function.resultPath() != null) {
-                headers = headers.with("mqtt.resultPath", function.resultPath());
-            }
         }
         PayloadEncoding encoding = function.payloadEncoding();
         if (encoding != null && encoding.isFramed()) {
             String text = rawText(draft);
-            Map<String, Object> points = FramePacker.unpack(text, function.readFields(), encoding);
+            Map<String, Object> unpacked = FramePacker.unpack(text, function.readFields(), encoding);
+            if (function.awaitsReply()) {
+                return InboundApplyResult.continueWith(
+                        draft.withPayload(Attributes.from(unpacked)).withHeaders(headers)
+                                .appendTrace(name(), "unpack-" + encoding.wire()));
+            }
+            Map<String, Object> points = PayloadDisassembler.project(
+                    unpacked, function.readFields(), function.readValueOptions());
+            if (skipUnpicked(function, points)) {
+                return InboundApplyResult.drop();
+            }
             return InboundApplyResult.continueWith(
                     draft.withPayload(Attributes.from(points)).withHeaders(headers)
                             .appendTrace(name(), "unpack-" + encoding.wire()));
@@ -75,10 +83,24 @@ public final class MqttReadInboundPlugin implements InboundPlugin {
             String text = draft.payload().get("text").map(String::valueOf).orElse("");
             json = MqttPayloadJson.parseObject(text);
         }
-        Map<String, Object> points = PayloadDisassembler.disassemble(json, function.readFields());
-        Attributes payload = Attributes.from(points);
+        if (function.awaitsReply()) {
+            Attributes payload = json.isEmpty() ? draft.payload() : Attributes.from(json);
+            return InboundApplyResult.continueWith(
+                    draft.withPayload(payload).withHeaders(headers).appendTrace(name(), "reply-keep"));
+        }
+        Map<String, Object> points = PayloadDisassembler.project(
+                json, function.readFields(), function.readValueOptions());
+        if (skipUnpicked(function, points)) {
+            return InboundApplyResult.drop();
+        }
         return InboundApplyResult.continueWith(
-                draft.withPayload(payload).withHeaders(headers).appendTrace(name(), "disassemble"));
+                draft.withPayload(Attributes.from(points)).withHeaders(headers).appendTrace(name(), "disassemble"));
+    }
+
+    private static boolean skipUnpicked(FunctionDef function, Map<String, Object> points) {
+        return function.readFields() != null
+                && !function.readFields().isEmpty()
+                && (points == null || points.isEmpty());
     }
 
     private static String rawText(EnvelopeDraft draft) {

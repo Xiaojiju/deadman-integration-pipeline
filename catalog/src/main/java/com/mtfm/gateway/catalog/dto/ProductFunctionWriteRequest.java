@@ -23,8 +23,9 @@ import java.util.List;
  * @param description       功能说明
  * @param payloadMode       VALUE / STRUCT
  * @param payloadEncoding   JSON / HEX / BINARY
- * @param replyTopicSlot    MQTT 应答订阅 slot
+ * @param replyTopicSlot    MQTT 应答订阅 slot 或完整 topic
  * @param correlationPath   回包关联号字段
+ * @param correlationCommandPath 下发载荷中与回包关联的字段；$deviceCode 表示设备编码
  * @param resultPath        回包成败字段
  * @param replyTimeoutMs    等待应答毫秒
  * @param scheduleIntervalMs 定时下发间隔毫秒
@@ -49,6 +50,7 @@ public record ProductFunctionWriteRequest(
         String payloadEncoding,
         String replyTopicSlot,
         String correlationPath,
+        String correlationCommandPath,
         String resultPath,
         Integer replyTimeoutMs,
         Long scheduleIntervalMs,
@@ -74,6 +76,6 @@ public record ProductFunctionWriteRequest(
         this(functionId, accessType, accessPermission, capabilityType, writeAccessType, properties,
                 writeValueOptions, writeFields, readFields, readValueOptions, sortIndex, description,
                 publishTopicSlot, subscribeTopicSlot, payloadMode, payloadEncoding,
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null);
     }
 }

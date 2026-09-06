@@ -34,24 +34,48 @@ public final class TopicCatalog {
 
     public String resolve(String slot, String fallbackSlot) {
         if (slot != null && !slot.isBlank()) {
-            String direct = slots.get(slot.trim());
+            String key = slot.trim();
+            String direct = slots.get(key);
             if (direct != null && !direct.isBlank()) {
-                return direct;
+                return normalizeTopic(direct);
+            }
+            if (looksLikeTopic(key)) {
+                return normalizeTopic(key);
             }
         }
         if (fallbackSlot != null) {
             String fallback = slots.get(fallbackSlot);
             if (fallback != null && !fallback.isBlank()) {
-                return fallback;
+                return normalizeTopic(fallback);
             }
         }
         throw new IllegalArgumentException("无法解析 topic slot: " + slot + "（fallback=" + fallbackSlot + "）");
+    }
+
+    /**
+     * MQTT 层级分隔符必须是 {@code /}。配置里的 {@code .} 一律换成 {@code /}。
+     */
+    public static String normalizeTopic(String topic) {
+        if (topic == null || topic.isBlank()) {
+            return topic;
+        }
+        return topic.trim().replace('.', '/');
+    }
+
+    /** 含 {@code /} 或 {@code .} 视为完整 topic，而不是 catalog slot 名。 */
+    public static boolean looksLikeTopic(String slot) {
+        if (slot == null || slot.isBlank()) {
+            return false;
+        }
+        String trimmed = slot.trim();
+        return trimmed.indexOf('/') >= 0 || trimmed.indexOf('.') >= 0;
     }
 
     /** 所有去重 topic 值（bind 时订阅用）。 */
     public java.util.Set<String> allTopics() {
         return slots.values().stream()
                 .filter(v -> v != null && !v.isBlank())
+                .map(TopicCatalog::normalizeTopic)
                 .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
     }
 

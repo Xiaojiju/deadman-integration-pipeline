@@ -236,9 +236,11 @@ final class CatalogFunctionBinding {
                 constant = seed.constant();
             }
             List<ValueOption> options = seed.options();
-            if ("value".equals(seed.field()) && req.options() != null && !req.options().isEmpty()) {
+            if ("value".equals(seed.field()) && mode != PayloadMode.VALUE
+                    && req.options() != null && !req.options().isEmpty()) {
                 options = constrainContractValueOptions(req.options(), template, mode);
-            } else if (req.options() != null && !req.options().isEmpty() && !seed.options().isEmpty()) {
+            } else if (!"value".equals(seed.field())
+                    && req.options() != null && !req.options().isEmpty() && !seed.options().isEmpty()) {
                 options = mergeFixedFieldOptions(req.options(), seed.options());
             }
             result.add(new WriteFieldOption(
@@ -477,7 +479,9 @@ final class CatalogFunctionBinding {
             return List.of();
         }
         List<WriteFieldOption> withOptions = writeFields.stream()
-                .filter(field -> field.options() != null && !field.options().isEmpty())
+                .filter(field -> FieldSource.from(field.source()) == FieldSource.MAPPED
+                        && field.options() != null
+                        && !field.options().isEmpty())
                 .toList();
         if (withOptions.isEmpty()) {
             return List.of();
@@ -507,11 +511,15 @@ final class CatalogFunctionBinding {
                 }
             }
             boolean mapped = source == FieldSource.MAPPED;
-            String name = mapped
-                    ? (field.callerField() == null || field.callerField().isBlank()
-                            ? "value"
-                            : field.callerField())
-                    : field.field();
+            boolean caller = source == FieldSource.CALLER;
+            String name;
+            if (field.callerField() != null && !field.callerField().isBlank() && (mapped || caller)) {
+                name = field.callerField();
+            } else if (mapped) {
+                name = "value";
+            } else {
+                name = field.field();
+            }
             List<String> choices = field.options() == null
                     ? List.of()
                     : field.options().stream()
@@ -550,7 +558,7 @@ final class CatalogFunctionBinding {
             byName.put(name, new SchemaField(
                     name,
                     type,
-                    mapped,
+                    mapped || caller,
                     description,
                     name,
                     null,

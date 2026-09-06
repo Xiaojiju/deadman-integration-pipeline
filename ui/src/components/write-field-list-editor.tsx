@@ -31,6 +31,8 @@ type Props = {
   readOnly?: boolean
   /** HEX/BINARY 时展示字节宽度与字节序 */
   showByteLayout?: boolean
+  /** 展示返回给调用方的名（callerField），应答取值用 */
+  showOutputName?: boolean
 }
 
 const FIELD_TYPES = ["string", "int", "boolean", "select", "password", "json", "array"] as const
@@ -62,6 +64,7 @@ export function WriteFieldListEditor({
   onChange,
   readOnly = false,
   showByteLayout = false,
+  showOutputName = false,
 }: Props) {
   const [pickedIndex, setPickedIndex] = useState<number | null>(null)
 
@@ -135,13 +138,31 @@ export function WriteFieldListEditor({
           </Button>
         ) : null}
       </div>
-      <ConfigExample title="示例 · 读温度">
-        <p>
-          字段名填协议 JSON path，如 <CodeSample>temp</CodeSample> 或{" "}
-          <CodeSample>nested.door</CodeSample>，type 选 int / string。
-        </p>
-        <p>上报报文里对应路径的值会解析成该点位。</p>
-      </ConfigExample>
+      {showOutputName ? (
+        <ConfigExample title="怎么填 · 拾取与映射">
+          <p>
+            字段名填协议 path，支持下标 <CodeSample>params.1</CodeSample>
+            。返回名填北向看到的键，如 <CodeSample>success</CodeSample>、
+            <CodeSample>door</CodeSample>。报文里没有的字段跳过；一个都拾不到则本条不北向。
+          </p>
+          <p>
+            选项按设备值翻成业务值：<CodeSample>optionValue</CodeSample> 填协议里的值（如
+            <CodeSample>0</CodeSample>），<CodeSample>mappingValue</CodeSample>{" "}
+            填北向值（如 <CodeSample>failed</CodeSample> / <CodeSample>closed</CodeSample>
+            ）。
+          </p>
+        </ConfigExample>
+      ) : (
+        <ConfigExample title="示例 · 读温度">
+          <p>
+            字段名填协议 JSON path，如 <CodeSample>temp</CodeSample> 或{" "}
+            <CodeSample>nested.door</CodeSample>，type 选 int / string。
+          </p>
+          <p>
+            可配多个字段；报文里没有的跳过。一个都拾不到则忽略该报文，不会把整段 JSON 当遥测。
+          </p>
+        </ConfigExample>
+      )}
       {value.length === 0 ? (
         <p className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
           {readOnly ? "无字段" : "添加字段并配置 type / format / 平台生成器"}
@@ -206,6 +227,18 @@ export function WriteFieldListEditor({
                     onChange={(e) => updateField(index, { description: e.target.value })}
                   />
                 </div>
+                {showOutputName ? (
+                  <div className="flex flex-col gap-1.5">
+                    <FieldLabel htmlFor={`wf-out-${index}`}>返回名 callerField</FieldLabel>
+                    <Input
+                      id={`wf-out-${index}`}
+                      placeholder="返回给调用方的键，如 success"
+                      value={row.callerField ?? ""}
+                      disabled={readOnly}
+                      onChange={(e) => updateField(index, { callerField: e.target.value || undefined })}
+                    />
+                  </div>
+                ) : null}
                 <div className="flex flex-col gap-1.5">
                   <FieldLabel>字段类型 FieldType</FieldLabel>
                   <Select

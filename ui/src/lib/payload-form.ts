@@ -118,7 +118,12 @@ export function fieldNodeToWriteFields(root: FieldNodeModel | null | undefined):
       valueGenerator: node.valueGenerator || undefined,
       source,
       constant: node.constant == null || node.constant === "" ? undefined : String(node.constant),
-      callerField: source === "mapped" ? node.callerField || "value" : undefined,
+      callerField:
+        source === "mapped"
+          ? node.callerField || "value"
+          : source === "caller"
+            ? node.callerField || undefined
+            : undefined,
       byteLength: node.byteLength || undefined,
       byteOrder: node.byteOrder || undefined,
     }
@@ -157,13 +162,48 @@ function collectLeaves(
   return [{ path: prefix || node.name, node }]
 }
 
+export const CALLER_PASSTHROUGH = "$caller"
+
+export function isPassthroughMapping(row: Pick<ValueMappingModel, "mappingValue">): boolean {
+  return row.mappingValue?.trim() === CALLER_PASSTHROUGH
+}
+
+/** 编辑回显：writeValueOptions 优先；否则回落 MAPPED 叶子 options。透传行始终从 CALLER 叶子补齐。 */
+export function editMappingsFromFunction(
+  fields: WriteFieldOption[],
+  writeValueOptions: ValueOption[]
+): ValueMappingModel[] {
+  const fromFields = fieldOptionsToMappings(fields)
+  const passthrough = fromFields.filter(isPassthroughMapping)
+  const fieldEnums = fromFields.filter((row) => !isPassthroughMapping(row))
+  const fromOpts = valueOptionsToMappings(writeValueOptions ?? [], fields)
+  return [...(fromOpts.length > 0 ? fromOpts : fieldEnums), ...passthrough]
+}
+
 export function fieldOptionsToMappings(fields: WriteFieldOption[]): ValueMappingModel[] {
   const byKey = new Map<string, ValueMappingModel>()
+  const passthrough: ValueMappingModel[] = []
   for (const field of fields ?? []) {
-    const callerField = field.callerField?.trim() || (field.source === "mapped" ? "value" : "value")
+    if (!field.field) {
+      continue
+    }
+    if (field.source === "caller") {
+      passthrough.push({
+        mappingValue: CALLER_PASSTHROUGH,
+        callerField: field.callerField?.trim() || field.field,
+        description: field.description ?? "",
+        target: "PATCH_FIELDS",
+        patches: [{ path: field.field, value: "" }],
+      })
+      continue
+    }
+    if (field.source !== "mapped") {
+      continue
+    }
+    const callerField = field.callerField?.trim() || "value"
     for (const option of field.options ?? []) {
       const mappingValue = option.mappingValue?.trim() || option.optionValue?.trim()
-      if (!mappingValue || !field.field) {
+      if (!mappingValue) {
         continue
       }
       const groupKey = `${callerField}\0${mappingValue}`
@@ -179,7 +219,7 @@ export function fieldOptionsToMappings(fields: WriteFieldOption[]): ValueMapping
       byKey.get(groupKey)!.patches!.push({ path: field.field, value: option.optionValue })
     }
   }
-  return [...byKey.values()]
+  return [...byKey.values(), ...passthrough]
 }
 
 export function mergeMappingsIntoFields(
@@ -212,6 +252,20 @@ export function mergeMappingsIntoFields(
         }
         next.push(field)
       }
+      if (isPassthroughMapping(mapping)) {
+        field.source = "caller"
+        field.ignoreRequest = false
+        field.callerField = mapping.callerField?.trim() || undefined
+        field.options = []
+        if (mapping.description?.trim()) {
+          field.description = mapping.description.trim()
+        }
+        continue
+      }
+      const source = (field.source || "").toLowerCase()
+      if (source === "constant" || source === "device" || source === "platform") {
+        continue
+      }
       if (!reset.has(path)) {
         field.options = []
         reset.add(path)
@@ -219,14 +273,6 @@ export function mergeMappingsIntoFields(
       field.source = "mapped"
       field.ignoreRequest = true
       field.callerField = mapping.callerField?.trim() || field.callerField || "value"
-      field.options = [
-        ...(field.options ?? []),
-        {
-          optionValue: String(patch.value ?? ""),
-          mappingValue: mapping.mappingValue,
-          description: mapping.description ?? "",
-        },
-      ]
     }
   }
   return next
@@ -253,7 +299,7 @@ export function valueOptionsToMappings(
 
 export function mappingsToValueOptions(mappings: ValueMappingModel[]): ValueOption[] {
   return (mappings ?? [])
-    .filter((m) => m.mappingValue?.trim())
+    .filter((m) => m.mappingValue?.trim() && !isPassthroughMapping(m))
     .map((m) => {
       const patch = m.patches?.[0]
       return {
@@ -332,20 +378,33 @@ export function emptyValueMapping(defaultPath = ""): ValueMappingModel {
 
 export function filterValidMappings(rows: ValueMappingModel[]): ValueMappingModel[] {
   return (rows ?? [])
-    .filter((row) => row.mappingValue?.trim())
-    .map((row) => ({
-      mappingValue: row.mappingValue.trim(),
-      callerField: row.callerField?.trim() || "value",
-      description: row.description?.trim() || "",
-      target: row.target || "PATCH_FIELDS",
-      rootValue: row.rootValue,
-      patches: (row.patches ?? [])
-        .filter((p) => p.path?.trim())
-        .map((p) => ({
-          path: p.path.trim(),
-          value: parsePatchValue(p.value),
-        })),
-    }))
+    .filter((row) => {
+      const hasPath = (row.patches ?? []).some((patch) => patch.path?.trim())
+      if (!hasPath) {
+        return false
+      }
+      if (isPassthroughMapping(row)) {
+        return Boolean(row.callerField?.trim())
+      }
+      return Boolean(row.mappingValue?.trim())
+    })
+    .map((row) => {
+      const callerField = row.callerField?.trim() || "value"
+      const passthrough = isPassthroughMapping(row)
+      return {
+        mappingValue: passthrough ? CALLER_PASSTHROUGH : row.mappingValue.trim(),
+        callerField,
+        description: row.description?.trim() || "",
+        target: row.target || "PATCH_FIELDS",
+        rootValue: row.rootValue,
+        patches: (row.patches ?? [])
+          .filter((p) => p.path?.trim())
+          .map((p) => ({
+            path: p.path.trim(),
+            value: passthrough ? "" : parsePatchValue(p.value),
+          })),
+      }
+    })
 }
 
 function parsePatchValue(raw: unknown): unknown {

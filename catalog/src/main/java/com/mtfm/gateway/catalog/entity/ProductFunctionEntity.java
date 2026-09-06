@@ -80,6 +80,9 @@ public class ProductFunctionEntity {
     /** 回包关联号字段 path。 */
     private String correlationPath;
 
+    /** 下发载荷中与回包关联的字段 path；空则先试 correlationPath，再 requestId。 */
+    private String correlationCommandPath;
+
     /** 回包成败字段 path。 */
     private String resultPath;
 
@@ -226,6 +229,14 @@ public class ProductFunctionEntity {
 
     public void setCorrelationPath(String correlationPath) {
         this.correlationPath = correlationPath;
+    }
+
+    public String getCorrelationCommandPath() {
+        return correlationCommandPath;
+    }
+
+    public void setCorrelationCommandPath(String correlationCommandPath) {
+        this.correlationCommandPath = correlationCommandPath;
     }
 
     public String getResultPath() {

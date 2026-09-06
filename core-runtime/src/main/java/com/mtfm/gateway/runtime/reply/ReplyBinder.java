@@ -7,7 +7,10 @@ import com.mtfm.gateway.spi.model.ExecutionResult;
 import com.mtfm.gateway.spi.model.Failure;
 import com.mtfm.gateway.spi.model.FunctionDef;
 import com.mtfm.gateway.spi.payload.PayloadDisassembler;
+import com.mtfm.gateway.spi.property.ValueOption;
+import com.mtfm.gateway.spi.property.WriteFieldOption;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -46,20 +49,24 @@ public final class ReplyBinder {
             return Optional.empty();
         }
         ReplyWaiter.Pending pending = matched.get();
-        if (isFailure(data, pending.resultPath() != null ? pending.resultPath() : resultPath(envelope))) {
+        List<WriteFieldOption> fields = replyFields(envelope);
+        Map<String, Object> projected = PayloadDisassembler.project(
+                data, fields, replyValueOptions(envelope));
+        if (isFailure(data, fields)) {
             return Optional.of(ExecutionResult.failed(
                     new com.mtfm.gateway.spi.model.FunctionCommand(
                             pending.requestId(),
                             pending.deviceId(),
                             pending.functionId(),
                             envelope.capabilityType(),
-                            Attributes.from(data),
+                            Attributes.from(projected),
                             Attributes.empty(),
                             null),
-                    Failure.executorError("reply", "设备应答失败", false)));
+                    Failure.executorError("reply", "设备应答失败", false),
+                    projected));
         }
         return Optional.of(ExecutionResult.success(
-                pending.requestId(), pending.deviceId(), pending.functionId(), data));
+                pending.requestId(), pending.deviceId(), pending.functionId(), projected));
     }
 
     private static Object firstPresent(Map<String, Object> data, String... keys) {
@@ -97,25 +104,41 @@ public final class ReplyBinder {
         return fromDef != null ? fromDef : header;
     }
 
-    private String resultPath(Envelope envelope) {
-        String header = envelope.headers().get("mqtt.resultPath").orElse(null);
+    private List<WriteFieldOption> replyFields(Envelope envelope) {
         if (catalog == null) {
-            return header;
+            return List.of();
         }
-        String fromDef = catalog.find(envelope.deviceId(), envelope.functionId())
-                .map(FunctionDef::resultPath)
-                .orElse(null);
-        return fromDef != null ? fromDef : header;
+        return catalog.find(envelope.deviceId(), envelope.functionId())
+                .map(FunctionDef::readFields)
+                .orElse(List.of());
     }
 
-    static boolean isFailure(Map<String, Object> data, String resultPath) {
-        if (resultPath == null || resultPath.isBlank() || data == null) {
+    private List<ValueOption> replyValueOptions(Envelope envelope) {
+        if (catalog == null) {
+            return List.of();
+        }
+        return catalog.find(envelope.deviceId(), envelope.functionId())
+                .map(FunctionDef::readValueOptions)
+                .orElse(List.of());
+    }
+
+    static boolean isFailure(Map<String, Object> data, List<WriteFieldOption> fields) {
+        if (data == null || fields == null || fields.isEmpty()) {
             return false;
         }
-        Object value = PayloadDisassembler.extractPath(data, resultPath);
-        if (value == null) {
-            value = data.get(resultPath);
+        for (WriteFieldOption field : fields) {
+            if (field == null || field.field() == null || field.field().isBlank()) {
+                continue;
+            }
+            Object value = PayloadDisassembler.extractPath(data, field.field());
+            if (failureValue(value)) {
+                return true;
+            }
         }
+        return false;
+    }
+
+    static boolean failureValue(Object value) {
         if (value == null) {
             return false;
         }

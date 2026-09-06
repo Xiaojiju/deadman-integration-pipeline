@@ -12,7 +12,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { CodeSample, ConfigExample } from "@/components/config-example"
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -171,8 +172,7 @@ export function NorthboundPanel() {
         <CardHeader>
           <CardTitle>北向 MQTT</CardTitle>
           <CardDescription>
-            独立 Broker。入站主题默认 gw/+/command，出站 gw/{"{deviceId}"}/response 与
-            telemetry。保存后立即热切换，无需重启。
+            独立 Broker，与南向设备通道分开。主题层级必须用 /。保存后立即热切换，无需重启。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -222,37 +222,60 @@ export function NorthboundPanel() {
               <Input
                 id="nb-mqtt-command"
                 value={form.mqttCommandTopic}
+                placeholder="gw/+/command"
                 onChange={(event) =>
                   setForm((current) =>
                     current && { ...current, mqttCommandTopic: event.target.value }
                   )
                 }
               />
+              <FieldDescription>
+                云端下发命令的订阅过滤。默认 <CodeSample>gw/+/command</CodeSample>
+                ，<CodeSample>+</CodeSample> 是单层通配。只用 /，不要写成
+                <CodeSample>gw.+.command</CodeSample>。
+              </FieldDescription>
             </Field>
             <Field>
               <FieldLabel htmlFor="nb-mqtt-response">出站回执主题</FieldLabel>
               <Input
                 id="nb-mqtt-response"
                 value={form.mqttResponseTopic}
+                placeholder="gw/{deviceId}/response"
                 onChange={(event) =>
                   setForm((current) =>
                     current && { ...current, mqttResponseTopic: event.target.value }
                   )
                 }
               />
+              <FieldDescription>
+                指令结果发布模板。用 <CodeSample>{"{deviceId}"}</CodeSample> 占位，运行时换成设备编码，例如
+                <CodeSample>gw/F123/response</CodeSample>。
+              </FieldDescription>
             </Field>
             <Field>
               <FieldLabel htmlFor="nb-mqtt-telemetry">出站遥测主题</FieldLabel>
               <Input
                 id="nb-mqtt-telemetry"
                 value={form.mqttTelemetryTopic}
+                placeholder="gw/{deviceId}/telemetry"
                 onChange={(event) =>
                   setForm((current) =>
                     current && { ...current, mqttTelemetryTopic: event.target.value }
                   )
                 }
               />
+              <FieldDescription>
+                未匹配应答的上报走这里。同样用 <CodeSample>{"{deviceId}"}</CodeSample>，层级用 /。
+              </FieldDescription>
             </Field>
+            <ConfigExample title="怎么填 · 北向主题">
+              <p>
+                入站 <CodeSample>gw/+/command</CodeSample>，出站
+                <CodeSample>gw/{"{deviceId}"}/response</CodeSample> 与
+                <CodeSample>gw/{"{deviceId}"}/telemetry</CodeSample>
+                。点号会自动换成 /。
+              </p>
+            </ConfigExample>
             <Field>
               <FieldLabel htmlFor="nb-mqtt-client">Client ID</FieldLabel>
               <Input

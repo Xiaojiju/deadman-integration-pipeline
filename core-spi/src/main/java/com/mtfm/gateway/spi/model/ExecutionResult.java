@@ -63,6 +63,12 @@ public record ExecutionResult(
                 ExecutionStatus.FAILED, Attributes.empty(), failure);
     }
 
+    /** 创建失败结果并携带投影后的回包数据。 */
+    public static ExecutionResult failed(FunctionCommand command, Failure failure, Map<String, ?> data) {
+        return new ExecutionResult(command.requestId(), command.deviceId(), command.functionId(),
+                ExecutionStatus.FAILED, Attributes.from(data), failure);
+    }
+
     /** 创建超时结果。 */
     public static ExecutionResult timeout(FunctionCommand command, Failure failure) {
         return new ExecutionResult(command.requestId(), command.deviceId(), command.functionId(),

@@ -12,7 +12,7 @@ import java.util.List;
  * @param accessDataType    原始类型（FieldType wire code）
  * @param transformDataType 转换类型
  * @param ignoreRequest     是否忽略请求体中该字段（非 caller 时自动为 true）
- * @param options           该字段可选值；MAPPED 叶子上即 VALUE 映射
+ * @param options           该字段可选值（契约枚举如下拉）；VALUE 映射以功能级 writeValueOptions 为准
  * @param format            UI 采值约束（FieldFormat wire code，默认 none）
  * @param valueGenerator    平台值生成器（FieldValueGenerator wire code；空=调用方提供）
  * @param source            值来源 wire：caller / platform / device / constant / mapped

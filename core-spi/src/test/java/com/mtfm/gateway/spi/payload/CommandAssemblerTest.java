@@ -246,6 +246,64 @@ class CommandAssemblerTest {
     }
 
     @Test
+    void valueModeCallerFieldsAcceptFreeFormInput() {
+        FieldNode params = new FieldNode(
+                "params",
+                "array",
+                "none",
+                FieldSource.CALLER,
+                null,
+                null,
+                List.of(
+                        FieldNode.leaf("0", "string", FieldSource.CONSTANT, "none", null, "add", ""),
+                        FieldNode.leaf("1", "string", FieldSource.CALLER, "none", null, null, "phone"),
+                        new FieldNode(
+                                "2", "string", "none", FieldSource.CALLER, null, null, List.of(), null, List.of(),
+                                "password", null, null, "password"),
+                        new FieldNode(
+                                "3", "string", "none", FieldSource.CALLER, null, null, List.of(), null, List.of(),
+                                "begin", null, null, "beginTime"),
+                        new FieldNode(
+                                "4", "string", "none", FieldSource.CALLER, null, null, List.of(), null, List.of(),
+                                "expire", null, null, "expireTime"),
+                        FieldNode.leaf("5", "string", FieldSource.DEVICE, "none", null, null, "lockSn"),
+                        FieldNode.leaf("6", "string", FieldSource.CONSTANT, "none", null, "12345678", "")),
+                FieldNode.leaf("item", "string", FieldSource.CALLER, "none", null, null, ""),
+                List.of(),
+                "");
+        FieldNode root = FieldNode.objectRoot("root", List.of(
+                FieldNode.leaf("devId", "string", FieldSource.DEVICE, "none", null, null, ""),
+                FieldNode.leaf("devPsw", "string", FieldSource.CONSTANT, "none", null, "0", ""),
+                FieldNode.leaf("at", "string", FieldSource.PLATFORM, "none", "timestamp_seconds", null, ""),
+                FieldNode.leaf("seq", "string", FieldSource.PLATFORM, "none", "random_alnum_32", null, ""),
+                FieldNode.leaf("op", "string", FieldSource.CONSTANT, "none", null, "password", ""),
+                params));
+
+        Map<String, Object> payload = CommandAssembler.assemble(new CommandAssembler.Request(
+                PayloadMode.VALUE,
+                root,
+                List.of(),
+                Map.of(
+                        "params.1", "13812345678",
+                        "password", "112233",
+                        "beginTime", "2024-08-01 19:20:15",
+                        "expireTime", "2025-08-02 19:20:15"),
+                Map.of("devId", "35942218C174", "params.5", "80448E15")));
+
+        assertEquals("password", payload.get("op"));
+        assertEquals(
+                List.of(
+                        "add",
+                        "13812345678",
+                        "112233",
+                        "2024-08-01 19:20:15",
+                        "2025-08-02 19:20:15",
+                        "80448E15",
+                        "12345678"),
+                payload.get("params"));
+    }
+
+    @Test
     void valueModeMappedValueKeepsContractConstants() {
         FieldNode root = FieldNode.objectRoot("root", List.of(
                 FieldNode.leaf("area", "string", FieldSource.CONSTANT, "none", null, "COIL", ""),

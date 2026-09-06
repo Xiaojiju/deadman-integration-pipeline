@@ -11,6 +11,7 @@ import com.mtfm.gateway.spi.model.FunctionDef;
 import com.mtfm.gateway.spi.model.MessageHeaders;
 import com.mtfm.gateway.spi.payload.PayloadEncoding;
 import com.mtfm.gateway.spi.property.ValueAccessType;
+import com.mtfm.gateway.spi.property.ValueOption;
 import com.mtfm.gateway.spi.property.WriteFieldOption;
 import org.junit.jupiter.api.Test;
 
@@ -45,6 +46,157 @@ class ReplyBinderTest {
         assertTrue(matched.isPresent());
         assertEquals(ExecutionStatus.SUCCESS, matched.get().status());
         assertEquals("req-open-1", matched.get().requestId());
+        waiter.close();
+    }
+
+    @Test
+    void bindMatchesArrayIndexAndProjectsNamedValues() {
+        ReplyWaiter waiter = new ReplyWaiter(8, 4, pending -> {
+        });
+        waiter.start();
+        assertTrue(waiter.tryRegister(new ReplyWaiter.Pending(
+                "req-3", "F123", "fn.open", "F123", "params.1", Instant.now().plusSeconds(5))));
+        ReplyCatalog catalog = new ReplyCatalog();
+        catalog.put("F123", new FunctionDef(
+                "fn.open",
+                "WRITE",
+                AccessPermission.WRITE.code(),
+                null,
+                List.of(),
+                ValueAccessType.STRUCT,
+                List.of(),
+                List.of(),
+                List.of(
+                        new WriteFieldOption(
+                                "params.1", "成败", "string", "string", true, List.of(),
+                                "none", null, "caller", null, "success"),
+                        new WriteFieldOption(
+                                "params.2", "说明", "string", "string", true, List.of(),
+                                "none", null, "caller", null, "message")),
+                List.of(),
+                PayloadEncoding.JSON,
+                "ydlink/dev/response",
+                "params.0",
+                "params.1",
+                2000,
+                null,
+                false));
+        ReplyBinder binder = new ReplyBinder(catalog, waiter);
+
+        Optional<com.mtfm.gateway.spi.model.ExecutionResult> matched = binder.bind(envelope(
+                "F123",
+                "fn.open",
+                Map.of("params", List.of("F123", "1", "opened")),
+                Map.of("mqtt.reply", "true", "mqtt.correlationPath", "params.0")));
+
+        assertTrue(matched.isPresent());
+        assertEquals(ExecutionStatus.SUCCESS, matched.get().status());
+        assertEquals("1", matched.get().data().values().get("success"));
+        assertEquals("opened", matched.get().data().values().get("message"));
+        waiter.close();
+    }
+
+    @Test
+    void bindMapsOptionValueToNorthboundMappingValue() {
+        ReplyWaiter waiter = new ReplyWaiter(8, 4, pending -> {
+        });
+        waiter.start();
+        assertTrue(waiter.tryRegister(new ReplyWaiter.Pending(
+                "req-4", "F123", "fn.open", "F123", "params.1", Instant.now().plusSeconds(5))));
+        ReplyCatalog catalog = new ReplyCatalog();
+        catalog.put("F123", new FunctionDef(
+                "fn.open",
+                "WRITE",
+                AccessPermission.WRITE.code(),
+                null,
+                List.of(),
+                ValueAccessType.STRUCT,
+                List.of(),
+                List.of(),
+                List.of(new WriteFieldOption(
+                        "params.1",
+                        "成败",
+                        "string",
+                        "string",
+                        true,
+                        List.of(new ValueOption("0", "failed", "失败", "string", "string", false),
+                                new ValueOption("1", "ok", "成功", "string", "string", false)),
+                        "none",
+                        null,
+                        "caller",
+                        null,
+                        "success")),
+                List.of(),
+                PayloadEncoding.JSON,
+                "ydlink/dev/response",
+                "params.0",
+                null,
+                2000,
+                null,
+                false));
+        ReplyBinder binder = new ReplyBinder(catalog, waiter);
+
+        Optional<com.mtfm.gateway.spi.model.ExecutionResult> matched = binder.bind(envelope(
+                "F123",
+                "fn.open",
+                Map.of("params", List.of("F123", "1", "opened")),
+                Map.of("mqtt.reply", "true")));
+
+        assertTrue(matched.isPresent());
+        assertEquals(ExecutionStatus.SUCCESS, matched.get().status());
+        assertEquals("ok", matched.get().data().values().get("success"));
+        waiter.close();
+    }
+
+    @Test
+    void bindTreatsReplyFieldZeroAsFailureWithoutResultPath() {
+        ReplyWaiter waiter = new ReplyWaiter(8, 4, pending -> {
+        });
+        waiter.start();
+        assertTrue(waiter.tryRegister(new ReplyWaiter.Pending(
+                "req-5", "F123", "fn.open", "F123", null, Instant.now().plusSeconds(5))));
+        ReplyCatalog catalog = new ReplyCatalog();
+        catalog.put("F123", new FunctionDef(
+                "fn.open",
+                "WRITE",
+                AccessPermission.WRITE.code(),
+                null,
+                List.of(),
+                ValueAccessType.STRUCT,
+                List.of(),
+                List.of(),
+                List.of(new WriteFieldOption(
+                        "params.1",
+                        "成败",
+                        "string",
+                        "string",
+                        true,
+                        List.of(new ValueOption("0", "failed", "失败", "string", "string", false),
+                                new ValueOption("1", "ok", "成功", "string", "string", false)),
+                        "none",
+                        null,
+                        "caller",
+                        null,
+                        "success")),
+                List.of(),
+                PayloadEncoding.JSON,
+                "ydlink/dev/response",
+                "params.0",
+                null,
+                2000,
+                null,
+                false));
+        ReplyBinder binder = new ReplyBinder(catalog, waiter);
+
+        Optional<com.mtfm.gateway.spi.model.ExecutionResult> matched = binder.bind(envelope(
+                "F123",
+                "fn.open",
+                Map.of("params", List.of("F123", "0", "busy")),
+                Map.of("mqtt.reply", "true")));
+
+        assertTrue(matched.isPresent());
+        assertEquals(ExecutionStatus.FAILED, matched.get().status());
+        assertEquals("failed", matched.get().data().values().get("success"));
         waiter.close();
     }
 
