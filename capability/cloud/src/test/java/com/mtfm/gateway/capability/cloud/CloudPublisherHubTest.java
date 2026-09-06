@@ -72,6 +72,23 @@ class CloudPublisherHubTest {
     }
 
     @Test
+    void replaceSinksClosesOldAndFansOutToNew() {
+        RecordingCloseable first = new RecordingCloseable();
+        RecordingSink second = new RecordingSink();
+        try (CloudPublisher hub = new CloudPublisher()) {
+            hub.replaceSinks(List.of(first));
+            hub.publish(response("req-swap-1", "door-1"));
+            assertEquals(1, first.bodies.size());
+            hub.replaceSinks(List.of(second));
+            assertTrue(first.closed);
+            hub.publish(response("req-swap-2", "door-1"));
+            assertEquals(1, first.bodies.size());
+            assertEquals(1, second.bodies.size());
+            assertTrue(second.bodies.getFirst().contains("\"requestId\":\"req-swap-2\""));
+        }
+    }
+
+    @Test
     void inboundCommandUsesPortNotPipelineAccept() {
         List<NorthboundCommand> received = new CopyOnWriteArrayList<>();
         InMemoryNorthboundMqttSession session = new InMemoryNorthboundMqttSession();
@@ -129,12 +146,21 @@ class CloudPublisherHubTest {
                 "tel-1", Channels.CLOUD, body, MessageHeaders.empty(), MessagePriority.NORMAL, 0);
     }
 
-    private static final class RecordingSink implements NorthboundSink {
-        private final List<String> bodies = new ArrayList<>();
+    private static class RecordingSink implements NorthboundSink {
+        final List<String> bodies = new ArrayList<>();
 
         @Override
         public void publish(OutboundMessage message) {
             bodies.add(NorthboundJson.stringify(message));
+        }
+    }
+
+    private static final class RecordingCloseable extends RecordingSink implements AutoCloseable {
+        private boolean closed;
+
+        @Override
+        public void close() {
+            closed = true;
         }
     }
 }

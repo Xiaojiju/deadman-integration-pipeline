@@ -4,6 +4,8 @@ import type {
   DeviceEntity,
   DeviceFunctionScheduleView,
   ExecutionResult,
+  NorthboundView,
+  NorthboundWriteRequest,
   FunctionFormView,
   FunctionTemplate,
   PageResult,
@@ -258,6 +260,12 @@ export const catalogApi = {
   }) =>
     request<ProductEntity>("/catalog/products", {
       method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getNorthbound: () => request<NorthboundView>("/catalog/northbound"),
+  updateNorthbound: (body: NorthboundWriteRequest) =>
+    request<NorthboundView>("/catalog/northbound", {
+      method: "PUT",
       body: JSON.stringify(body),
     }),
   createProductFunction: (

@@ -15,6 +15,8 @@ import com.mtfm.gateway.catalog.dto.DeviceUpdateRequest;
 import com.mtfm.gateway.catalog.dto.DeviceView;
 import com.mtfm.gateway.catalog.dto.DeviceWriteRequest;
 import com.mtfm.gateway.catalog.dto.FunctionFormView;
+import com.mtfm.gateway.catalog.dto.NorthboundView;
+import com.mtfm.gateway.catalog.dto.NorthboundWriteRequest;
 import com.mtfm.gateway.catalog.dto.PageResult;
 import com.mtfm.gateway.catalog.dto.ProductFunctionView;
 import com.mtfm.gateway.catalog.dto.ProductFunctionWriteRequest;
@@ -23,6 +25,7 @@ import com.mtfm.gateway.catalog.dto.ProductWriteRequest;
 import com.mtfm.gateway.catalog.dto.SupportedFunctionView;
 import com.mtfm.gateway.catalog.dto.SupportedSchemaView;
 import com.mtfm.gateway.catalog.schema.CatalogFormService;
+import com.mtfm.gateway.catalog.store.CatalogNorthbound;
 import com.mtfm.gateway.spi.model.CapabilityDescriptor;
 import com.mtfm.gateway.spi.model.ExecutionResult;
 import com.mtfm.gateway.spi.model.FormField;
@@ -51,10 +54,15 @@ public class CatalogController {
 
     private final CatalogApplyService applyService;
     private final CatalogFormService forms;
+    private final CatalogNorthbound northbound;
 
-    public CatalogController(CatalogApplyService applyService, CatalogFormService forms) {
+    public CatalogController(
+            CatalogApplyService applyService,
+            CatalogFormService forms,
+            CatalogNorthbound northbound) {
         this.applyService = applyService;
         this.forms = forms;
+        this.northbound = northbound;
     }
 
     // ——— 能力（只读） ———
@@ -345,5 +353,17 @@ public class CatalogController {
         DeviceFunctionScheduleView view = forms.replaceDeviceSchedule(deviceCode, functionId, request);
         applyService.refreshSchedule(deviceCode);
         return view;
+    }
+
+    // ——— 北向 ———
+
+    @GetMapping("/northbound")
+    public NorthboundView getNorthbound() {
+        return northbound.view();
+    }
+
+    @PutMapping("/northbound")
+    public NorthboundView updateNorthbound(@RequestBody NorthboundWriteRequest request) {
+        return northbound.update(request);
     }
 }

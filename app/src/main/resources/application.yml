@@ -17,18 +17,3 @@ gateway:
     mode: ${GATEWAY_MODBUS_MODE:real}
     connect-timeout-ms: ${GATEWAY_MODBUS_CONNECT_TIMEOUT_MS:3000}
     request-timeout-ms: ${GATEWAY_MODBUS_REQUEST_TIMEOUT_MS:3000}
-  northbound:
-    mqtt:
-      enabled: ${GATEWAY_NORTHBOUND_MQTT_ENABLED:false}
-      transport: ${GATEWAY_NORTHBOUND_MQTT_TRANSPORT:paho}
-      url: ${GATEWAY_NORTHBOUND_MQTT_URL:}
-      command-topic: "${GATEWAY_NORTHBOUND_MQTT_COMMAND_TOPIC:gw/+/command}"
-      response-topic: "${GATEWAY_NORTHBOUND_MQTT_RESPONSE_TOPIC:gw/{deviceId}/response}"
-      telemetry-topic: "${GATEWAY_NORTHBOUND_MQTT_TELEMETRY_TOPIC:gw/{deviceId}/telemetry}"
-      client-id: ${GATEWAY_NORTHBOUND_MQTT_CLIENT_ID:gateway-northbound}
-      username: ${GATEWAY_NORTHBOUND_MQTT_USERNAME:}
-      password: ${GATEWAY_NORTHBOUND_MQTT_PASSWORD:}
-    http:
-      webhook-url: ${GATEWAY_NORTHBOUND_WEBHOOK:}
-      timeout-ms: ${GATEWAY_NORTHBOUND_WEBHOOK_TIMEOUT_MS:3000}
-      max-attempts: ${GATEWAY_NORTHBOUND_WEBHOOK_MAX_ATTEMPTS:2}

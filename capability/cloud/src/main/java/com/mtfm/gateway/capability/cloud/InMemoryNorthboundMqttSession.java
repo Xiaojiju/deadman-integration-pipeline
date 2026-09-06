@@ -39,6 +39,11 @@ public final class InMemoryNorthboundMqttSession implements NorthboundMqttSessio
         return subscriptions.size();
     }
 
+    @Override
+    public void close() {
+        subscriptions.clear();
+    }
+
     private record Subscription(String filter, BiConsumer<String, String> handler) {
     }
 }

@@ -222,3 +222,39 @@ export type PageResult<T> = {
   size: number
   totalPages: number
 }
+
+export type NorthboundView = {
+  mqttEnabled: boolean
+  mqttTransport: string
+  mqttUrl: string
+  mqttCommandTopic: string
+  mqttResponseTopic: string
+  mqttTelemetryTopic: string
+  mqttClientId: string
+  mqttUsername: string
+  mqttPassword: string
+  mqttPasswordSet: boolean
+  httpEnabled: boolean
+  httpWebhookUrl: string
+  httpTimeoutMs: number
+  httpMaxAttempts: number
+  mqttLive: boolean
+  mqttError?: string | null
+  httpLive: boolean
+}
+
+export type NorthboundWriteRequest = {
+  mqttEnabled: boolean
+  mqttTransport: string
+  mqttUrl: string
+  mqttCommandTopic: string
+  mqttResponseTopic: string
+  mqttTelemetryTopic: string
+  mqttClientId: string
+  mqttUsername: string
+  mqttPassword: string
+  httpEnabled: boolean
+  httpWebhookUrl: string
+  httpTimeoutMs: number
+  httpMaxAttempts: number
+}

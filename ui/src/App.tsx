@@ -4,6 +4,7 @@ import { toast } from "sonner"
 import { CapabilitiesPanel } from "@/components/capabilities-panel"
 import { ChannelsPanel } from "@/components/channels-panel"
 import { DevicesPanel } from "@/components/devices-panel"
+import { NorthboundPanel } from "@/components/northbound-panel"
 import { ProductsPanel } from "@/components/products-panel"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
@@ -59,7 +60,7 @@ export function App() {
             MTFM Gateway
           </h1>
           <p className="max-w-2xl text-muted-foreground">
-            配置产品、通道与设备，动态加载到运行时，并手动下发南向指令。
+            配置产品、通道、设备与北向双通道，动态加载到运行时，并手动下发南向指令。
           </p>
         </header>
 
@@ -79,6 +80,7 @@ export function App() {
             <TabsTrigger value="devices">设备</TabsTrigger>
             <TabsTrigger value="products">产品</TabsTrigger>
             <TabsTrigger value="channels">通道</TabsTrigger>
+            <TabsTrigger value="northbound">北向</TabsTrigger>
             <TabsTrigger value="capabilities">能力</TabsTrigger>
           </TabsList>
           <TabsContent value="devices" className="mt-4">
@@ -102,6 +104,9 @@ export function App() {
               capabilities={capabilities}
               onChanged={() => void refresh()}
             />
+          </TabsContent>
+          <TabsContent value="northbound" className="mt-4">
+            <NorthboundPanel />
           </TabsContent>
           <TabsContent value="capabilities" className="mt-4">
             <CapabilitiesPanel capabilities={capabilities} />

@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 北向 Hub：channelHint 固定 {@code CLOUD}。先入内存快照，再扇出 MQTT / Webhook。
@@ -23,7 +24,7 @@ public final class CloudPublisher implements Publisher, AutoCloseable {
     private static final Logger LOG = LoggerFactory.getLogger(CloudPublisher.class);
 
     private final CopyOnWriteArrayList<OutboundMessage> published = new CopyOnWriteArrayList<>();
-    private final List<NorthboundSink> sinks;
+    private final AtomicReference<List<NorthboundSink>> sinks;
 
     public CloudPublisher() {
         this(List.of());
@@ -34,7 +35,13 @@ public final class CloudPublisher implements Publisher, AutoCloseable {
     }
 
     public CloudPublisher(List<NorthboundSink> sinks) {
-        this.sinks = sinks == null ? List.of() : List.copyOf(sinks);
+        this.sinks = new AtomicReference<>(sinks == null ? List.of() : List.copyOf(sinks));
+    }
+
+    /** 热更换扇出腿；关闭旧的 {@link AutoCloseable} sink，不打断 publish。 */
+    public void replaceSinks(List<NorthboundSink> next) {
+        List<NorthboundSink> incoming = next == null ? List.of() : List.copyOf(next);
+        closeSinks(sinks.getAndSet(incoming));
     }
 
     @Override
@@ -45,7 +52,7 @@ public final class CloudPublisher implements Publisher, AutoCloseable {
     @Override
     public PublishResult publish(OutboundMessage message) {
         published.add(message);
-        for (NorthboundSink sink : sinks) {
+        for (NorthboundSink sink : sinks.get()) {
             try {
                 sink.publish(message);
             } catch (RuntimeException ex) {
@@ -77,7 +84,14 @@ public final class CloudPublisher implements Publisher, AutoCloseable {
 
     @Override
     public void close() {
-        for (NorthboundSink sink : sinks) {
+        closeSinks(sinks.getAndSet(List.of()));
+    }
+
+    private static void closeSinks(List<NorthboundSink> closing) {
+        if (closing == null || closing.isEmpty()) {
+            return;
+        }
+        for (NorthboundSink sink : closing) {
             if (sink instanceof AutoCloseable closeable) {
                 try {
                     closeable.close();

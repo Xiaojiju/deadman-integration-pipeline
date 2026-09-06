@@ -2,14 +2,8 @@ package com.mtfm.gateway.app;
 
 import com.mtfm.gateway.capability.cloud.CloudCapability;
 import com.mtfm.gateway.capability.cloud.CloudPublisher;
-import com.mtfm.gateway.capability.cloud.HttpWebhookPublisher;
-import com.mtfm.gateway.capability.cloud.InMemoryNorthboundMqttSession;
+import com.mtfm.gateway.capability.cloud.NorthboundBinding;
 import com.mtfm.gateway.capability.cloud.NorthboundCommandPort;
-import com.mtfm.gateway.capability.cloud.NorthboundMqttIngress;
-import com.mtfm.gateway.capability.cloud.NorthboundMqttPublisher;
-import com.mtfm.gateway.capability.cloud.NorthboundMqttSession;
-import com.mtfm.gateway.capability.cloud.NorthboundSink;
-import com.mtfm.gateway.capability.cloud.PahoNorthboundMqttSession;
 import com.mtfm.gateway.capability.hikvision.HikvisionCapability;
 import com.mtfm.gateway.capability.hikvision.HikvisionDriver;
 import com.mtfm.gateway.capability.hikvision.HikvisionExecutor;
@@ -35,6 +29,7 @@ import com.mtfm.gateway.capability.mqtt.device.PahoMqttTransport;
 import com.mtfm.gateway.catalog.apply.CatalogApplyService;
 import com.mtfm.gateway.catalog.apply.CatalogMqttSubscribeRoutes;
 import com.mtfm.gateway.catalog.dto.DeviceCommandRequest;
+import com.mtfm.gateway.catalog.store.CatalogNorthbound;
 import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.plugin.struct.StructInboundPlugin;
 import com.mtfm.gateway.plugin.yaya.YayaInboundPlugin;
@@ -50,9 +45,6 @@ import org.springframework.context.annotation.Primary;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -63,7 +55,7 @@ import java.util.Map;
  * <ol>
  * <li>创建各南向 Executor Bean</li>
  * <li>构建 {@link GatewayPipeline} 并 register Driver + Executor + 入站插件</li>
- * <li>register 北向 {@link CloudPublisher} Hub（CLOUD 通道，扇出 MQTT / Webhook）</li>
+ * <li>register 北向 {@link CloudPublisher} Hub；会话与扇出由 {@link NorthboundBinding} 按 catalog 热切换</li>
  * <li>{@link CatalogApplyService#attach}，最后 {@code pipeline.start()}</li>
  * </ol>
  *
@@ -118,47 +110,20 @@ public class GatewayAssembly {
     }
 
     @Bean(destroyMethod = "close")
-    public NorthboundMqttSession northboundMqttSession(GatewayProperties gatewayProperties) {
-        GatewayProperties.NorthboundMqtt mqtt = gatewayProperties.getNorthbound().getMqtt();
-        if (mqtt.ready() && !"memory".equalsIgnoreCase(mqtt.getTransport())) {
-            return new PahoNorthboundMqttSession(
-                    mqtt.getUrl(), mqtt.getClientId(), mqtt.getUsername(), mqtt.getPassword());
-        }
-        return new InMemoryNorthboundMqttSession();
-    }
-
-    @Bean(destroyMethod = "close")
     @Primary
-    public CloudPublisher cloudPublisher(
-            GatewayProperties gatewayProperties, NorthboundMqttSession northboundMqttSession) {
-        List<NorthboundSink> sinks = new ArrayList<>();
-        GatewayProperties.NorthboundMqtt mqtt = gatewayProperties.getNorthbound().getMqtt();
-        if (mqtt.ready()) {
-            sinks.add(new NorthboundMqttPublisher(
-                    northboundMqttSession, mqtt.getResponseTopic(), mqtt.getTelemetryTopic()));
-        }
-        GatewayProperties.NorthboundHttp http = gatewayProperties.getNorthbound().getHttp();
-        if (http.getWebhookUrl() != null && !http.getWebhookUrl().isBlank()) {
-            sinks.add(new HttpWebhookPublisher(
-                    http.getWebhookUrl(),
-                    http.getMaxAttempts(),
-                    Duration.ofMillis(http.getTimeoutMs())));
-        }
-        return new CloudPublisher(sinks);
+    public CloudPublisher cloudPublisher() {
+        return new CloudPublisher();
     }
 
     /**
-     * 北向 MQTT 命令入站。必须在流水线 attach 之后启动，走 catalog invoke。
+     * 按 catalog 落库配置热切换北向 MQTT / Webhook。须在流水线 attach 之后 apply，入站走 catalog invoke。
      */
-    @Bean(initMethod = "start")
+    @Bean(destroyMethod = "close")
     @DependsOn("gatewayPipeline")
-    public NorthboundMqttIngress northboundMqttIngress(
-            GatewayProperties gatewayProperties,
-            NorthboundMqttSession northboundMqttSession,
-            CatalogApplyService applyService) {
-        if (!gatewayProperties.getNorthbound().getMqtt().ready()) {
-            return new NorthboundMqttIngress(null, null, null);
-        }
+    public NorthboundBinding northboundBinding(
+            CloudPublisher cloudPublisher,
+            CatalogApplyService applyService,
+            CatalogNorthbound catalogNorthbound) {
         NorthboundCommandPort port = command -> applyService.invoke(
                         command.deviceId(),
                         new DeviceCommandRequest(command.functionId(), command.arguments(), command.requestId()))
@@ -168,8 +133,9 @@ public class GatewayAssembly {
                                 command.deviceId(), command.functionId(), error.getMessage());
                     }
                 });
-        return new NorthboundMqttIngress(
-                northboundMqttSession, port, gatewayProperties.getNorthbound().getMqtt().getCommandTopic());
+        NorthboundBinding binding = new NorthboundBinding(cloudPublisher, port);
+        binding.apply(catalogNorthbound.openedSettings());
+        return binding;
     }
 
     /**
