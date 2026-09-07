@@ -12,6 +12,8 @@ import java.time.Instant;
  *
  * <p>{@code connection} 存连接参数 JSON（host/port/username 等）；
  * 子设备寻址（slaveId、topic）在 {@link DeviceEndpointEntity#address}，不进本表。
+ *
+ * <p>示例：{@code code="gw-modbus-1", capabilityType="MODBUS", connection='{"host":"192.168.1.10","port":502}'}
  */
 @TableName(value = "gw_channel", autoResultMap = true)
 public class ChannelEntity {

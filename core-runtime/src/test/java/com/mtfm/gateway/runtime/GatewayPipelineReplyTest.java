@@ -58,8 +58,7 @@ class GatewayPipelineReplyTest {
                 Map.of("seq", "req-open-1"),
                 Map.of(
                         TopicRouteResolver.MQTT_REPLY_TOPIC_HINT, "ydlink/F1111/response",
-                        TopicRouteResolver.MQTT_CORRELATION_PATH_HINT, "seq",
-                        TopicRouteResolver.MQTT_RESULT_PATH_HINT, "ok")))
+                        TopicRouteResolver.MQTT_CORRELATION_PATH_HINT, "seq")))
                 .get(3, TimeUnit.SECONDS);
         assertEquals(ExecutionStatus.ACCEPTED, accepted.status());
 
@@ -102,8 +101,7 @@ class GatewayPipelineReplyTest {
                 Map.of(
                         TopicRouteResolver.MQTT_REPLY_TOPIC_HINT, "ydlink/dev/execute_response",
                         TopicRouteResolver.MQTT_CORRELATION_COMMAND_PATH_HINT, "$deviceCode",
-                        TopicRouteResolver.MQTT_CORRELATION_PATH_HINT, "params.0",
-                        TopicRouteResolver.MQTT_RESULT_PATH_HINT, "params.1")))
+                        TopicRouteResolver.MQTT_CORRELATION_PATH_HINT, "params.0")))
                 .get(3, TimeUnit.SECONDS);
         assertEquals(ExecutionStatus.ACCEPTED, accepted.status());
 
@@ -115,8 +113,7 @@ class GatewayPipelineReplyTest {
                 .payload(Map.of("params", List.of("F123", "1")))
                 .headers(Map.of(
                         "mqtt.reply", "true",
-                        "mqtt.correlationPath", "params.0",
-                        "mqtt.resultPath", "params.1"))
+                        "mqtt.correlationPath", "params.0"))
                 .build()));
         assertTrue(awaitResponse(publisher, Duration.ofSeconds(2)));
 

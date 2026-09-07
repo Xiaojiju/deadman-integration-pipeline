@@ -40,7 +40,6 @@ type ProductFunctionWriteBody = {
   replyTopicSlot?: string
   correlationPath?: string
   correlationCommandPath?: string
-  resultPath?: string
   replyTimeoutMs?: number
   scheduleIntervalMs?: number
   scheduleEnabled?: boolean
@@ -126,7 +125,7 @@ export const catalogApi = {
     ),
   updateChannel: (
     channelId: string,
-    body: { properties?: PropertyItem[]; connection?: Record<string, unknown>; enabled?: boolean }
+    body: { properties?: PropertyItem[]; enabled?: boolean }
   ) =>
     request<ChannelEntity>(`/catalog/channels/${encodeURIComponent(channelId)}`, {
       method: "PUT",
@@ -142,7 +141,6 @@ export const catalogApi = {
     body: {
       name?: string
       functionOverrides?: Record<string, PropertyItem[]>
-      optionOverrides?: Record<string, unknown>
       enabled?: boolean
     }
   ) =>
@@ -251,7 +249,6 @@ export const catalogApi = {
     code: string
     capabilityType: string
     properties?: PropertyItem[]
-    connection?: Record<string, unknown>
     enabled?: boolean
   }) =>
     request<ChannelEntity>("/catalog/channels", {

@@ -14,14 +14,12 @@ import com.mtfm.gateway.spi.port.PipelineIngress;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiConsumer;
 
 /**
@@ -29,6 +27,14 @@ import java.util.function.BiConsumer;
  *
  * <p>bind 时订阅 catalog + READ 路由 topic；入站消息经 {@link PipelineIngress} 进入流水线。
  * execute 使用 {@link TopicRouteResolver#MQTT_PUBLISH_TOPIC_HINT}，READ 无发布 topic 时为 subscribe-only。
+ *
+ * <p>使用示例：
+ * <pre>{@code
+ * MqttExecutor executor = new MqttExecutor(transport);
+ * executor.attach(pipeline, routeCatalog);
+ * executor.bind(new DeviceEndpointBinding(deviceId, channelId, MqttCapability.TYPE, connection, address));
+ * executor.execute(FunctionCommand.of(deviceId, "fn.open", Map.of("value", "open")));
+ * }</pre>
  */
 public final class MqttExecutor implements FunctionExecutor {
 
@@ -38,7 +44,7 @@ public final class MqttExecutor implements FunctionExecutor {
     private volatile PipelineIngress ingress;
     private volatile MqttSubscribeRouteCatalog routeCatalog;
     private final ConcurrentHashMap<String, Bound> bindings = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, CopyOnWriteArrayList<TopicTarget>> topicIndex = new ConcurrentHashMap<>();
+    private final MqttTopicIndex topicIndex = new MqttTopicIndex();
 
     public MqttExecutor(MqttTransport transport) {
         this.transport = transport;
@@ -70,7 +76,7 @@ public final class MqttExecutor implements FunctionExecutor {
                 : routeCatalog.routesForDevice(binding.deviceId(), binding.address().values());
         for (MqttSubscribeRoute route : readRoutes) {
             topics.add(route.topic());
-            registerTopic(binding.channelId(), route.topic(), binding.deviceId(), route.functionId(), route.reply());
+            topicIndex.register(binding.channelId(), route.topic(), binding.deviceId(), route.functionId(), route.reply());
         }
 
         Map<String, BiConsumer<String, String>> handlers = new LinkedHashMap<>();
@@ -136,22 +142,22 @@ public final class MqttExecutor implements FunctionExecutor {
         if (ingress == null) {
             return;
         }
-        List<TopicTarget> targets = lookupTargets(channelId, topic);
+        List<MqttTopicIndex.TopicTarget> targets = topicIndex.lookup(channelId, topic);
         if (targets.isEmpty()) {
             return;
         }
-        List<TopicTarget> mine = targets.stream()
+        List<MqttTopicIndex.TopicTarget> mine = targets.stream()
                 .filter(target -> deviceId.equals(target.deviceId()))
                 .toList();
         if (mine.isEmpty()) {
             return;
         }
-        TopicTarget reply = mine.stream().filter(TopicTarget::reply).findFirst().orElse(null);
-        List<TopicTarget> listens = mine.stream().filter(target -> !target.reply()).toList();
+        MqttTopicIndex.TopicTarget reply = mine.stream().filter(MqttTopicIndex.TopicTarget::reply).findFirst().orElse(null);
+        List<MqttTopicIndex.TopicTarget> listens = mine.stream().filter(target -> !target.reply()).toList();
         if (reply != null) {
             acceptInbound(reply.deviceId(), reply.functionId(), topic, payload, true);
         }
-        for (TopicTarget listen : listens) {
+        for (MqttTopicIndex.TopicTarget listen : listens) {
             acceptInbound(listen.deviceId(), listen.functionId(), topic, payload, false);
         }
     }
@@ -172,37 +178,11 @@ public final class MqttExecutor implements FunctionExecutor {
                 .build());
     }
 
-    private void registerTopic(String channelId, String topic, String deviceId, String functionId, boolean reply) {
-        topicIndex.computeIfAbsent(indexKey(channelId, topic), key -> new CopyOnWriteArrayList<>())
-                .add(new TopicTarget(deviceId, functionId, reply));
-    }
-
     private void dropBinding(Bound previous, String deviceId) {
         previous.handlers().forEach((topic, handler) ->
                 transport.unsubscribe(previous.channelId(), topic, handler));
-        unregisterDevice(previous.channelId(), deviceId);
+        topicIndex.unregisterDevice(previous.channelId(), deviceId);
         transport.release(previous.channelId());
-    }
-
-    private void unregisterDevice(String channelId, String deviceId) {
-        for (Map.Entry<String, CopyOnWriteArrayList<TopicTarget>> entry : topicIndex.entrySet()) {
-            if (!entry.getKey().startsWith(channelId + "\0")) {
-                continue;
-            }
-            entry.getValue().removeIf(target -> deviceId.equals(target.deviceId()));
-            if (entry.getValue().isEmpty()) {
-                topicIndex.remove(entry.getKey(), entry.getValue());
-            }
-        }
-    }
-
-    private List<TopicTarget> lookupTargets(String channelId, String topic) {
-        CopyOnWriteArrayList<TopicTarget> direct = topicIndex.get(indexKey(channelId, topic));
-        return direct == null ? List.of() : List.copyOf(direct);
-    }
-
-    private static String indexKey(String channelId, String topic) {
-        return channelId + "\0" + topic;
     }
 
     /** 无参 → 空串；FILL_ROOT 标量 → 原串；否则 JSON。 */
@@ -214,65 +194,7 @@ public final class MqttExecutor implements FunctionExecutor {
             Object scalar = arguments.get("_value");
             return scalar == null ? "" : String.valueOf(scalar);
         }
-        return toJson(arguments);
-    }
-
-    private static String toJson(Object value) {
-        if (value == null) {
-            return "null";
-        }
-        if (value instanceof String text) {
-            return quote(text);
-        }
-        if (value instanceof Number || value instanceof Boolean) {
-            return String.valueOf(value);
-        }
-        if (value instanceof Map<?, ?> map) {
-            StringBuilder sb = new StringBuilder("{");
-            boolean first = true;
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                if (!first) {
-                    sb.append(',');
-                }
-                first = false;
-                sb.append(quote(String.valueOf(entry.getKey()))).append(':').append(toJson(entry.getValue()));
-            }
-            return sb.append('}').toString();
-        }
-        if (value instanceof Collection<?> collection) {
-            StringBuilder sb = new StringBuilder("[");
-            boolean first = true;
-            for (Object item : collection) {
-                if (!first) {
-                    sb.append(',');
-                }
-                first = false;
-                sb.append(toJson(item));
-            }
-            return sb.append(']').toString();
-        }
-        if (value.getClass().isArray()) {
-            int len = java.lang.reflect.Array.getLength(value);
-            StringBuilder sb = new StringBuilder("[");
-            for (int i = 0; i < len; i++) {
-                if (i > 0) {
-                    sb.append(',');
-                }
-                sb.append(toJson(java.lang.reflect.Array.get(value, i)));
-            }
-            return sb.append(']').toString();
-        }
-        return quote(String.valueOf(value));
-    }
-
-    private static String quote(String text) {
-        String escaped = text
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
-        return "\"" + escaped + "\"";
+        return MqttPayloadJson.stringify(arguments);
     }
 
     private record Bound(String channelId, TopicCatalog catalog, Map<String, BiConsumer<String, String>> handlers) {
@@ -281,6 +203,4 @@ public final class MqttExecutor implements FunctionExecutor {
         }
     }
 
-    private record TopicTarget(String deviceId, String functionId, boolean reply) {
-    }
 }

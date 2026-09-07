@@ -17,16 +17,24 @@ class CatalogFunctionBindingCallerSchemaTest {
 
     @Test
     void callerFieldsExposeCallerFieldNameToInvokeForm() {
-        List<SchemaField> schema = CatalogFunctionBinding.schemaFromWriteFields(List.of(
-                new WriteFieldOption(
-                        "params.0", "动作", "string", "string", true,
-                        List.of(), "none", null, "mapped", null, "action"),
-                new WriteFieldOption(
-                        "params.2", "密码", "string", "string", false,
-                        List.of(), "none", null, "caller", null, "password"),
-                new WriteFieldOption(
-                        "seq", "序列", "string", "string", true,
-                        List.of(), "none", "random_alnum_32", "platform", null)),
+        List<SchemaField> schema = CatalogFunctionSchemas.schemaFromWriteFields(List.of(
+                WriteFieldOption.builder("params.0")
+                        .description("动作")
+                        .ignoreRequest(true)
+                        .source("mapped")
+                        .callerField("action")
+                        .build(),
+                WriteFieldOption.builder("params.2")
+                        .description("密码")
+                        .source("caller")
+                        .callerField("password")
+                        .build(),
+                WriteFieldOption.builder("seq")
+                        .description("序列")
+                        .ignoreRequest(true)
+                        .valueGenerator("random_alnum_32")
+                        .source("platform")
+                        .build()),
                 true);
         assertEquals(List.of("action", "password"), schema.stream().map(SchemaField::name).toList());
         SchemaField password = schema.stream().filter(field -> "password".equals(field.name())).findFirst().orElseThrow();
@@ -40,32 +48,25 @@ class CatalogFunctionBindingCallerSchemaTest {
                 SchemaField.choice("area", "寄存器区", true, "HOLDING", List.of("HOLDING", "COIL")),
                 SchemaField.required("value", FieldType.STRING, "写入值")));
         List<WriteFieldOption> requested = List.of(
-                new WriteFieldOption(
-                        "area",
-                        "寄存器区",
-                        "select",
-                        "select",
-                        true,
-                        List.of(new ValueOption("HOLDING", "HOLDING", "HOLDING", "string", "string", true)),
-                        "none",
-                        null,
-                        "constant",
-                        "HOLDING"),
-                new WriteFieldOption(
-                        "value",
-                        "写入值",
-                        "string",
-                        "string",
-                        true,
-                        List.of(
+                WriteFieldOption.builder("area")
+                        .description("寄存器区")
+                        .accessDataType("select")
+                        .transformDataType("select")
+                        .ignoreRequest(true)
+                        .options(List.of(new ValueOption("HOLDING", "HOLDING", "HOLDING", "string", "string", true)))
+                        .source("constant")
+                        .constant("HOLDING")
+                        .build(),
+                WriteFieldOption.builder("value")
+                        .description("写入值")
+                        .ignoreRequest(true)
+                        .options(List.of(
                                 new ValueOption("1", "open", "开", "string", "string", false),
-                                new ValueOption("0", "close", "关", "string", "string", false)),
-                        "none",
-                        null,
-                        "mapped",
-                        null,
-                        "lock"));
-        List<WriteFieldOption> bound = CatalogFunctionBinding.bindContractFields(
+                                new ValueOption("0", "close", "关", "string", "string", false)))
+                        .source("mapped")
+                        .callerField("lock")
+                        .build());
+        List<WriteFieldOption> bound = CatalogContractFunctionBinding.bindContractFields(
                 template, requested, PayloadMode.VALUE);
         WriteFieldOption value = bound.stream()
                 .filter(field -> "value".equals(field.field()))
@@ -84,23 +85,21 @@ class CatalogFunctionBindingCallerSchemaTest {
 
     @Test
     void applyWriteValueOptionChoicesPutsButtonsOnMappedCallerOnly() {
-        List<SchemaField> schema = CatalogFunctionBinding.schemaFromWriteFields(List.of(
-                new WriteFieldOption(
-                        "value", "写入值", "string", "string", true,
-                        List.of(), "none", null, "mapped", null),
-                new WriteFieldOption(
-                        "note", "备注", "string", "string", false,
-                        List.of(), "none", null, "caller", null, "remark")),
-                true);
-        List<SchemaField> withChoices = CatalogFunctionBinding.applyWriteValueOptionChoices(
+        List<WriteFieldOption> fields = List.of(
+                WriteFieldOption.builder("value")
+                        .description("写入值")
+                        .ignoreRequest(true)
+                        .source("mapped")
+                        .build(),
+                WriteFieldOption.builder("note")
+                        .description("备注")
+                        .source("caller")
+                        .callerField("remark")
+                        .build());
+        List<SchemaField> schema = CatalogFunctionSchemas.schemaFromWriteFields(fields, true);
+        List<SchemaField> withChoices = CatalogFunctionSchemas.applyWriteValueOptionChoices(
                 schema,
-                List.of(
-                        new WriteFieldOption(
-                                "value", "写入值", "string", "string", true,
-                                List.of(), "none", null, "mapped", null),
-                        new WriteFieldOption(
-                                "note", "备注", "string", "string", false,
-                                List.of(), "none", null, "caller", null, "remark")),
+                fields,
                 List.of(
                         new ValueOption("1", "open", "开", "string", "string", false),
                         new ValueOption("0", "close", "关", "string", "string", false)));

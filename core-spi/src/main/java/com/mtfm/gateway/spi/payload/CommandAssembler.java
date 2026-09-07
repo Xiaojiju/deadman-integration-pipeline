@@ -9,6 +9,16 @@ import java.util.Objects;
 
 /**
  * 按字段树 + VALUE 映射 + 设备覆盖 组装协议 payload（不可逆、单向）。
+ *
+ * <p>使用示例：
+ * <pre>{@code
+ * Map<String, Object> payload = CommandAssembler.assemble(new CommandAssembler.Request(
+ *         PayloadMode.VALUE,
+ *         FieldNode.objectRoot("root", List.of()),
+ *         List.of(ValueMapping.patch("open", "开门", List.of(new FieldPatch("params.0", "1")))),
+ *         Map.of("value", "open"),
+ *         Map.of("devId", "35942218C174")));
+ * }</pre>
  */
 public final class CommandAssembler {
 

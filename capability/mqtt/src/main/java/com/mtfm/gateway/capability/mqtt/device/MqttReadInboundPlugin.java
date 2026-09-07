@@ -80,7 +80,7 @@ public final class MqttReadInboundPlugin implements InboundPlugin {
                             .appendTrace(name(), "unpack-" + encoding.wire()));
         }
         Map<String, Object> json = draft.payload().values();
-        if (json.isEmpty() || json.containsKey("text")) {
+        if (json.size() == 1 && json.containsKey("text")) {
             String text = draft.payload().get("text").map(String::valueOf).orElse("");
             json = MqttPayloadJson.parseObject(text);
         }

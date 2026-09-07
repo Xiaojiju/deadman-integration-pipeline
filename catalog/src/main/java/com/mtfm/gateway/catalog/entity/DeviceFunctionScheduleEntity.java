@@ -11,13 +11,26 @@ import java.time.Instant;
 @TableName("gw_device_function_schedule")
 public class DeviceFunctionScheduleEntity {
 
+    /** 主键（雪花 ID）。 */
     @TableId
     private String id;
+
+    /** 所属设备主键，对应 {@link DeviceEntity#id}。 */
     private String deviceId;
+
+    /** 目标功能 ID。 */
     private String functionId;
+
+    /** 是否启用定时下发；{@code null} 表示继承产品功能默认值。 */
     private Boolean enabled;
+
+    /** 下发间隔毫秒；{@code null} 表示继承产品功能默认值。 */
     private Long intervalMs;
+
+    /** 创建时间。 */
     private Instant createdAt;
+
+    /** 最近更新时间。 */
     private Instant updatedAt;
 
     public String getId() {

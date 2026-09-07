@@ -20,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { catalogModeLabel } from "@/lib/catalog-mode"
 import type { CapabilityDescriptor } from "@/lib/types"
 
 type Props = {
@@ -50,11 +51,7 @@ export function CapabilitiesPanel({ capabilities }: Props) {
                 <div className="flex items-center gap-2">
                   <h3 className="font-medium">{cap.capabilityType}</h3>
                   <Badge variant="secondary">
-                    {cap.functionMode === "FIXED"
-                      ? "FIXED"
-                      : cap.functionMode === "CONTRACT"
-                        ? "CONTRACT"
-                        : "OPEN"}
+                    {catalogModeLabel(cap.functionMode)}
                   </Badge>
                   <Badge variant="outline">
                     {cap.functionTemplates?.length ?? 0} 功能

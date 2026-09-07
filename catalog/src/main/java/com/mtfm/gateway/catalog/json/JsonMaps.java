@@ -22,6 +22,9 @@ import java.util.Map;
  */
 public final class JsonMaps {
 
+    /** 兼容列占位。运行时只认 EAV，JSON 列不再双写业务值。 */
+    public static final String EMPTY_OBJECT = "{}";
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };

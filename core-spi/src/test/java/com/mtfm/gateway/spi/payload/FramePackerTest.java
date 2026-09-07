@@ -68,14 +68,24 @@ class FramePackerTest {
 
     @Test
     void littleEndianWritesLowByteFirst() {
-        WriteFieldOption field = new WriteFieldOption(
-                "offset", "", "int", "int", false, List.of(), "none", null, "caller", null, null, 2, "little");
+        WriteFieldOption field = WriteFieldOption.builder("offset")
+                .accessDataType("int")
+                .transformDataType("int")
+                .source("caller")
+                .byteLength(2)
+                .byteOrder("little")
+                .build();
         Map<String, Object> packed = FramePacker.pack(List.of(field), Map.of("offset", 1), PayloadEncoding.HEX);
         assertEquals("01 00", packed.get("_value"));
     }
 
     private static WriteFieldOption field(String name, int byteLength) {
-        return new WriteFieldOption(
-                name, "", "int", "int", false, List.of(), "none", null, "caller", null, null, byteLength, "big");
+        return WriteFieldOption.builder(name)
+                .accessDataType("int")
+                .transformDataType("int")
+                .source("caller")
+                .byteLength(byteLength)
+                .byteOrder("big")
+                .build();
     }
 }

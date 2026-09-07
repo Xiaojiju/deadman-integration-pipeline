@@ -19,8 +19,8 @@ class PayloadDisassemblerTest {
                 "humidity", 60,
                 "nested", Map.of("door", "open"));
         List<WriteFieldOption> fields = List.of(
-                new WriteFieldOption("temp", "温度", "int", "int", false, List.of(), "none", null),
-                new WriteFieldOption("nested.door", "门", "string", "string", false, List.of(), "none", null));
+                WriteFieldOption.builder("temp").description("温度").accessDataType("int").transformDataType("int").build(),
+                WriteFieldOption.builder("nested.door").description("门").build());
         Map<String, Object> points = PayloadDisassembler.disassemble(json, fields);
         assertEquals(25, points.get("temp"));
         assertEquals("open", points.get("nested.door"));
@@ -32,8 +32,8 @@ class PayloadDisassemblerTest {
         assertEquals("F123", PayloadDisassembler.extractPath(json, "params.0"));
         assertEquals("0", PayloadDisassembler.extractPath(json, "params.1"));
         List<WriteFieldOption> fields = List.of(
-                new WriteFieldOption("params.0", "设备编码", "string", "string", false, List.of(), "none", null),
-                new WriteFieldOption("params.1", "成败", "string", "string", false, List.of(), "none", null));
+                WriteFieldOption.builder("params.0").description("设备编码").build(),
+                WriteFieldOption.builder("params.1").description("成败").build());
         Map<String, Object> points = PayloadDisassembler.disassemble(json, fields);
         assertEquals("F123", points.get("params.0"));
         assertEquals("0", points.get("params.1"));
@@ -50,13 +50,13 @@ class PayloadDisassemblerTest {
     void skipsMissingFieldsAndDoesNotFallBack() {
         Map<String, Object> json = Map.of("temp", 25, "other", "x");
         List<WriteFieldOption> fields = List.of(
-                new WriteFieldOption("temp", "温度", "int", "int", false, List.of(), "none", null),
-                new WriteFieldOption("humidity", "湿度", "int", "int", false, List.of(), "none", null));
+                WriteFieldOption.builder("temp").description("温度").accessDataType("int").transformDataType("int").build(),
+                WriteFieldOption.builder("humidity").description("湿度").accessDataType("int").transformDataType("int").build());
         Map<String, Object> points = PayloadDisassembler.disassemble(json, fields);
         assertEquals(1, points.size());
         assertEquals(25, points.get("temp"));
         assertTrue(PayloadDisassembler.disassemble(json, List.of(
-                new WriteFieldOption("missing", "无", "string", "string", false, List.of(), "none", null)
+                WriteFieldOption.builder("missing").description("无").build()
         )).isEmpty());
     }
 
@@ -64,19 +64,15 @@ class PayloadDisassemblerTest {
     void mapsProtocolValueToNorthboundAndRenamesCallerField() {
         Map<String, Object> json = Map.of("params", List.of("F123", "0"));
         List<WriteFieldOption> fields = List.of(
-                new WriteFieldOption(
-                        "params.1",
-                        "成败",
-                        "string",
-                        "string",
-                        true,
-                        List.of(new ValueOption("0", "failed", "失败", "string", "string", false),
-                                new ValueOption("1", "ok", "成功", "string", "string", false)),
-                        "none",
-                        null,
-                        "caller",
-                        null,
-                        "success"));
+                WriteFieldOption.builder("params.1")
+                        .description("成败")
+                        .ignoreRequest(true)
+                        .options(List.of(
+                                new ValueOption("0", "failed", "失败", "string", "string", false),
+                                new ValueOption("1", "ok", "成功", "string", "string", false)))
+                        .source("caller")
+                        .callerField("success")
+                        .build());
         Map<String, Object> points = PayloadDisassembler.disassemble(json, fields);
         assertEquals("failed", points.get("success"));
         assertEquals(1, points.size());
@@ -86,7 +82,7 @@ class PayloadDisassemblerTest {
     void appliesFunctionScaleOnSingleValueField() {
         Map<String, Object> json = Map.of("value", 238);
         List<WriteFieldOption> fields = List.of(
-                new WriteFieldOption("value", "温度", "int", "int", false, List.of(), "none", null));
+                WriteFieldOption.builder("value").description("温度").accessDataType("int").transformDataType("int").build());
         Map<String, Object> points = PayloadDisassembler.project(json, fields, List.of(), "divide", "10");
         assertEquals(23.8, ((Number) points.get("value")).doubleValue(), 0.0001);
     }

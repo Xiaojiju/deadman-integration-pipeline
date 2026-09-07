@@ -1,27 +1,42 @@
 package com.mtfm.gateway.runtime.reply;
 
-import java.time.Duration;
+import com.mtfm.gateway.spi.concurrent.DeadlineDaemon;
+
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.DelayQueue;
-import java.util.concurrent.Delayed;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 /**
  * 设备应答内存等待器。key = deviceId + 关联号，超时回调出站 TIMEOUT。
+ *
+ * <p>使用示例：
+ * <pre>{@code
+ * ReplyWaiter waiter = new ReplyWaiter(4096, 64, pending -> onTimeout(pending));
+ * waiter.start();
+ * waiter.tryRegister(new ReplyWaiter.Pending("req-1", "door-1", "fn.open", "req-1", deadline));
+ * Optional<Pending> hit = waiter.take("door-1", "req-1");
+ * }</pre>
  */
 public final class ReplyWaiter implements AutoCloseable {
 
+    /**
+     * 等待中的命令。
+     *
+     * @param requestId        上游请求 ID
+     * @param deviceId         设备 ID
+     * @param functionId       功能 ID
+     * @param correlationValue 入站关联号（如 MQTT seq / params.0）
+     * @param deadline         超时时刻
+     */
     public record Pending(
             String requestId,
             String deviceId,
             String functionId,
             String correlationValue,
-            String resultPath,
             Instant deadline
     ) {
     }
@@ -32,10 +47,10 @@ public final class ReplyWaiter implements AutoCloseable {
     private final ConcurrentHashMap<String, Pending> pending = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Integer> perDevice = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Integer> perFunction = new ConcurrentHashMap<>();
-    private final DelayQueue<TimeoutTask> timeouts = new DelayQueue<>();
+    private final AtomicInteger global = new AtomicInteger();
+    private final DeadlineDaemon timeouts = new DeadlineDaemon();
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
-    private Thread worker;
 
     public ReplyWaiter(int maxGlobal, int maxPerDevice, Consumer<Pending> onTimeout) {
         if (maxGlobal < 1 || maxPerDevice < 1) {
@@ -50,9 +65,7 @@ public final class ReplyWaiter implements AutoCloseable {
         if (closed.get() || !started.compareAndSet(false, true)) {
             return;
         }
-        worker = new Thread(this::drainTimeouts, "gateway-reply-waiter");
-        worker.setDaemon(true);
-        worker.start();
+        timeouts.start("gateway-reply-waiter", this::onDue);
     }
 
     public boolean tryRegister(Pending item) {
@@ -61,24 +74,22 @@ public final class ReplyWaiter implements AutoCloseable {
             return false;
         }
         String key = key(item.deviceId(), item.correlationValue());
-        synchronized (this) {
-            if (pending.size() >= maxGlobal) {
-                return false;
-            }
-            int deviceCount = perDevice.getOrDefault(item.deviceId(), 0);
-            if (deviceCount >= maxPerDevice) {
-                return false;
-            }
-            if (pending.putIfAbsent(key, item) != null) {
-                return false;
-            }
-            perDevice.put(item.deviceId(), deviceCount + 1);
-            if (item.functionId() != null && !item.functionId().isBlank()) {
-                String functionKey = functionKey(item.deviceId(), item.functionId());
-                perFunction.put(functionKey, perFunction.getOrDefault(functionKey, 0) + 1);
-            }
+        if (!reserveGlobal()) {
+            return false;
         }
-        timeouts.offer(new TimeoutTask(key, item.deadline()));
+        if (!reserveDevice(item.deviceId())) {
+            global.decrementAndGet();
+            return false;
+        }
+        if (pending.putIfAbsent(key, item) != null) {
+            releaseDevice(item.deviceId());
+            global.decrementAndGet();
+            return false;
+        }
+        if (item.functionId() != null && !item.functionId().isBlank()) {
+            perFunction.merge(functionKey(item.deviceId(), item.functionId()), 1, Integer::sum);
+        }
+        timeouts.offer(key, 0L, item.deadline());
         return true;
     }
 
@@ -119,41 +130,56 @@ public final class ReplyWaiter implements AutoCloseable {
         pending.clear();
         perDevice.clear();
         perFunction.clear();
-        timeouts.clear();
-        if (worker != null) {
-            worker.interrupt();
-        }
+        global.set(0);
+        timeouts.close();
         started.set(false);
     }
 
-    private void drainTimeouts() {
-        while (!closed.get()) {
-            try {
-                TimeoutTask task = timeouts.poll(50, TimeUnit.MILLISECONDS);
-                if (task == null) {
-                    continue;
-                }
-                Pending expired = pending.remove(task.key());
-                if (expired == null) {
-                    continue;
-                }
-                decrementOccupancy(expired);
-                onTimeout.accept(expired);
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-                return;
-            } catch (RuntimeException ignored) {
-                // 超时回调失败不影响其它等待项
-            }
+    private void onDue(DeadlineDaemon.Task task) {
+        Pending expired = pending.remove(task.key());
+        if (expired == null) {
+            return;
         }
+        decrementOccupancy(expired);
+        onTimeout.accept(expired);
     }
 
     private void decrementOccupancy(Pending item) {
+        global.decrementAndGet();
         decrementDevice(item.deviceId());
         if (item.functionId() != null && !item.functionId().isBlank()) {
             perFunction.computeIfPresent(functionKey(item.deviceId(), item.functionId()),
                     (key, count) -> count <= 1 ? null : count - 1);
         }
+    }
+
+    private boolean reserveGlobal() {
+        while (true) {
+            int current = global.get();
+            if (current >= maxGlobal) {
+                return false;
+            }
+            if (global.compareAndSet(current, current + 1)) {
+                return true;
+            }
+        }
+    }
+
+    private boolean reserveDevice(String deviceId) {
+        boolean[] accepted = {true};
+        perDevice.compute(deviceId, (key, count) -> {
+            int n = count == null ? 0 : count;
+            if (n >= maxPerDevice) {
+                accepted[0] = false;
+                return count;
+            }
+            return n + 1;
+        });
+        return accepted[0];
+    }
+
+    private void releaseDevice(String deviceId) {
+        decrementDevice(deviceId);
     }
 
     private void decrementDevice(String deviceId) {
@@ -166,17 +192,5 @@ public final class ReplyWaiter implements AutoCloseable {
 
     static String functionKey(String deviceId, String functionId) {
         return deviceId + "\0" + functionId;
-    }
-
-    private record TimeoutTask(String key, Instant deadline) implements Delayed {
-        @Override
-        public long getDelay(TimeUnit unit) {
-            return unit.convert(Duration.between(Instant.now(), deadline).toNanos(), TimeUnit.NANOSECONDS);
-        }
-
-        @Override
-        public int compareTo(Delayed other) {
-            return Long.compare(getDelay(TimeUnit.NANOSECONDS), other.getDelay(TimeUnit.NANOSECONDS));
-        }
     }
 }

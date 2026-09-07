@@ -46,4 +46,10 @@ public interface DriverRegistry {
 
     /** 按能力类型查找已注册的南向执行器。 */
     Optional<FunctionExecutor> findExecutor(String capabilityType);
+
+    /** 按能力类型查找已注册的南向驱动。 */
+    Optional<Driver> findDriver(String capabilityType);
+
+    /** 已 load 设备绑定的南向能力类型。 */
+    Optional<String> findCapabilityType(String deviceId);
 }

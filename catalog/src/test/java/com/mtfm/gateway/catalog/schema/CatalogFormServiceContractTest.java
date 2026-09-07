@@ -79,7 +79,7 @@ class CatalogFormServiceContractTest {
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> forms.createFunction("p1", request("light.switch", "WRITE", "VALUE",
-                        List.of(new WriteFieldOption("topic", "x", "string", "string", false, List.of(), "none")),
+                        List.of(WriteFieldOption.builder("topic").description("x").build()),
                         null)));
         assertTrue(ex.getMessage().contains("不允许自定义字段"));
     }
@@ -92,9 +92,14 @@ class CatalogFormServiceContractTest {
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> forms.createFunction("p1", request("light.switch", "WRITE", "VALUE",
-                        List.of(new WriteFieldOption(
-                                "offset", "起始地址", "int", "int", true, List.of(), "none",
-                                null, "mapped", null, "value")),
+                        List.of(WriteFieldOption.builder("offset")
+                                .description("起始地址")
+                                .accessDataType("int")
+                                .transformDataType("int")
+                                .ignoreRequest(true)
+                                .source("mapped")
+                                .callerField("value")
+                                .build()),
                         null)));
         assertTrue(ex.getMessage().contains("不允许 mapped"));
     }
@@ -168,6 +173,14 @@ class CatalogFormServiceContractTest {
                 null,
                 null,
                 payloadMode,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null);
     }
 

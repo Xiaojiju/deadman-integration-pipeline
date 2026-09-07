@@ -9,8 +9,9 @@ import com.mtfm.gateway.catalog.mybatis.JsonColumnTypeHandler;
 /**
  * 产品功能实体：挂在产品下的逻辑功能定义。
  *
- * <p>{@code optionSchema} 存功能参数 JSON（表单默认值）；
- * {@code protocolMapping} 存协议层映射 JSON（如寄存器 offset，不含从站号）。
+ * <p>{@code optionSchema} 是兼容列；运行时只认 EAV。
+ *
+ * <p>示例：{@code functionId="fn.read", accessType="READ"}
  */
 @TableName(value = "gw_product_function", autoResultMap = true)
 public class ProductFunctionEntity {
@@ -47,13 +48,6 @@ public class ProductFunctionEntity {
     @TableField(typeHandler = JsonColumnTypeHandler.class)
     private String optionSchema;
 
-    /**
-     * 协议映射 JSON，不含寻址片（从站号 / topic 段等）。
-     * <p>例：{@code {"holdingOffset":100}}。
-     */
-    @TableField(typeHandler = JsonColumnTypeHandler.class)
-    private String protocolMapping;
-
     /** 同产品内排序，数值越小越靠前。 */
     private Integer sortIndex;
 
@@ -83,9 +77,6 @@ public class ProductFunctionEntity {
 
     /** 下发载荷中与回包关联的字段 path；空则先试 correlationPath，再 requestId。 */
     private String correlationCommandPath;
-
-    /** 回包成败字段 path。 */
-    private String resultPath;
 
     /** 等待设备应答毫秒。 */
     private Integer replyTimeoutMs;
@@ -150,14 +141,6 @@ public class ProductFunctionEntity {
 
     public void setOptionSchema(String optionSchema) {
         this.optionSchema = optionSchema;
-    }
-
-    public String getProtocolMapping() {
-        return protocolMapping;
-    }
-
-    public void setProtocolMapping(String protocolMapping) {
-        this.protocolMapping = protocolMapping;
     }
 
     public Integer getSortIndex() {
@@ -238,14 +221,6 @@ public class ProductFunctionEntity {
 
     public void setCorrelationCommandPath(String correlationCommandPath) {
         this.correlationCommandPath = correlationCommandPath;
-    }
-
-    public String getResultPath() {
-        return resultPath;
-    }
-
-    public void setResultPath(String resultPath) {
-        this.resultPath = resultPath;
     }
 
     public Integer getReplyTimeoutMs() {

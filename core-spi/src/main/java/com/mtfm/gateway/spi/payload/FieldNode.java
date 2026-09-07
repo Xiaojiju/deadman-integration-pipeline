@@ -8,6 +8,13 @@ import java.util.List;
 /**
  * 协议 JSON 字段树节点。
  *
+ * <p>使用示例：
+ * <pre>{@code
+ * FieldNode root = FieldNode.objectRoot("root", List.of(
+ *         FieldNode.leaf("seq", "string", FieldSource.PLATFORM, "none", "uuid", null, ""),
+ *         FieldNode.leaf("op", "string", FieldSource.CONSTANT, "none", null, "open", "")));
+ * }</pre>
+ *
  * @param name            字段名（根节点可为 root）
  * @param type            FieldType wire code
  * @param format          FieldFormat wire code
@@ -64,59 +71,6 @@ public record FieldNode(
         scaleOperand = (scaleOperand == null || scaleOperand.isBlank()) ? null : scaleOperand.trim();
     }
 
-    /** 兼容旧 13 参构造（无 scale）。 */
-    public FieldNode(
-            String name,
-            String type,
-            String format,
-            FieldSource source,
-            String valueGenerator,
-            Object constant,
-            List<FieldNode> children,
-            FieldNode element,
-            List<String> choices,
-            String description,
-            Integer byteLength,
-            String byteOrder,
-            String callerField) {
-        this(name, type, format, source, valueGenerator, constant, children, element, choices, description,
-                byteLength, byteOrder, callerField, null, null);
-    }
-
-    /** 兼容旧 12 参构造（无 callerField）。 */
-    public FieldNode(
-            String name,
-            String type,
-            String format,
-            FieldSource source,
-            String valueGenerator,
-            Object constant,
-            List<FieldNode> children,
-            FieldNode element,
-            List<String> choices,
-            String description,
-            Integer byteLength,
-            String byteOrder) {
-        this(name, type, format, source, valueGenerator, constant, children, element, choices, description,
-                byteLength, byteOrder, null);
-    }
-
-    /** 兼容旧 10 参构造（无 byteLength / byteOrder）。 */
-    public FieldNode(
-            String name,
-            String type,
-            String format,
-            FieldSource source,
-            String valueGenerator,
-            Object constant,
-            List<FieldNode> children,
-            FieldNode element,
-            List<String> choices,
-            String description) {
-        this(name, type, format, source, valueGenerator, constant, children, element, choices, description, null, null,
-                null);
-    }
-
     public boolean isObject() {
         if (isArray()) {
             return false;
@@ -131,7 +85,7 @@ public record FieldNode(
     /** 创建 object 根。 */
     public static FieldNode objectRoot(String name, List<FieldNode> children) {
         return new FieldNode(name, "object", "none", FieldSource.CALLER, null, null, children, null, List.of(), "",
-                null, null, null);
+                null, null, null, null, null);
     }
 
     /** 扁平字段叶子。 */
@@ -145,6 +99,6 @@ public record FieldNode(
             String description) {
         return new FieldNode(
                 name, type, format, source, valueGenerator, constant,
-                List.of(), null, List.of(), description, null, null);
+                List.of(), null, List.of(), description, null, null, null, null, null);
     }
 }

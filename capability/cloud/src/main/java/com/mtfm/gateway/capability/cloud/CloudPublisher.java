@@ -9,21 +9,29 @@ import com.mtfm.gateway.spi.model.TelemetryEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * 北向 Hub：channelHint 固定 {@code CLOUD}。先入内存快照，再扇出 MQTT / Webhook。
+ * 北向 Hub：channelHint 固定 {@code CLOUD}。先入有界内存快照，再扇出 MQTT / Webhook。
  *
  * <p>扇出失败只打日志，始终返回 success，避免 Egress 重试导致重复投递。
+ *
+ * <p>使用示例：
+ * <pre>{@code
+ * CloudPublisher hub = new CloudPublisher(List.of(mqttSink, webhookSink));
+ * PublishResult result = hub.publish(outboundMessage);
+ * }</pre>
  */
 public final class CloudPublisher implements Publisher, AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(CloudPublisher.class);
 
-    private final CopyOnWriteArrayList<OutboundMessage> published = new CopyOnWriteArrayList<>();
+    static final int SNAPSHOT_LIMIT = 256;
+
+    private final ArrayDeque<OutboundMessage> published = new ArrayDeque<>();
     private final AtomicReference<List<NorthboundSink>> sinks;
 
     public CloudPublisher() {
@@ -51,7 +59,7 @@ public final class CloudPublisher implements Publisher, AutoCloseable {
 
     @Override
     public PublishResult publish(OutboundMessage message) {
-        published.add(message);
+        remember(message);
         for (NorthboundSink sink : sinks.get()) {
             try {
                 sink.publish(message);
@@ -63,11 +71,13 @@ public final class CloudPublisher implements Publisher, AutoCloseable {
     }
 
     public List<OutboundMessage> snapshot() {
-        return new ArrayList<>(published);
+        synchronized (published) {
+            return new ArrayList<>(published);
+        }
     }
 
     public List<CommandResponse> responses() {
-        return published.stream()
+        return snapshot().stream()
                 .map(OutboundMessage::body)
                 .filter(CommandResponse.class::isInstance)
                 .map(CommandResponse.class::cast)
@@ -75,11 +85,20 @@ public final class CloudPublisher implements Publisher, AutoCloseable {
     }
 
     public List<TelemetryEvent> telemetry() {
-        return published.stream()
+        return snapshot().stream()
                 .map(OutboundMessage::body)
                 .filter(TelemetryEvent.class::isInstance)
                 .map(TelemetryEvent.class::cast)
                 .toList();
+    }
+
+    private void remember(OutboundMessage message) {
+        synchronized (published) {
+            if (published.size() >= SNAPSHOT_LIMIT) {
+                published.removeFirst();
+            }
+            published.addLast(message);
+        }
     }
 
     @Override

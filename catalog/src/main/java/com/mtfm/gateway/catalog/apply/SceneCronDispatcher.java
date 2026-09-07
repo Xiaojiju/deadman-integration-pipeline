@@ -4,6 +4,7 @@ import com.mtfm.gateway.catalog.action.ActionKinds;
 import com.mtfm.gateway.catalog.entity.ActionGroupEntity;
 import com.mtfm.gateway.catalog.entity.SceneTriggerEntity;
 import com.mtfm.gateway.catalog.store.CatalogActionRepository;
+import com.mtfm.gateway.spi.concurrent.DeadlineDaemon;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
@@ -11,15 +12,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
-import java.util.concurrent.DelayQueue;
-import java.util.concurrent.Delayed;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -32,11 +29,8 @@ public class SceneCronDispatcher implements AutoCloseable {
 
     private final CatalogActionRepository actions;
     private final ActionGroupExecutor executor;
-    private final DelayQueue<Tick> queue = new DelayQueue<>();
+    private final DeadlineDaemon daemon = new DeadlineDaemon();
     private final AtomicLong generation = new AtomicLong();
-    private final AtomicBoolean started = new AtomicBoolean(false);
-    private final AtomicBoolean closed = new AtomicBoolean(false);
-    private Thread worker;
 
     public SceneCronDispatcher(CatalogActionRepository actions, ActionGroupExecutor executor) {
         this.actions = actions;
@@ -45,18 +39,13 @@ public class SceneCronDispatcher implements AutoCloseable {
 
     @PostConstruct
     public void start() {
-        if (closed.get() || !started.compareAndSet(false, true)) {
-            return;
-        }
+        daemon.start("gateway-scene-cron", this::onDue);
         reload();
-        worker = new Thread(this::drain, "gateway-scene-cron");
-        worker.setDaemon(true);
-        worker.start();
     }
 
     public synchronized void reload() {
         long gen = generation.incrementAndGet();
-        queue.clear();
+        daemon.clear();
         Instant now = Instant.now();
         List<SceneTriggerEntity> timers;
         try {
@@ -65,73 +54,80 @@ public class SceneCronDispatcher implements AutoCloseable {
             LOG.warn("场景定时未加载（请确认已执行 V14 SQL）: {}", ex.getMessage());
             return;
         }
+        Map<String, ActionGroupEntity> groups = actions.findGroupsByIds(
+                timers.stream().map(SceneTriggerEntity::getGroupId).toList());
         for (SceneTriggerEntity trigger : timers) {
-            ActionGroupEntity group = actions.findGroup(trigger.getGroupId()).orElse(null);
-            if (group == null || Boolean.FALSE.equals(group.getEnabled())
-                    || !ActionKinds.SCENE.equalsIgnoreCase(group.getKind())) {
-                continue;
-            }
-            Instant next = nextFire(trigger, now);
-            if (next == null) {
-                continue;
-            }
-            queue.offer(new Tick(trigger.getId(), trigger.getGroupId(), gen, next));
+            schedule(trigger, groups.get(trigger.getGroupId()), gen, now);
         }
+    }
+
+    public synchronized void refreshGroup(String groupId) {
+        removeGroup(groupId);
+        if (groupId == null || groupId.isBlank()) {
+            return;
+        }
+        ActionGroupEntity group = actions.findGroup(groupId).orElse(null);
+        SceneTriggerEntity trigger = actions.findTrigger(groupId).orElse(null);
+        if (trigger != null && Boolean.TRUE.equals(trigger.getEnabled())
+                && ActionKinds.TIMER.equalsIgnoreCase(trigger.getMode())) {
+            schedule(trigger, group, generation.get(), Instant.now());
+        }
+    }
+
+    public synchronized void removeGroup(String groupId) {
+        if (groupId == null) {
+            return;
+        }
+        daemon.removeIf(task -> groupId.equals(task.key()));
     }
 
     @PreDestroy
     @Override
     public void close() {
-        if (!closed.compareAndSet(false, true)) {
-            return;
-        }
-        queue.clear();
-        if (worker != null) {
-            worker.interrupt();
-        }
-        started.set(false);
+        daemon.close();
     }
 
-    private void drain() {
-        while (!closed.get()) {
-            try {
-                Tick tick = queue.poll(50, TimeUnit.MILLISECONDS);
-                if (tick == null) {
-                    continue;
-                }
-                if (tick.gen() != generation.get()) {
-                    continue;
-                }
-                SceneTriggerEntity trigger = actions.findTrigger(tick.groupId()).orElse(null);
-                if (trigger == null || !tick.triggerId().equals(trigger.getId())
-                        || Boolean.FALSE.equals(trigger.getEnabled())
-                        || !ActionKinds.TIMER.equalsIgnoreCase(trigger.getMode())) {
-                    continue;
-                }
-                try {
-                    executor.execute(tick.groupId(), ActionKinds.SOURCE_SCENE)
-                            .whenComplete((view, error) -> {
-                                if (error != null) {
-                                    LOG.warn("场景定时执行失败 group={}: {}", tick.groupId(), error.getMessage());
-                                }
-                            });
-                } catch (RuntimeException ex) {
-                    LOG.warn("场景定时提交失败 group={}: {}", tick.groupId(), ex.getMessage());
-                }
-                if (ActionKinds.ONCE.equalsIgnoreCase(trigger.getTimerKind())) {
-                    trigger.setEnabled(false);
-                    actions.saveTrigger(trigger);
-                    continue;
-                }
-                Instant next = nextFire(trigger, Instant.now().plusMillis(500));
-                if (next != null) {
-                    queue.offer(new Tick(trigger.getId(), trigger.getGroupId(), tick.gen(), next));
-                }
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-                return;
-            }
+    private void onDue(DeadlineDaemon.Task task) {
+        if (task.generation() != generation.get()) {
+            return;
         }
+        SceneTriggerEntity trigger = actions.findTrigger(task.key()).orElse(null);
+        if (trigger == null
+                || Boolean.FALSE.equals(trigger.getEnabled())
+                || !ActionKinds.TIMER.equalsIgnoreCase(trigger.getMode())) {
+            return;
+        }
+        try {
+            executor.execute(task.key(), ActionKinds.SOURCE_SCENE)
+                    .whenComplete((view, error) -> {
+                        if (error != null) {
+                            LOG.warn("场景定时执行失败 group={}: {}", task.key(), error.getMessage());
+                        }
+                    });
+        } catch (RuntimeException ex) {
+            LOG.warn("场景定时提交失败 group={}: {}", task.key(), ex.getMessage());
+        }
+        if (ActionKinds.ONCE.equalsIgnoreCase(trigger.getTimerKind())) {
+            trigger.setEnabled(false);
+            actions.saveTrigger(trigger);
+            return;
+        }
+        Instant next = nextFire(trigger, Instant.now().plusMillis(500));
+        if (next != null) {
+            daemon.offer(task.key(), task.generation(), next);
+        }
+    }
+
+    private void schedule(SceneTriggerEntity trigger, ActionGroupEntity group, long gen, Instant now) {
+        if (group == null || Boolean.FALSE.equals(group.getEnabled())
+                || !ActionKinds.SCENE.equalsIgnoreCase(group.getKind())) {
+            return;
+        }
+        Instant next = nextFire(trigger, now);
+        if (next == null) {
+            return;
+        }
+        daemon.offer(trigger.getGroupId(), gen, next);
     }
 
     public static Instant nextFire(SceneTriggerEntity trigger, Instant now) {
@@ -186,18 +182,6 @@ public class SceneCronDispatcher implements AutoCloseable {
         } catch (RuntimeException ex) {
             LOG.warn("无法解析单次时间: {}", text);
             return null;
-        }
-    }
-
-    private record Tick(String triggerId, String groupId, long gen, Instant deadline) implements Delayed {
-        @Override
-        public long getDelay(TimeUnit unit) {
-            return unit.convert(Duration.between(Instant.now(), deadline).toNanos(), TimeUnit.NANOSECONDS);
-        }
-
-        @Override
-        public int compareTo(Delayed other) {
-            return Long.compare(getDelay(TimeUnit.NANOSECONDS), other.getDelay(TimeUnit.NANOSECONDS));
         }
     }
 }

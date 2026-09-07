@@ -23,19 +23,6 @@ public record DeviceView(
         boolean loaded
 ) {
 
-    /** 兼容旧 8 参（未加载）。 */
-    public DeviceView(
-            String id,
-            String deviceCode,
-            String productId,
-            String name,
-            Map<String, List<PropertyItem>> functionOverrides,
-            Boolean enabled,
-            Instant createdAt,
-            Instant updatedAt) {
-        this(id, deviceCode, productId, name, functionOverrides, enabled, createdAt, updatedAt, false);
-    }
-
     public DeviceView withLoaded(boolean loaded) {
         return new DeviceView(
                 id, deviceCode, productId, name, functionOverrides, enabled, createdAt, updatedAt, loaded);

@@ -5,6 +5,7 @@ import com.mtfm.gateway.spi.property.ValueAccessType;
 import com.mtfm.gateway.spi.property.ValueOption;
 import com.mtfm.gateway.spi.property.WriteFieldOption;
 import com.mtfm.gateway.spi.property.PropertyItem;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
@@ -22,18 +23,21 @@ public class CatalogPropertyRepository {
     private final CatalogFunctionPropertyRepository functions;
     private final CatalogFunctionOptionRepository options;
     private final CatalogDeviceOverrideRepository devices;
+    private final CatalogRevision revision;
 
     public CatalogPropertyRepository(
             CatalogChannelPropertyRepository channels,
             CatalogEndpointPropertyRepository endpoints,
             CatalogFunctionPropertyRepository functions,
             CatalogFunctionOptionRepository options,
-            CatalogDeviceOverrideRepository devices) {
+            CatalogDeviceOverrideRepository devices,
+            @Autowired(required = false) CatalogRevision revision) {
         this.channels = channels;
         this.endpoints = endpoints;
         this.functions = functions;
         this.options = options;
         this.devices = devices;
+        this.revision = revision;
     }
 
     // ——— Channel ———
@@ -48,10 +52,12 @@ public class CatalogPropertyRepository {
 
     public void replaceChannelProperties(String channelId, List<PropertyItem> items) {
         channels.replace(channelId, items);
+        bump();
     }
 
     public void deleteChannelProperties(String channelId) {
         channels.delete(channelId);
+        bump();
     }
 
     // ——— Endpoint ———
@@ -66,10 +72,12 @@ public class CatalogPropertyRepository {
 
     public void replaceEndpointProperties(String endpointId, List<PropertyItem> items) {
         endpoints.replace(endpointId, items);
+        bump();
     }
 
     public void deleteEndpointProperties(String endpointId) {
         endpoints.delete(endpointId);
+        bump();
     }
 
     // ——— Function property ———
@@ -84,10 +92,12 @@ public class CatalogPropertyRepository {
 
     public void replaceFunctionProperties(String productFunctionId, List<PropertyItem> items) {
         functions.replace(productFunctionId, items);
+        bump();
     }
 
     public void deleteFunctionProperties(String productFunctionId) {
         functions.delete(productFunctionId);
+        bump();
     }
 
     // ——— Device override ———
@@ -106,14 +116,17 @@ public class CatalogPropertyRepository {
 
     public void replaceDeviceOverrides(String deviceId, String functionId, List<PropertyItem> items) {
         devices.replaceFunctionOverrides(deviceId, functionId, items);
+        bump();
     }
 
     public void replaceAllDeviceOverrides(String deviceId, Map<String, List<PropertyItem>> byFunction) {
         devices.replaceAllFunctionOverrides(deviceId, byFunction);
+        bump();
     }
 
     public void deleteDeviceOverrides(String deviceId) {
         devices.deleteAll(deviceId);
+        bump();
     }
 
     public Map<String, Object> listDeviceFieldOverrides(String deviceId, String functionId) {
@@ -130,10 +143,12 @@ public class CatalogPropertyRepository {
 
     public void replaceDeviceFieldOverrides(String deviceId, String functionId, Map<String, Object> overrides) {
         devices.replaceFieldOverrides(deviceId, functionId, overrides);
+        bump();
     }
 
     public void replaceDeviceTopicOverrides(String deviceId, String functionId, Map<String, String> overrides) {
         devices.replaceTopicOverrides(deviceId, functionId, overrides);
+        bump();
     }
 
     // ——— Write / Read options ———
@@ -168,30 +183,43 @@ public class CatalogPropertyRepository {
             List<ValueOption> valueOptions,
             List<WriteFieldOption> writeFields) {
         options.replaceWriteOptions(productFunctionId, accessType, valueOptions, writeFields);
+        bump();
     }
 
     public void replaceReadFields(String productFunctionId, List<WriteFieldOption> readFieldsList) {
         options.replaceReadFields(productFunctionId, readFieldsList);
+        bump();
     }
 
     public void replaceReadValueOptions(String productFunctionId, List<ValueOption> options) {
         this.options.replaceReadValueOptions(productFunctionId, options);
+        bump();
     }
 
     public void deleteWriteOptions(String productFunctionId) {
         options.deleteWriteOptions(productFunctionId);
+        bump();
     }
 
     public void deleteReadValueOptions(String productFunctionId) {
         options.deleteReadValueOptions(productFunctionId);
+        bump();
     }
 
     public void deleteReadFields(String productFunctionId) {
         options.deleteReadFields(productFunctionId);
+        bump();
     }
 
     public void deleteAllForProductFunction(String productFunctionId) {
         deleteFunctionProperties(productFunctionId);
         options.deleteAll(productFunctionId);
+        bump();
+    }
+
+    private void bump() {
+        if (revision != null) {
+            revision.bump();
+        }
     }
 }

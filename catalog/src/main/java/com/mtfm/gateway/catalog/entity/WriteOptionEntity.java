@@ -3,16 +3,32 @@ package com.mtfm.gateway.catalog.entity;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
+/**
+ * WRITE 功能 STRUCT 模式下的单个写字段定义。
+ */
 @TableName("gw_write_option")
 public class WriteOptionEntity {
 
+    /** 主键（雪花 ID）。 */
     @TableId
     private String id;
+
+    /** 所属产品功能主键，对应 {@link ProductFunctionEntity#id}。 */
     private String productFunctionId;
+
+    /** 协议字段名或 path。 */
     private String field;
+
+    /** 字段说明，可空。 */
     private String description;
+
+    /** 访问层数据类型 wire code。 */
     private String accessDataType;
+
+    /** 传输层数据类型 wire code。 */
     private String transformDataType;
+
+    /** 是否忽略调用方入参（平台侧固定填充）。 */
     private Boolean ignoreRequest;
     /** UI 采值约束（FieldFormat wire）。 */
     private String format;

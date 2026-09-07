@@ -31,7 +31,6 @@ public record ProductFunctionView(
         String replyTopicSlot,
         String correlationPath,
         String correlationCommandPath,
-        String resultPath,
         Integer replyTimeoutMs,
         Long scheduleIntervalMs,
         Boolean scheduleEnabled,

@@ -70,8 +70,7 @@ class MqttReplyLoopTest {
                 Map.of(
                         TopicRouteResolver.MQTT_PUBLISH_TOPIC_HINT, "ydlink/F1111/execute",
                         TopicRouteResolver.MQTT_REPLY_TOPIC_HINT, "ydlink/F1111/response",
-                        TopicRouteResolver.MQTT_CORRELATION_PATH_HINT, "seq",
-                        TopicRouteResolver.MQTT_RESULT_PATH_HINT, "ok")))
+                        TopicRouteResolver.MQTT_CORRELATION_PATH_HINT, "seq")))
                 .get(3, TimeUnit.SECONDS);
         assertEquals(ExecutionStatus.ACCEPTED, accepted.status());
         assertEquals("req-open-1", accepted.requestId());
@@ -207,45 +206,28 @@ class MqttReplyLoopTest {
     }
 
     private static FunctionDef openFunction() {
-        return new FunctionDef(
-                "fn.open",
-                "WRITE",
-                AccessPermission.WRITE.code(),
-                null,
-                List.of(),
-                ValueAccessType.STRUCT,
-                List.of(),
-                List.of(),
-                List.of(
-                        field("seq"),
-                        field("ok")),
-                List.of(),
-                PayloadEncoding.JSON,
-                "response",
-                "seq",
-                "ok",
-                2000,
-                null,
-                false);
+        return FunctionDef.builder("fn.open")
+                .accessType("WRITE")
+                .accessPermission(AccessPermission.WRITE.code())
+                .writeAccessType(ValueAccessType.STRUCT)
+                .readFields(List.of(field("seq"), field("ok")))
+                .payloadEncoding(PayloadEncoding.JSON)
+                .reply(FunctionDef.ReplySpec.of("response", "seq", 2000))
+                .build();
     }
 
     private static FunctionDef listenFunction() {
-        return new FunctionDef(
-                "fn.listen",
-                "READ",
-                AccessPermission.READ.code(),
-                null,
-                List.of(),
-                ValueAccessType.STRUCT,
-                List.of(),
-                List.of(),
-                List.of(field("seq"), field("ok")),
-                List.of(),
-                PayloadEncoding.JSON);
+        return FunctionDef.builder("fn.listen")
+                .accessType("READ")
+                .accessPermission(AccessPermission.READ.code())
+                .writeAccessType(ValueAccessType.STRUCT)
+                .readFields(List.of(field("seq"), field("ok")))
+                .payloadEncoding(PayloadEncoding.JSON)
+                .build();
     }
 
     private static WriteFieldOption field(String name) {
-        return new WriteFieldOption(name, "", "string", "string", false, List.of());
+        return WriteFieldOption.builder(name).build();
     }
 
     private static DeviceEndpointBinding binding(String deviceId, String channelId, Map<String, Object> address) {

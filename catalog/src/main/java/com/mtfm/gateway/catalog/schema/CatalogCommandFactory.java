@@ -11,6 +11,8 @@ import com.mtfm.gateway.spi.payload.TopicCatalog;
 import com.mtfm.gateway.spi.payload.TopicRouteResolver;
 import com.mtfm.gateway.spi.property.PropertySchemas;
 
+import org.springframework.stereotype.Component;
+
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -18,6 +20,7 @@ import java.util.UUID;
 /**
  * 将目录配置装配为运行时 {@link FunctionCommand}。
  */
+@Component
 final class CatalogCommandFactory {
 
     private final CatalogStore store;

@@ -21,7 +21,7 @@ public final class CloudCapability {
             TYPE,
             List.of(
                     SchemaField.required("host", FieldType.STRING, "云端 Broker 主机"),
-                    SchemaField.optional("port", FieldType.INT, "端口", 1883),
+                    SchemaField.optional("port", FieldType.INT, "端口", 1883).range(1, 65535),
                     SchemaField.optional("username", FieldType.STRING, "用户名，凭证建议来自环境变量"),
                     SchemaField.optionalSecret("password", "密码，凭证建议来自环境变量"),
                     SchemaField.optional("clientId", FieldType.STRING, "云端客户端 ID")),

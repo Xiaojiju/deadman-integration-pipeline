@@ -2,6 +2,8 @@ package com.mtfm.gateway.spi.port;
 
 import com.mtfm.gateway.spi.capability.Publisher;
 
+import java.util.Optional;
+
 /**
  * 北向发布器登记端口。同一 {@code channelHint} 只绑一个 {@link com.mtfm.gateway.spi.capability.Publisher}。
  *
@@ -14,4 +16,7 @@ public interface PublisherRegistry {
 
     /** 注册北向发布器。 */
     boolean register(Publisher publisher);
+
+    /** 按 channelHint 查找发布器。 */
+    Optional<Publisher> findPublisher(String channelHint);
 }

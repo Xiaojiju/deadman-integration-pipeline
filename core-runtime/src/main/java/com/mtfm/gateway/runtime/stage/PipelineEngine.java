@@ -1,6 +1,5 @@
 package com.mtfm.gateway.runtime.stage;
 
-import com.mtfm.gateway.runtime.registry.DefaultRegistries;
 import com.mtfm.gateway.runtime.seal.DefaultEnvelopeSealer;
 import com.mtfm.gateway.spi.capability.FunctionExecutor;
 import com.mtfm.gateway.spi.capability.Publisher;
@@ -22,7 +21,10 @@ import com.mtfm.gateway.spi.model.OutboundMessage;
 import com.mtfm.gateway.spi.model.PublishResult;
 import com.mtfm.gateway.spi.plugin.InboundPlugin;
 import com.mtfm.gateway.spi.plugin.OutboundPlugin;
+import com.mtfm.gateway.spi.port.DriverRegistry;
 import com.mtfm.gateway.spi.port.EnvelopeSealer;
+import com.mtfm.gateway.spi.port.PluginRegistry;
+import com.mtfm.gateway.spi.port.PublisherRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,7 +47,7 @@ import java.util.Optional;
  *
  * <h2>使用示例</h2>
  * <pre>{@code
- * PipelineEngine engine = new PipelineEngine(registries, catalogStore, new DefaultEnvelopeSealer());
+ * PipelineEngine engine = new PipelineEngine(drivers, plugins, publishers, catalog, new DefaultEnvelopeSealer());
  *
  * // 入站归一化
  * NormalizeOutcome outcome = engine.normalize(draft);
@@ -63,12 +65,21 @@ public final class PipelineEngine {
 
     private static final Logger LOG = LoggerFactory.getLogger(PipelineEngine.class);
 
-    private final DefaultRegistries registries;
+    private final DriverRegistry drivers;
+    private final PluginRegistry plugins;
+    private final PublisherRegistry publishers;
     private final FunctionCatalog functionCatalog;
     private final EnvelopeSealer sealer;
 
-    public PipelineEngine(DefaultRegistries registries, FunctionCatalog functionCatalog, EnvelopeSealer sealer) {
-        this.registries = registries;
+    public PipelineEngine(
+            DriverRegistry drivers,
+            PluginRegistry plugins,
+            PublisherRegistry publishers,
+            FunctionCatalog functionCatalog,
+            EnvelopeSealer sealer) {
+        this.drivers = drivers;
+        this.plugins = plugins;
+        this.publishers = publishers;
         this.functionCatalog = functionCatalog;
         this.sealer = sealer == null ? new DefaultEnvelopeSealer() : sealer;
     }
@@ -81,7 +92,7 @@ public final class PipelineEngine {
      */
     public NormalizeOutcome normalize(EnvelopeDraft draft) {
         EnvelopeDraft current = draft.appendTrace("ingress", draft.kind().name());
-        for (InboundPlugin plugin : registries.inboundInOrder()) {
+        for (InboundPlugin plugin : plugins.inboundInOrder()) {
             if (!plugin.support(current)) {
                 continue;
             }
@@ -132,12 +143,12 @@ public final class PipelineEngine {
         if (command.deadlineAt() != null && Instant.now().isAfter(command.deadlineAt())) {
             return ExecutionResult.timeout(command, Failure.timeout("core", "已超过 deadlineAt"));
         }
-        Optional<String> binding = registries.findCapabilityType(command.deviceId());
+        Optional<String> binding = drivers.findCapabilityType(command.deviceId());
         if (binding.isEmpty()) {
             return ExecutionResult.rejected(command, Failure.noDriver(command.deviceId()));
         }
         String capabilityType = binding.get();
-        Optional<FunctionExecutor> executor = registries.findExecutor(capabilityType);
+        Optional<FunctionExecutor> executor = drivers.findExecutor(capabilityType);
         if (executor.isEmpty() || !executor.get().support(command)) {
             return ExecutionResult.rejected(command, Failure.noExecutor(capabilityType));
         }
@@ -176,7 +187,7 @@ public final class PipelineEngine {
     public Optional<OutboundMessage> applyOutboundPlugins(OutboundDraft draft) {
         OutboundDraft current = draft;
         String originalHint = draft.channelHint();
-        for (OutboundPlugin plugin : registries.outboundInOrder()) {
+        for (OutboundPlugin plugin : plugins.outboundInOrder()) {
             if (!plugin.support(current)) {
                 continue;
             }
@@ -209,7 +220,7 @@ public final class PipelineEngine {
 
     /** Publish 阶段：按 channelHint 找 Publisher 并发布。 */
     public PublishResult publish(OutboundMessage message) {
-        Optional<Publisher> publisher = registries.findPublisher(message.channelHint());
+        Optional<Publisher> publisher = publishers.findPublisher(message.channelHint());
         if (publisher.isEmpty() || !publisher.get().support(message)) {
             return PublishResult.failed(Failure.of(
                     com.mtfm.gateway.spi.model.FailureCodes.CHANNEL_MISMATCH,

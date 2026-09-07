@@ -89,6 +89,19 @@ class CloudPublisherHubTest {
     }
 
     @Test
+    void snapshotDropsOldestWhenOverLimit() {
+        try (CloudPublisher hub = new CloudPublisher()) {
+            for (int i = 0; i < CloudPublisher.SNAPSHOT_LIMIT + 5; i++) {
+                hub.publish(response("req-" + i, "door-1"));
+            }
+            assertEquals(CloudPublisher.SNAPSHOT_LIMIT, hub.snapshot().size());
+            assertEquals("req-5", hub.responses().getFirst().requestId());
+            assertEquals("req-" + (CloudPublisher.SNAPSHOT_LIMIT + 4),
+                    hub.responses().getLast().requestId());
+        }
+    }
+
+    @Test
     void inboundCommandUsesPortNotPipelineAccept() {
         List<NorthboundCommand> received = new CopyOnWriteArrayList<>();
         InMemoryNorthboundMqttSession session = new InMemoryNorthboundMqttSession();

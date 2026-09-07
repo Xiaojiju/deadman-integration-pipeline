@@ -4,6 +4,24 @@ import com.mtfm.gateway.spi.model.Attributes;
 
 /**
  * Modbus 通道键。TCP 按 host:port 复用；RTU 按串口名独占复用。
+ *
+ * <p>使用示例：
+ * <pre>{@code
+ * ModbusChannel tcp = ModbusChannel.tcp("c1", "127.0.0.1", 502);
+ * ModbusChannel rtu = ModbusChannel.rtu("c2", "/dev/ttyUSB0", 9600, 8, "NONE", 1);
+ * ModbusChannel fromProps = ModbusChannel.from("c1", Attributes.from(Map.of("host", "10.0.0.8", "port", 502)));
+ * }</pre>
+ *
+ * @param channelId  通道 ID
+ * @param transport  TCP 或 RTU
+ * @param host       TCP 主机
+ * @param port       TCP 端口
+ * @param serialPort RTU 串口名
+ * @param baudRate   RTU 波特率
+ * @param dataBits   RTU 数据位
+ * @param parity     RTU 校验 NONE/EVEN/ODD
+ * @param stopBits   RTU 停止位
+ * @param keepAlive  TCP 是否在命令间保持连接
  */
 public record ModbusChannel(
         String channelId,
@@ -70,17 +88,12 @@ public record ModbusChannel(
         }
     }
 
-    /** 兼容旧 TCP 三参构造。 */
-    public ModbusChannel(String channelId, String host, int port) {
-        this(channelId, host, port, true);
-    }
-
     public ModbusChannel(String channelId, String host, int port, boolean keepAlive) {
         this(channelId, ModbusTransport.TCP, host, port, "", 9600, 8, "NONE", 1, keepAlive);
     }
 
     public static ModbusChannel tcp(String channelId, String host, int port) {
-        return new ModbusChannel(channelId, host, port);
+        return new ModbusChannel(channelId, host, port, true);
     }
 
     public static ModbusChannel rtu(String channelId, String serialPort, int baudRate, int dataBits,

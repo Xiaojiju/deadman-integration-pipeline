@@ -18,6 +18,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 @TableName("gw_device_topic_override")
 public class DeviceTopicOverrideEntity {
 
+    /** 主键（雪花 ID）。 */
     @TableId
     private String id;
     /**

@@ -155,7 +155,6 @@ export type ProductFunctionEntity = {
   replyTopicSlot?: string
   correlationPath?: string
   correlationCommandPath?: string
-  resultPath?: string
   replyTimeoutMs?: number
   scheduleIntervalMs?: number
   scheduleEnabled?: boolean
@@ -181,8 +180,6 @@ export type ChannelEntity = {
   code: string
   capabilityType: string
   properties?: PropertyItem[]
-  /** @deprecated 兼容旧字段 */
-  connection?: Record<string, unknown> | string
   enabled?: boolean
 }
 
@@ -192,8 +189,6 @@ export type DeviceEntity = {
   productId: string
   name?: string
   functionOverrides?: Record<string, PropertyItem[]>
-  /** @deprecated 兼容旧字段 */
-  optionOverrides?: Record<string, unknown> | string
   enabled?: boolean
   /** 是否已 load 到网关运行时 */
   loaded?: boolean
@@ -210,7 +205,6 @@ export type FunctionFormView = {
   properties?: PropertyItem[]
   writeValueOptions?: ValueOption[]
   values: Record<string, unknown>
-  protocolMapping?: Record<string, unknown>
   /** VALUE / STRUCT；空则按 writeAccessType 推断 */
   payloadMode?: string
 }

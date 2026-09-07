@@ -3,17 +3,35 @@ package com.mtfm.gateway.catalog.entity;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
+/**
+ * READ 功能 VALUE 模式下的枚举/映射选项。
+ */
 @TableName("gw_read_value_option")
 public class ReadValueOptionEntity {
 
+    /** 主键（雪花 ID）。 */
     @TableId
     private String id;
+
+    /** 所属产品功能主键，对应 {@link ProductFunctionEntity#id}。 */
     private String productFunctionId;
+
+    /** 选项说明。 */
     private String description;
+
+    /** 协议侧原始值。 */
     private String optionValue;
+
+    /** 映射后的平台/调用方值。 */
     private String mappingValue;
+
+    /** 访问层数据类型 wire code。 */
     private String accessDataType;
+
+    /** 传输层数据类型 wire code。 */
     private String transformDataType;
+
+    /** 是否为默认选项。 */
     private Boolean isDefault;
 
     public String getId() {

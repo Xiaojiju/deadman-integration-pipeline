@@ -18,6 +18,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 @TableName("gw_device_function_override")
 public class DeviceFunctionOverrideEntity extends AbstractPropertyEntity {
 
+    /** 主键（雪花 ID）。 */
     @TableId
     private String id;
     /**

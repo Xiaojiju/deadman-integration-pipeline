@@ -20,7 +20,7 @@ type Props = {
   valuePlaceholder?: string
 }
 
-/** 键值对列表表单（用于 protocolMapping 等 Map）。 */
+/** 键值对列表表单。 */
 export function KeyValueListEditor({
   label,
   description,

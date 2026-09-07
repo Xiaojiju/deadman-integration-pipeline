@@ -14,21 +14,13 @@ class LegacyFieldAdapterTest {
     @Test
     void dottedNumericPathBecomesArrayAndMappedOptionsBecomeMappings() {
         List<WriteFieldOption> fields = List.of(
-                new WriteFieldOption(
-                        "devId", "", "string", "string", false, List.of(), "none", null, "device", null),
-                new WriteFieldOption(
-                        "devPsw", "", "string", "string", true, List.of(), "none", null, "constant", "0"),
-                new WriteFieldOption(
-                        "params.0",
-                        "",
-                        "string",
-                        "string",
-                        true,
-                        List.of(new ValueOption("open", "1", "开门", "string", "string", false)),
-                        "none",
-                        null,
-                        "mapped",
-                        null));
+                WriteFieldOption.builder("devId").source("device").build(),
+                WriteFieldOption.builder("devPsw").ignoreRequest(true).source("constant").constant("0").build(),
+                WriteFieldOption.builder("params.0")
+                        .ignoreRequest(true)
+                        .options(List.of(new ValueOption("open", "1", "开门", "string", "string", false)))
+                        .source("mapped")
+                        .build());
 
         FieldNode root = LegacyFieldAdapter.fromWriteFields(fields);
         FieldNode params = root.children().stream()
@@ -61,8 +53,13 @@ class LegacyFieldAdapterTest {
     @Test
     void roundTripsByteLengthAndByteOrder() {
         List<WriteFieldOption> fields = List.of(
-                new WriteFieldOption(
-                        "offset", "", "int", "int", false, List.of(), "none", null, "caller", null, null, 2, "little"));
+                WriteFieldOption.builder("offset")
+                        .accessDataType("int")
+                        .transformDataType("int")
+                        .source("caller")
+                        .byteLength(2)
+                        .byteOrder("little")
+                        .build());
         FieldNode root = LegacyFieldAdapter.fromWriteFields(fields);
         assertEquals(2, root.children().get(0).byteLength());
         assertEquals("little", root.children().get(0).byteOrder());
@@ -74,20 +71,16 @@ class LegacyFieldAdapterTest {
     @Test
     void functionLevelValueOptionsPatchMappedPathNotCommand() {
         List<WriteFieldOption> fields = List.of(
-                new WriteFieldOption(
-                        "at", "", "string", "string", true, List.of(), "none", "timestamp_seconds", "platform", null),
-                new WriteFieldOption(
-                        "params.0",
-                        "",
-                        "string",
-                        "string",
-                        true,
-                        List.of(),
-                        "none",
-                        null,
-                        "mapped",
-                        null,
-                        "lock"));
+                WriteFieldOption.builder("at")
+                        .ignoreRequest(true)
+                        .valueGenerator("timestamp_seconds")
+                        .source("platform")
+                        .build(),
+                WriteFieldOption.builder("params.0")
+                        .ignoreRequest(true)
+                        .source("mapped")
+                        .callerField("lock")
+                        .build());
         List<ValueOption> options = List.of(
                 new ValueOption("open", "1", "开门", "string", "string", false),
                 new ValueOption("close", "0", "关门", "string", "string", false));
@@ -101,31 +94,23 @@ class LegacyFieldAdapterTest {
     @Test
     void constantFieldOptionsAreNotValueMappings() {
         List<WriteFieldOption> fields = List.of(
-                new WriteFieldOption(
-                        "area",
-                        "寄存器区",
-                        "select",
-                        "select",
-                        true,
-                        List.of(
+                WriteFieldOption.builder("area")
+                        .description("寄存器区")
+                        .accessDataType("select")
+                        .transformDataType("select")
+                        .ignoreRequest(true)
+                        .options(List.of(
                                 new ValueOption("HOLDING", "HOLDING", "HOLDING", "string", "string", true),
-                                new ValueOption("COIL", "COIL", "COIL", "string", "string", false)),
-                        "none",
-                        null,
-                        "constant",
-                        "HOLDING"),
-                new WriteFieldOption(
-                        "value",
-                        "写入值",
-                        "string",
-                        "string",
-                        true,
-                        List.of(),
-                        "none",
-                        null,
-                        "mapped",
-                        null,
-                        "value"));
+                                new ValueOption("COIL", "COIL", "COIL", "string", "string", false)))
+                        .source("constant")
+                        .constant("HOLDING")
+                        .build(),
+                WriteFieldOption.builder("value")
+                        .description("写入值")
+                        .ignoreRequest(true)
+                        .source("mapped")
+                        .callerField("value")
+                        .build());
         List<ValueOption> writeValueOptions = List.of(
                 new ValueOption("1", "open", "开", "string", "string", false),
                 new ValueOption("0", "close", "关", "string", "string", false));
@@ -140,18 +125,13 @@ class LegacyFieldAdapterTest {
     @Test
     void writeValueOptionsWinOverMappedFieldOptions() {
         List<WriteFieldOption> fields = List.of(
-                new WriteFieldOption(
-                        "value",
-                        "写入值",
-                        "string",
-                        "string",
-                        true,
-                        List.of(new ValueOption("HOLDING", "HOLDING", "HOLDING", "string", "string", false)),
-                        "none",
-                        null,
-                        "mapped",
-                        null,
-                        "lock"));
+                WriteFieldOption.builder("value")
+                        .description("写入值")
+                        .ignoreRequest(true)
+                        .options(List.of(new ValueOption("HOLDING", "HOLDING", "HOLDING", "string", "string", false)))
+                        .source("mapped")
+                        .callerField("lock")
+                        .build());
         List<ValueOption> writeValueOptions = List.of(
                 new ValueOption("1", "open", "开", "string", "string", false));
         List<ValueMapping> mappings = LegacyFieldAdapter.fromFieldAndValueOptions(fields, writeValueOptions);
@@ -164,18 +144,11 @@ class LegacyFieldAdapterTest {
     @Test
     void callerFieldRoundTripsOnCallerLeaves() {
         List<WriteFieldOption> fields = List.of(
-                new WriteFieldOption(
-                        "params.2",
-                        "密码",
-                        "string",
-                        "string",
-                        false,
-                        List.of(),
-                        "none",
-                        null,
-                        "caller",
-                        null,
-                        "password"));
+                WriteFieldOption.builder("params.2")
+                        .description("密码")
+                        .source("caller")
+                        .callerField("password")
+                        .build());
         FieldNode root = LegacyFieldAdapter.fromWriteFields(fields);
         FieldNode params = root.children().stream()
                 .filter(child -> "params".equals(child.name()))
@@ -190,9 +163,13 @@ class LegacyFieldAdapterTest {
     @Test
     void fromWriteFieldsKeepsConfiguredOrderNotAlphabetical() {
         List<WriteFieldOption> fields = List.of(
-                new WriteFieldOption("seq", "", "string", "string", true, List.of(), "none", "uuid", "platform", null),
-                new WriteFieldOption("at", "", "string", "string", true, List.of(), "none", "timestamp_seconds", "platform", null),
-                new WriteFieldOption("devId", "", "string", "string", true, List.of(), "none", null, "device", null));
+                WriteFieldOption.builder("seq").ignoreRequest(true).valueGenerator("uuid").source("platform").build(),
+                WriteFieldOption.builder("at")
+                        .ignoreRequest(true)
+                        .valueGenerator("timestamp_seconds")
+                        .source("platform")
+                        .build(),
+                WriteFieldOption.builder("devId").ignoreRequest(true).source("device").build());
 
         FieldNode root = LegacyFieldAdapter.fromWriteFields(fields);
         assertEquals(List.of("seq", "at", "devId"), root.children().stream().map(FieldNode::name).toList());

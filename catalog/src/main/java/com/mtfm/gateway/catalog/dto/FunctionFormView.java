@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 产品/设备功能表单视图。
+ * 产品/设备功能表单视图：合并 schema 与当前值，供 UI 渲染编辑表单。
  */
 public record FunctionFormView(
         String functionId,
@@ -21,7 +21,6 @@ public record FunctionFormView(
         List<PropertyItem> properties,
         List<ValueOption> writeValueOptions,
         Map<String, Object> values,
-        Map<String, Object> protocolMapping,
         String payloadMode
 ) {
 }

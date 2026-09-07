@@ -108,7 +108,7 @@ public record SchemaField(
         return new SchemaField(name, type, true, description, name, defaultValue, false, List.of(), format, null, null);
     }
 
-    /** 兼容旧调用：type 为字符串 wire。 */
+    /** type 为 wire 字符串时走 {@link FieldType#from(String)}。 */
     public static SchemaField required(String name, String type, String description) {
         return required(name, FieldType.from(type), description);
     }

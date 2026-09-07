@@ -12,7 +12,9 @@ import java.time.Instant;
  *
  * <p>
  * {@code deviceCode} 即流水线 {@code deviceId}（业务设备编码，不是网关编码）；
- * {@code optionOverrides} 只存相对产品功能的差异参数。
+ * {@code optionOverrides} 是兼容列，仅供旧 JSON 懒迁移到 EAV。
+ *
+ * <p>示例：{@code deviceCode="pump-01", productId="...", enabled=true}
  */
 @TableName(value = "gw_device", autoResultMap = true)
 public class DeviceEntity {

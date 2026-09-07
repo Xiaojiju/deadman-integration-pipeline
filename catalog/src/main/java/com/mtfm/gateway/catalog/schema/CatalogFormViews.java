@@ -26,6 +26,8 @@ import com.mtfm.gateway.spi.property.ValueAccessType;
 import com.mtfm.gateway.spi.property.ValueOption;
 import com.mtfm.gateway.spi.property.WriteFieldOption;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -35,6 +37,7 @@ import java.util.Optional;
 /**
  * 目录对外视图投影：表单 / 功能 / 通道 / 设备。列表路径可传入已批量加载的属性与 Option。
  */
+@Component
 final class CatalogFormViews {
 
     private final CatalogStore store;
@@ -43,7 +46,7 @@ final class CatalogFormViews {
 
     CatalogFormViews(
             CatalogStore store,
-            CapabilityRegistrar registrar,
+            @Autowired(required = false) CapabilityRegistrar registrar,
             ObjectProvider<DriverRegistry> driverRegistry) {
         this.store = store;
         this.registrar = registrar;
@@ -62,7 +65,7 @@ final class CatalogFormViews {
                 ValueAccessType.VALUE.name(),
                 SchemaForms.bind(schema, Map.of()),
                 properties,
-                CatalogFunctionBinding.flattenChoiceOptions(choices),
+                CatalogFunctionSchemas.flattenChoiceOptions(choices),
                 choices);
     }
 
@@ -91,27 +94,27 @@ final class CatalogFormViews {
                         .orElse(false);
         List<SchemaField> schema;
         if (contracted && !structFields.isEmpty()) {
-            schema = CatalogFunctionBinding.schemaFromWriteFields(structFields, true);
+            schema = CatalogFunctionSchemas.schemaFromWriteFields(structFields, true);
         } else if (template.isPresent()) {
             schema = template.get().parameters();
         } else if (!structFields.isEmpty()) {
-            schema = CatalogFunctionBinding.schemaFromWriteFields(structFields, true);
+            schema = CatalogFunctionSchemas.schemaFromWriteFields(structFields, true);
         } else {
-            schema = CatalogFunctionBinding.schemaFromProperties(properties);
+            schema = CatalogFunctionSchemas.schemaFromProperties(properties);
         }
         List<ValueOption> writeOptions = options.writeValueOptions();
         boolean openStructForm = template.isEmpty() && !structFields.isEmpty();
         if (!contracted && writeOptions.isEmpty() && !openStructForm) {
-            writeOptions = CatalogFunctionBinding.flattenWriteFieldOptions(structFields);
+            writeOptions = CatalogFunctionSchemas.flattenWriteFieldOptions(structFields);
         }
         if (!contracted && writeOptions.isEmpty() && template.isPresent()) {
-            writeOptions = CatalogFunctionBinding.flattenChoiceOptions(
+            writeOptions = CatalogFunctionSchemas.flattenChoiceOptions(
                     PropertySchemas.choiceOptionsByField(template.get().parameters()));
         }
         boolean valueMode = writeAccess == ValueAccessType.VALUE
                 || "VALUE".equalsIgnoreCase(function.getPayloadMode());
         if (valueMode) {
-            schema = CatalogFunctionBinding.applyWriteValueOptionChoices(schema, structFields, writeOptions);
+            schema = CatalogFunctionSchemas.applyWriteValueOptionChoices(schema, structFields, writeOptions);
         }
         List<FormField> fields = SchemaForms.bind(schema, values);
         return new FunctionFormView(
@@ -125,8 +128,7 @@ final class CatalogFormViews {
                 PropertySchemas.fromValueMap(values),
                 writeOptions,
                 values,
-                null,
-                CatalogFunctionBinding.resolvePayloadMode(function, writeOptions));
+                CatalogFunctionSchemas.resolvePayloadMode(function, writeOptions));
     }
 
     ProductFunctionView toProductFunctionView(ProductFunctionEntity function) {
@@ -164,7 +166,6 @@ final class CatalogFormViews {
                 function.getReplyTopicSlot(),
                 function.getCorrelationPath(),
                 function.getCorrelationCommandPath(),
-                function.getResultPath(),
                 function.getReplyTimeoutMs(),
                 function.getScheduleIntervalMs(),
                 function.getScheduleEnabled(),

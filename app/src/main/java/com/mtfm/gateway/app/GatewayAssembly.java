@@ -29,8 +29,8 @@ import com.mtfm.gateway.capability.mqtt.device.PahoMqttTransport;
 import com.mtfm.gateway.catalog.apply.CatalogApplyService;
 import com.mtfm.gateway.catalog.apply.CatalogMqttSubscribeRoutes;
 import com.mtfm.gateway.catalog.dto.DeviceCommandRequest;
+import com.mtfm.gateway.catalog.store.CachingFunctionCatalog;
 import com.mtfm.gateway.catalog.store.CatalogNorthbound;
-import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.plugin.struct.StructInboundPlugin;
 import com.mtfm.gateway.plugin.yaya.YayaInboundPlugin;
 import com.mtfm.gateway.runtime.GatewayPipeline;
@@ -126,7 +126,7 @@ public class GatewayAssembly {
             CatalogNorthbound catalogNorthbound) {
         NorthboundCommandPort port = command -> applyService.invoke(
                         command.deviceId(),
-                        new DeviceCommandRequest(command.functionId(), command.arguments(), command.requestId()))
+                        new DeviceCommandRequest(command.functionId(), command.arguments(), command.requestId(), null))
                 .whenComplete((result, error) -> {
                     if (error != null) {
                         LOG.warn("北向 MQTT 命令提交失败 deviceId={} functionId={}: {}",
@@ -147,14 +147,14 @@ public class GatewayAssembly {
     }
 
     @Bean
-    public GatewayPipeline gatewayPipeline(DefaultRegistries gatewayRegistries, CatalogStore catalogStore,
+    public GatewayPipeline gatewayPipeline(DefaultRegistries gatewayRegistries, CachingFunctionCatalog functionCatalog,
             CatalogApplyService applyService,
             CatalogMqttSubscribeRoutes mqttSubscribeRoutes,
             LoopbackExecutor loopbackExecutor, ModbusExecutor modbusExecutor,
             MqttExecutor mqttExecutor, HikvisionExecutor hikvisionExecutor,
             Publisher cloudPublisher) {
         GatewayPipeline pipeline = GatewayPipeline.builder()
-                .functionCatalog(catalogStore)
+                .functionCatalog(functionCatalog)
                 .registries(gatewayRegistries)
                 .build();
         pipeline.register(LoopbackCapability.DESCRIPTOR, new LoopbackDriver(), loopbackExecutor);
@@ -164,7 +164,7 @@ public class GatewayAssembly {
         pipeline.register(CloudCapability.DESCRIPTOR, null, null);
         pipeline.register(new YayaInboundPlugin());
         pipeline.register(new StructInboundPlugin());
-        pipeline.register(new MqttReadInboundPlugin(catalogStore));
+        pipeline.register(new MqttReadInboundPlugin(functionCatalog));
         pipeline.register(cloudPublisher);
         mqttExecutor.attach(pipeline, mqttSubscribeRoutes);
         applyService.attach(gatewayRegistries);

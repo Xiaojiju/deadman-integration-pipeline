@@ -3,17 +3,35 @@ package com.mtfm.gateway.catalog.entity;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
+/**
+ * READ 功能 STRUCT 模式下某读字段的子枚举选项。
+ */
 @TableName("gw_read_field_value_option")
 public class ReadFieldValueOptionEntity {
 
+    /** 主键（雪花 ID）。 */
     @TableId
     private String id;
+
+    /** 父读字段主键，对应 {@link ReadFieldEntity#id}。 */
     private String parentId;
+
+    /** 选项说明。 */
     private String description;
+
+    /** 协议侧原始值。 */
     private String optionValue;
+
+    /** 映射后的平台/调用方值。 */
     private String mappingValue;
+
+    /** 访问层数据类型 wire code。 */
     private String accessDataType;
+
+    /** 传输层数据类型 wire code。 */
     private String transformDataType;
+
+    /** 是否为默认选项。 */
     private Boolean isDefault;
 
     public String getId() {

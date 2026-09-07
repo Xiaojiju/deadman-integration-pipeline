@@ -17,7 +17,8 @@ import com.mtfm.gateway.spi.model.CapabilityDescriptor;
 import com.mtfm.gateway.spi.model.DeviceEndpointBinding;
 import com.mtfm.gateway.spi.port.DeviceScheduleRegistry;
 import com.mtfm.gateway.spi.property.PropertyItem;
-import com.mtfm.gateway.spi.property.PropertySchemas;
+
+import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
@@ -25,6 +26,7 @@ import java.util.Map;
 /**
  * 设备、端点与设备级覆盖。
  */
+@Component
 final class CatalogDeviceCommands {
 
     private final CatalogStore store;
@@ -36,24 +38,18 @@ final class CatalogDeviceCommands {
     }
 
     DeviceEntity createDevice(DeviceWriteRequest request) {
-        if (request == null || request.deviceCode() == null || request.deviceCode().isBlank()) {
-            throw new IllegalArgumentException("deviceCode 不能为空");
-        }
-        if (request.productId() == null || request.productId().isBlank()) {
-            throw new IllegalArgumentException("productId 不能为空");
-        }
         store.findProduct(request.productId())
                 .orElseThrow(() -> new IllegalArgumentException("产品不存在: " + request.productId()));
         if (store.findDeviceByCode(request.deviceCode()).isPresent()) {
             throw new IllegalArgumentException("设备编码已存在: " + request.deviceCode());
         }
         Map<String, List<PropertyItem>> overrides = CatalogFormSupport.resolveFunctionOverrides(
-                request.functionOverrides(), request.optionOverrides());
+                request.functionOverrides());
         DeviceEntity entity = new DeviceEntity();
         entity.setDeviceCode(request.deviceCode());
         entity.setProductId(request.productId());
         entity.setName(request.name());
-        entity.setOptionOverrides(JsonMaps.write(CatalogFormSupport.toLegacyOverrideMap(overrides)));
+        entity.setOptionOverrides(JsonMaps.EMPTY_OBJECT);
         entity.setEnabled(request.enabled());
         DeviceEntity saved = store.saveDevice(entity);
         store.properties().replaceAllDeviceOverrides(saved.getId(), overrides);
@@ -62,19 +58,17 @@ final class CatalogDeviceCommands {
 
     DeviceEntity updateDevice(String deviceCode, DeviceUpdateRequest request) {
         DeviceEntity entity = support.requireDevice(deviceCode);
-        if (request != null) {
-            if (request.name() != null) {
-                entity.setName(request.name());
-            }
-            if (request.functionOverrides() != null || request.optionOverrides() != null) {
-                Map<String, List<PropertyItem>> overrides = CatalogFormSupport.resolveFunctionOverrides(
-                        request.functionOverrides(), request.optionOverrides());
-                entity.setOptionOverrides(JsonMaps.write(CatalogFormSupport.toLegacyOverrideMap(overrides)));
-                store.properties().replaceAllDeviceOverrides(entity.getId(), overrides);
-            }
-            if (request.enabled() != null) {
-                entity.setEnabled(request.enabled());
-            }
+        if (request.name() != null) {
+            entity.setName(request.name());
+        }
+        if (request.functionOverrides() != null) {
+            Map<String, List<PropertyItem>> overrides = CatalogFormSupport.resolveFunctionOverrides(
+                    request.functionOverrides());
+            entity.setOptionOverrides(JsonMaps.EMPTY_OBJECT);
+            store.properties().replaceAllDeviceOverrides(entity.getId(), overrides);
+        }
+        if (request.enabled() != null) {
+            entity.setEnabled(request.enabled());
         }
         return store.updateDevice(entity);
     }
@@ -92,12 +86,11 @@ final class CatalogDeviceCommands {
                         .orElseThrow(() -> new IllegalArgumentException("通道不存在: " + request.channelId()));
                 entity.setChannelId(channel.getId());
             }
-            if (request.properties() != null || request.address() != null) {
-                List<PropertyItem> items = CatalogFormSupport.resolveProperties(
-                        request.properties(), request.address());
+            if (request.properties() != null) {
+                List<PropertyItem> items = CatalogFormSupport.resolveProperties(request.properties());
                 CapabilityDescriptor descriptor = support.requireCapability(channel.getCapabilityType());
                 CatalogConnectionSupport.validateAddress(descriptor, items);
-                entity.setAddress(JsonMaps.write(PropertySchemas.toValueMap(items)));
+                entity.setAddress(JsonMaps.EMPTY_OBJECT);
                 store.properties().replaceEndpointProperties(entity.getId(), items);
             }
         }
@@ -105,15 +98,11 @@ final class CatalogDeviceCommands {
     }
 
     DeviceEntity registerDevice(DeviceRegisterRequest request) {
-        if (request == null) {
-            throw new IllegalArgumentException("登记请求不能为空");
-        }
         DeviceEntity device = createDevice(new DeviceWriteRequest(
                 request.deviceCode(),
                 request.productId(),
                 request.name(),
                 request.functionOverrides(),
-                request.optionOverrides(),
                 request.enabled()));
         if (request.endpoints() != null) {
             for (DeviceEndpointWriteRequest endpoint : request.endpoints()) {
@@ -124,19 +113,16 @@ final class CatalogDeviceCommands {
     }
 
     DeviceEndpointEntity createEndpoint(String deviceCodeOrId, DeviceEndpointWriteRequest request) {
-        if (request == null || request.channelId() == null || request.channelId().isBlank()) {
-            throw new IllegalArgumentException("channelId 不能为空");
-        }
         DeviceEntity device = support.requireDevice(deviceCodeOrId);
         ChannelEntity channel = store.findChannel(request.channelId())
                 .orElseThrow(() -> new IllegalArgumentException("通道不存在: " + request.channelId()));
         CapabilityDescriptor descriptor = support.requireCapability(channel.getCapabilityType());
-        List<PropertyItem> items = CatalogFormSupport.resolveProperties(request.properties(), request.address());
+        List<PropertyItem> items = CatalogFormSupport.resolveProperties(request.properties());
         CatalogConnectionSupport.validateAddress(descriptor, items);
         DeviceEndpointEntity entity = new DeviceEndpointEntity();
         entity.setDeviceId(device.getId());
         entity.setChannelId(channel.getId());
-        entity.setAddress(JsonMaps.write(PropertySchemas.toValueMap(items)));
+        entity.setAddress(JsonMaps.EMPTY_OBJECT);
         DeviceEndpointEntity saved = store.saveEndpoint(entity);
         store.properties().replaceEndpointProperties(saved.getId(), items);
         return saved;

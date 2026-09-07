@@ -27,6 +27,7 @@ public final class PahoNorthboundMqttSession implements NorthboundMqttSession {
     private final String username;
     private final String password;
     private final CopyOnWriteArrayList<Subscription> subscriptions = new CopyOnWriteArrayList<>();
+    private final NorthboundSubscriptionIndex index = new NorthboundSubscriptionIndex();
     private volatile MqttClient client;
 
     public PahoNorthboundMqttSession(String serverUri, String clientId, String username, String password) {
@@ -71,11 +72,7 @@ public final class PahoNorthboundMqttSession implements NorthboundMqttSession {
                 @Override
                 public void messageArrived(String topic, MqttMessage message) {
                     String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
-                    for (Subscription subscription : subscriptions) {
-                        if (NorthboundTopics.matches(subscription.filter(), topic)) {
-                            subscription.handler().accept(topic, payload);
-                        }
-                    }
+                    index.dispatch(topic, payload);
                 }
 
                 @Override
@@ -120,6 +117,7 @@ public final class PahoNorthboundMqttSession implements NorthboundMqttSession {
     @Override
     public synchronized void subscribe(String topicFilter, BiConsumer<String, String> handler) {
         subscriptions.add(new Subscription(topicFilter, handler));
+        index.add(topicFilter, handler);
         MqttClient current = client;
         if (current != null && current.isConnected()) {
             try {
@@ -134,6 +132,7 @@ public final class PahoNorthboundMqttSession implements NorthboundMqttSession {
     public synchronized void close() {
         MqttClient current = client;
         client = null;
+        index.clear();
         if (current == null) {
             return;
         }

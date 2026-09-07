@@ -43,7 +43,7 @@ class TcpModbusBusTest {
     void startSlave() throws IOException {
         slave = LoopbackModbusTcpSlave.start();
         bus = new TcpModbusBus(1000, 1000);
-        channel = new ModbusChannel("c1", "127.0.0.1", slave.port());
+        channel = new ModbusChannel("c1", "127.0.0.1", slave.port(), true);
         bus.retain(channel);
     }
 
@@ -141,7 +141,7 @@ class TcpModbusBusTest {
     @Test
     void connectFailureIsModbusException() {
         TcpModbusBus isolated = new TcpModbusBus(200, 200);
-        ModbusChannel dead = new ModbusChannel("dead", "127.0.0.1", 1);
+        ModbusChannel dead = new ModbusChannel("dead", "127.0.0.1", 1, true);
         isolated.retain(dead);
         assertThrows(ModbusException.class,
                 () -> isolated.readNumeric(dead, 1, ModbusArea.HOLDING, 0, ModbusDataType.INT16));

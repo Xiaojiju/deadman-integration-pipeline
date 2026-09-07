@@ -5,9 +5,8 @@ import com.mtfm.gateway.catalog.entity.ActionGroupEntity;
 import com.mtfm.gateway.catalog.entity.SceneTriggerEntity;
 import com.mtfm.gateway.catalog.json.JsonMaps;
 import com.mtfm.gateway.catalog.store.CatalogActionRepository;
-import com.mtfm.gateway.catalog.store.CatalogStore;
+import com.mtfm.gateway.spi.catalog.FunctionCatalog;
 import com.mtfm.gateway.spi.model.Attributes;
-import com.mtfm.gateway.spi.model.FunctionDef;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,14 +26,14 @@ public class SceneListenDispatcher {
     private static final Logger LOG = LoggerFactory.getLogger(SceneListenDispatcher.class);
 
     private final CatalogActionRepository actions;
-    private final CatalogStore store;
+    private final FunctionCatalog catalog;
     private final ActionGroupExecutor executor;
     private final ConcurrentHashMap<String, List<SceneTriggerEntity>> index = new ConcurrentHashMap<>();
 
     public SceneListenDispatcher(
-            CatalogActionRepository actions, CatalogStore store, ActionGroupExecutor executor) {
+            CatalogActionRepository actions, FunctionCatalog catalog, ActionGroupExecutor executor) {
         this.actions = actions;
-        this.store = store;
+        this.catalog = catalog;
         this.executor = executor;
     }
 
@@ -52,25 +51,41 @@ public class SceneListenDispatcher {
             LOG.warn("场景监听索引未加载（请确认已执行 V14 SQL）: {}", ex.getMessage());
             return;
         }
+        Map<String, ActionGroupEntity> groups = actions.findGroupsByIds(
+                triggers.stream().map(SceneTriggerEntity::getGroupId).toList());
         for (SceneTriggerEntity trigger : triggers) {
-            if (trigger.getListenDeviceCode() == null || trigger.getListenFunctionId() == null) {
-                continue;
-            }
-            ActionGroupEntity group = actions.findGroup(trigger.getGroupId()).orElse(null);
-            if (group == null || Boolean.FALSE.equals(group.getEnabled())
-                    || !ActionKinds.SCENE.equalsIgnoreCase(group.getKind())) {
-                continue;
-            }
-            index.computeIfAbsent(listenKey(trigger.getListenDeviceCode(), trigger.getListenFunctionId()),
-                    key -> new ArrayList<>()).add(trigger);
+            indexTrigger(trigger, groups.get(trigger.getGroupId()));
         }
+    }
+
+    public synchronized void refreshGroup(String groupId) {
+        removeGroup(groupId);
+        if (groupId == null || groupId.isBlank()) {
+            return;
+        }
+        ActionGroupEntity group = actions.findGroup(groupId).orElse(null);
+        SceneTriggerEntity trigger = actions.findTrigger(groupId).orElse(null);
+        if (trigger != null && Boolean.TRUE.equals(trigger.getEnabled())
+                && ActionKinds.LISTEN.equalsIgnoreCase(trigger.getMode())) {
+            indexTrigger(trigger, group);
+        }
+    }
+
+    public synchronized void removeGroup(String groupId) {
+        if (groupId == null) {
+            return;
+        }
+        for (List<SceneTriggerEntity> list : index.values()) {
+            list.removeIf(trigger -> groupId.equals(trigger.getGroupId()));
+        }
+        index.entrySet().removeIf(entry -> entry.getValue().isEmpty());
     }
 
     public void onCommandSuccess(String deviceCode, String functionId, Attributes arguments, String source) {
         if (ActionKinds.skipListen(source) || deviceCode == null || functionId == null) {
             return;
         }
-        if (!isWrite(deviceCode, functionId)) {
+        if (!catalog.isWrite(deviceCode, functionId)) {
             return;
         }
         List<SceneTriggerEntity> matched = index.get(listenKey(deviceCode, functionId));
@@ -95,11 +110,16 @@ public class SceneListenDispatcher {
         }
     }
 
-    private boolean isWrite(String deviceCode, String functionId) {
-        return store.find(deviceCode, functionId)
-                .map(FunctionDef::accessType)
-                .filter(type -> "WRITE".equalsIgnoreCase(type))
-                .isPresent();
+    private void indexTrigger(SceneTriggerEntity trigger, ActionGroupEntity group) {
+        if (trigger.getListenDeviceCode() == null || trigger.getListenFunctionId() == null) {
+            return;
+        }
+        if (group == null || Boolean.FALSE.equals(group.getEnabled())
+                || !ActionKinds.SCENE.equalsIgnoreCase(group.getKind())) {
+            return;
+        }
+        index.computeIfAbsent(listenKey(trigger.getListenDeviceCode(), trigger.getListenFunctionId()),
+                key -> new ArrayList<>()).add(trigger);
     }
 
     static boolean matchArguments(SceneTriggerEntity trigger, Map<String, Object> arguments) {

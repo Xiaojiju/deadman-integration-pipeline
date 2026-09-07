@@ -25,6 +25,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 public class CatalogActionService {
@@ -46,7 +47,12 @@ public class CatalogActionService {
     }
 
     public List<ActionGroupView> list(String kind) {
-        return actions.listGroups(kind).stream().map(this::toView).toList();
+        List<ActionGroupEntity> groups = actions.listGroups(kind);
+        List<String> ids = groups.stream().map(ActionGroupEntity::getId).toList();
+        Map<String, List<ActionMemberEntity>> members = actions.listMembersByGroupIds(ids);
+        Map<String, SceneTriggerEntity> triggers = actions.findTriggersByGroupIds(ids);
+        return groups.stream().map(group -> toView(group, members.getOrDefault(group.getId(), List.of()),
+                Optional.ofNullable(triggers.get(group.getId())))).toList();
     }
 
     public ActionGroupView require(String idOrCode) {
@@ -58,12 +64,6 @@ public class CatalogActionService {
     @Transactional
     public ActionGroupView create(String kind, ActionGroupWriteRequest request) {
         String normalized = requireKind(kind);
-        if (request == null || request.code() == null || request.code().isBlank()) {
-            throw new IllegalArgumentException("code 不能为空");
-        }
-        if (request.name() == null || request.name().isBlank()) {
-            throw new IllegalArgumentException("name 不能为空");
-        }
         ActionGroupEntity entity = new ActionGroupEntity();
         entity.setCode(request.code().trim());
         entity.setName(request.name().trim());
@@ -73,7 +73,7 @@ public class CatalogActionService {
         ActionGroupEntity saved = actions.insertGroup(entity);
         actions.replaceMembers(saved.getId(), bindMembers(request.members()));
         replaceTrigger(saved, request.trigger());
-        refreshDispatchers();
+        refreshGroup(saved.getId());
         return toView(saved);
     }
 
@@ -101,7 +101,7 @@ public class CatalogActionService {
                 replaceTrigger(entity, request.trigger());
             }
         }
-        refreshDispatchers();
+        refreshGroup(entity.getId());
         return toView(entity);
     }
 
@@ -110,7 +110,7 @@ public class CatalogActionService {
         ActionGroupEntity entity = actions.findGroup(idOrCode)
                 .orElseThrow(() -> new IllegalArgumentException("动作组不存在: " + idOrCode));
         boolean deleted = actions.deleteGroup(entity.getId());
-        refreshDispatchers();
+        dropGroup(entity.getId());
         return deleted;
     }
 
@@ -211,7 +211,14 @@ public class CatalogActionService {
     }
 
     private ActionGroupView toView(ActionGroupEntity group) {
-        List<ActionMemberView> members = actions.listMembers(group.getId()).stream()
+        return toView(group, actions.listMembers(group.getId()), actions.findTrigger(group.getId()));
+    }
+
+    private ActionGroupView toView(
+            ActionGroupEntity group,
+            List<ActionMemberEntity> memberRows,
+            Optional<SceneTriggerEntity> triggerRow) {
+        List<ActionMemberView> members = memberRows.stream()
                 .map(row -> new ActionMemberView(
                         row.getId(),
                         row.getDeviceCode(),
@@ -219,7 +226,7 @@ public class CatalogActionService {
                         JsonMaps.readMap(row.getArgumentsJson()),
                         row.getSortIndex() == null ? 0 : row.getSortIndex()))
                 .toList();
-        SceneTriggerView trigger = actions.findTrigger(group.getId())
+        SceneTriggerView trigger = triggerRow
                 .map(row -> new SceneTriggerView(
                         row.getId(),
                         row.getMode(),
@@ -243,9 +250,14 @@ public class CatalogActionService {
                 trigger);
     }
 
-    private void refreshDispatchers() {
-        listen.rebuild();
-        cron.reload();
+    private void refreshGroup(String groupId) {
+        listen.refreshGroup(groupId);
+        cron.refreshGroup(groupId);
+    }
+
+    private void dropGroup(String groupId) {
+        listen.removeGroup(groupId);
+        cron.removeGroup(groupId);
     }
 
     private static String requireKind(String kind) {

@@ -26,31 +26,21 @@ class MqttReadInboundPluginTest {
     void listenMapsPickedFieldsAndSkipsMissing() {
         ReplyCatalog catalog = new ReplyCatalog();
         catalog.put("door-1", listen(
-                new WriteFieldOption(
-                        "params.1",
-                        "状态",
-                        "string",
-                        "string",
-                        true,
-                        List.of(new ValueOption("0", "closed", "关", "string", "string", false),
-                                new ValueOption("1", "open", "开", "string", "string", false)),
-                        "none",
-                        null,
-                        "caller",
-                        null,
-                        "door"),
-                new WriteFieldOption(
-                        "params.9",
-                        "不存在",
-                        "string",
-                        "string",
-                        true,
-                        List.of(),
-                        "none",
-                        null,
-                        "caller",
-                        null,
-                        "missing")));
+                WriteFieldOption.builder("params.1")
+                        .description("状态")
+                        .ignoreRequest(true)
+                        .options(List.of(
+                                new ValueOption("0", "closed", "关", "string", "string", false),
+                                new ValueOption("1", "open", "开", "string", "string", false)))
+                        .source("caller")
+                        .callerField("door")
+                        .build(),
+                WriteFieldOption.builder("params.9")
+                        .description("不存在")
+                        .ignoreRequest(true)
+                        .source("caller")
+                        .callerField("missing")
+                        .build()));
         MqttReadInboundPlugin plugin = new MqttReadInboundPlugin(catalog);
         EnvelopeDraft draft = EnvelopeDraft.builder()
                 .kind(EnvelopeKind.TELEMETRY)
@@ -68,8 +58,11 @@ class MqttReadInboundPluginTest {
     @Test
     void listenDropsWhenNoConfiguredFieldPicked() {
         ReplyCatalog catalog = new ReplyCatalog();
-        catalog.put("door-1", listen(new WriteFieldOption(
-                "humidity", "湿度", "int", "int", false, List.of(), "none", null)));
+        catalog.put("door-1", listen(WriteFieldOption.builder("humidity")
+                .description("湿度")
+                .accessDataType("int")
+                .transformDataType("int")
+                .build()));
         MqttReadInboundPlugin plugin = new MqttReadInboundPlugin(catalog);
         EnvelopeDraft draft = EnvelopeDraft.builder()
                 .kind(EnvelopeKind.TELEMETRY)
@@ -85,26 +78,19 @@ class MqttReadInboundPluginTest {
     @Test
     void replyKeepsFullJsonForCorrelation() {
         ReplyCatalog catalog = new ReplyCatalog();
-        catalog.put("door-1", new FunctionDef(
-                "fn.open",
-                "WRITE",
-                AccessPermission.WRITE.code(),
-                null,
-                List.of(),
-                ValueAccessType.STRUCT,
-                List.of(),
-                List.of(),
-                List.of(new WriteFieldOption(
-                        "params.1", "成败", "string", "string", true, List.of(),
-                        "none", null, "caller", null, "success")),
-                List.of(),
-                PayloadEncoding.JSON,
-                "response",
-                "params.0",
-                "params.1",
-                2000,
-                null,
-                false));
+        catalog.put("door-1", FunctionDef.builder("fn.open")
+                .accessType("WRITE")
+                .accessPermission(AccessPermission.WRITE.code())
+                .writeAccessType(ValueAccessType.STRUCT)
+                .readFields(List.of(WriteFieldOption.builder("params.1")
+                        .description("成败")
+                        .ignoreRequest(true)
+                        .source("caller")
+                        .callerField("success")
+                        .build()))
+                .payloadEncoding(PayloadEncoding.JSON)
+                .reply(FunctionDef.ReplySpec.of("response", "params.0", 2000))
+                .build());
         MqttReadInboundPlugin plugin = new MqttReadInboundPlugin(catalog);
         EnvelopeDraft draft = EnvelopeDraft.builder()
                 .kind(EnvelopeKind.TELEMETRY)
@@ -120,18 +106,13 @@ class MqttReadInboundPluginTest {
     }
 
     private static FunctionDef listen(WriteFieldOption... fields) {
-        return new FunctionDef(
-                "fn.listen",
-                "READ",
-                AccessPermission.READ.code(),
-                null,
-                List.of(),
-                ValueAccessType.STRUCT,
-                List.of(),
-                List.of(),
-                List.of(fields),
-                List.of(),
-                PayloadEncoding.JSON);
+        return FunctionDef.builder("fn.listen")
+                .accessType("READ")
+                .accessPermission(AccessPermission.READ.code())
+                .writeAccessType(ValueAccessType.STRUCT)
+                .readFields(List.of(fields))
+                .payloadEncoding(PayloadEncoding.JSON)
+                .build();
     }
 
     private static final class ReplyCatalog implements FunctionCatalog {

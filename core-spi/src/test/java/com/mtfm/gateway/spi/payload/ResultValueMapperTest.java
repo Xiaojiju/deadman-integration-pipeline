@@ -45,25 +45,12 @@ class ResultValueMapperTest {
     }
 
     private static FunctionDef readDef(List<ValueOption> readOptions, String scaleOp, String scaleOperand) {
-        return new FunctionDef(
-                "fn.read",
-                "READ",
-                1,
-                null,
-                List.of(),
-                ValueAccessType.STRUCT,
-                List.of(),
-                List.of(),
-                List.of(),
-                readOptions,
-                PayloadEncoding.JSON,
-                null,
-                null,
-                null,
-                null,
-                null,
-                false,
-                scaleOp,
-                scaleOperand);
+        return FunctionDef.builder("fn.read")
+                .accessType("READ")
+                .accessPermission(1)
+                .writeAccessType(ValueAccessType.STRUCT)
+                .readValueOptions(readOptions)
+                .scale(FunctionDef.ScaleSpec.of(scaleOp, scaleOperand))
+                .build();
     }
 }

@@ -5,6 +5,12 @@ import java.util.List;
 /**
  * VALUE 模式：调用方简值 → 协议字段树。
  *
+ * <p>使用示例：
+ * <pre>{@code
+ * ValueMapping patch = ValueMapping.patch("open", "开门", List.of(new FieldPatch("params.0", "1")));
+ * ValueMapping fill = ValueMapping.fillRoot("open", "开门", "open");
+ * }</pre>
+ *
  * @param mappingValue 调用方传入的业务值，如 open / 1
  * @param description  说明
  * @param target       FILL_ROOT 或 PATCH_FIELDS
@@ -31,16 +37,6 @@ public record ValueMapping(
         callerField = (callerField == null || callerField.isBlank())
                 ? CommandAssembler.CALLER_VALUE_KEY
                 : callerField.trim();
-    }
-
-    /** 兼容旧 5 参构造（callerField=value）。 */
-    public ValueMapping(
-            String mappingValue,
-            String description,
-            MappingTarget target,
-            Object rootValue,
-            List<FieldPatch> patches) {
-        this(mappingValue, description, target, rootValue, patches, CommandAssembler.CALLER_VALUE_KEY);
     }
 
     public static ValueMapping patch(String mappingValue, String description, List<FieldPatch> patches) {

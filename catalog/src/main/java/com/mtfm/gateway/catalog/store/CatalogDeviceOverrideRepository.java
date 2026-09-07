@@ -9,7 +9,7 @@ import com.mtfm.gateway.catalog.mapper.DeviceFunctionOverrideMapper;
 import com.mtfm.gateway.catalog.mapper.DeviceTopicOverrideMapper;
 import com.mtfm.gateway.catalog.id.SnowflakeIds;
 import com.mtfm.gateway.catalog.store.support.BatchMaps;
-import com.mtfm.gateway.catalog.store.support.EavPropertySupport;
+import com.mtfm.gateway.catalog.store.support.PropertyCodec;
 import com.mtfm.gateway.spi.property.PropertyItem;
 import org.springframework.stereotype.Repository;
 
@@ -41,7 +41,7 @@ public class CatalogDeviceOverrideRepository {
                 .eq("function_id", functionId)
                 .orderByAsc("attribute"))
                 .stream()
-                .map(EavPropertySupport::toItem)
+                .map(PropertyCodec::toItem)
                 .toList();
     }
 
@@ -78,7 +78,7 @@ public class CatalogDeviceOverrideRepository {
             row.setId(SnowflakeIds.next());
             row.setDeviceId(deviceId);
             row.setFunctionId(functionId);
-            EavPropertySupport.applyItem(row, item);
+            PropertyCodec.applyItem(row, item);
             functionOverrides.insert(row);
         }
     }
@@ -97,7 +97,7 @@ public class CatalogDeviceOverrideRepository {
                 row.setId(SnowflakeIds.next());
                 row.setDeviceId(deviceId);
                 row.setFunctionId(functionId);
-                EavPropertySupport.applyItem(row, item);
+                PropertyCodec.applyItem(row, item);
                 functionOverrides.insert(row);
             }
         });
@@ -163,7 +163,7 @@ public class CatalogDeviceOverrideRepository {
             row.setDeviceId(deviceId);
             row.setFunctionId(functionId);
             row.setFieldPath(path.trim());
-            row.setFieldValue(com.mtfm.gateway.catalog.json.JsonMaps.write(value));
+            row.setFieldValue(PropertyCodec.writeJson(value));
             fieldOverrides.insert(row);
         });
     }

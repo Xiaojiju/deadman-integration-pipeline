@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.mtfm.gateway.catalog.entity.EndpointPropertyEntity;
 import com.mtfm.gateway.catalog.mapper.EndpointPropertyMapper;
 import com.mtfm.gateway.catalog.id.SnowflakeIds;
-import com.mtfm.gateway.catalog.store.support.EavPropertySupport;
+import com.mtfm.gateway.catalog.store.support.PropertyCodec;
 import com.mtfm.gateway.catalog.store.support.BatchMaps;
 import com.mtfm.gateway.spi.property.PropertyItem;
 import org.springframework.stereotype.Repository;
@@ -36,7 +36,7 @@ public class CatalogEndpointPropertyRepository {
                 .orderByAsc("attribute"));
         for (EndpointPropertyEntity row : rows) {
             buckets.computeIfAbsent(row.getEndpointId(), key -> new java.util.ArrayList<>())
-                    .add(EavPropertySupport.toItem(row));
+                    .add(PropertyCodec.toItem(row));
         }
         return BatchMaps.freeze(buckets);
     }
@@ -50,7 +50,7 @@ public class CatalogEndpointPropertyRepository {
             EndpointPropertyEntity row = new EndpointPropertyEntity();
             row.setId(SnowflakeIds.next());
             row.setEndpointId(endpointId);
-            EavPropertySupport.applyItem(row, item);
+            PropertyCodec.applyItem(row, item);
             endpointProperties.insert(row);
         }
     }

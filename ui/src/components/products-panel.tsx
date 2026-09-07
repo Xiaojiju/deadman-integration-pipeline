@@ -80,6 +80,7 @@ import {
 } from "@/components/ui/table"
 import { ConfigExample, CodeSample } from "@/components/config-example"
 import { catalogApi, MIN_SCHEDULE_MS } from "@/lib/api"
+import { catalogModeLabel, catalogModeOf, functionDialogHint } from "@/lib/catalog-mode"
 import type {
   CapabilityDescriptor,
   ProductEntity,
@@ -177,8 +178,9 @@ export function ProductsPanel({
     (item) => item.capabilityType === capabilityType
   )
   const templates = selectedCapability?.functionTemplates ?? []
-  const isFixed = selectedCapability?.functionMode === "FIXED"
-  const isContracted = selectedCapability?.functionMode === "CONTRACT"
+  const catalogMode = catalogModeOf(selectedCapability?.functionMode)
+  const isFixed = catalogMode === "FIXED"
+  const isContracted = catalogMode === "CONTRACT"
   const selectedTemplate = templates.find(
     (item) => item.functionId === functionId
   )
@@ -634,7 +636,6 @@ export function ProductsPanel({
           capabilityType === "MQTT" ? correlationPath.trim() : undefined,
         correlationCommandPath:
           capabilityType === "MQTT" ? correlationCommandPath.trim() : undefined,
-        resultPath: capabilityType === "MQTT" ? "" : undefined,
         replyTimeoutMs: capabilityType === "MQTT" ? timeoutValue : undefined,
         scheduleEnabled,
         scheduleIntervalMs: intervalValue,
@@ -875,12 +876,7 @@ export function ProductsPanel({
                           key={item.capabilityType}
                           value={item.capabilityType}
                         >
-                          {item.capabilityType}
-                          {item.functionMode === "FIXED"
-                            ? " · FIXED"
-                            : item.functionMode === "CONTRACT"
-                              ? " · CONTRACT"
-                              : " · OPEN"}
+                          {item.capabilityType} · {catalogModeLabel(item.functionMode)}
                         </SelectItem>
                       ))}
                     </SelectGroup>
@@ -910,15 +906,7 @@ export function ProductsPanel({
               {fnMode === "edit" ? "编辑产品功能" : "创建产品功能"}
             </DialogTitle>
             <DialogDescription>
-              {fnMode === "edit"
-                ? structureLocked
-                  ? "预置功能结构不可改，仅可维护说明与排序。"
-                  : isContracted
-                    ? "CONTRACT：functionId 自定义，area/offset 等参数名锁死，只配来源与取值。"
-                    : "FIXED：默认参数与写字段的 field/取值不可改，可改说明；OPEN：读/写均可配置字段类型与约束。"
-                : isContracted
-                  ? "自定义业务 functionId（如 light.switch）。参数名由能力契约锁死。"
-                  : "FIXED 从预置模板选功能。OPEN（如 MQTT）自定义 functionId，并配置协议字段与调用方式。"}
+              {functionDialogHint(fnMode, catalogMode, structureLocked)}
             </DialogDescription>
           </DialogHeader>
           <FieldGroup>
@@ -962,12 +950,7 @@ export function ProductsPanel({
                         key={item.capabilityType}
                         value={item.capabilityType}
                       >
-                        {item.capabilityType}
-                        {item.functionMode === "FIXED"
-                          ? " · FIXED"
-                          : item.functionMode === "CONTRACT"
-                            ? " · CONTRACT"
-                            : " · OPEN"}
+                        {item.capabilityType} · {catalogModeLabel(item.functionMode)}
                       </SelectItem>
                     ))}
                   </SelectGroup>
@@ -1473,7 +1456,7 @@ export function ProductsPanel({
                 {accessType === "WRITE" ? (
                   <WriteFieldListEditor
                     label="应答取值"
-                    description="从回包抽出给调用方的值，并用来判定成败。每条：字段名=回包 path，返回名=北向键。选项：optionValue=设备值，mappingValue=北向业务值。协议值为 0 / false / fail / error / ng 时命令 FAILED。没有的字段跳过。"
+                    description="从回包抽出给调用方的值，并用来判定成败。每条：字段名=回包 path，返回名=北向键。选项：optionValue=设备值，mappingValue=北向业务值。协议值为 0 / false / fail / error / ng 时命令 FAILED。"
                     value={readFields}
                     onChange={setReadFields}
                     showOutputName

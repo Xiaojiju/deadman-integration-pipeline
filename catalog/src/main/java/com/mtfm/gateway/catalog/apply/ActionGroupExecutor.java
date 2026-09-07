@@ -12,7 +12,6 @@ import com.mtfm.gateway.spi.model.FunctionCommand;
 import com.mtfm.gateway.catalog.dto.DeviceCommandRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -23,7 +22,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * 按动作组成员调用现有 {@link CatalogApplyService#invoke}，跨设备并行、尽力而为。
+ * 按动作组成员调用 {@link CatalogCommandInvoker#invoke}，跨设备并行、尽力而为。
  */
 @Service
 public class ActionGroupExecutor {
@@ -31,11 +30,11 @@ public class ActionGroupExecutor {
     private static final Logger LOG = LoggerFactory.getLogger(ActionGroupExecutor.class);
 
     private final CatalogActionRepository actions;
-    private final ObjectProvider<CatalogApplyService> apply;
+    private final CatalogCommandInvoker invoker;
 
-    public ActionGroupExecutor(CatalogActionRepository actions, ObjectProvider<CatalogApplyService> apply) {
+    public ActionGroupExecutor(CatalogActionRepository actions, CatalogCommandInvoker invoker) {
         this.actions = actions;
-        this.apply = apply;
+        this.invoker = invoker;
     }
 
     public CompletableFuture<ActionGroupExecutionView> execute(String idOrCode, String source) {
@@ -49,14 +48,13 @@ public class ActionGroupExecutor {
             return CompletableFuture.completedFuture(new ActionGroupExecutionView(
                     group.getId(), group.getCode(), group.getKind(), source, List.of()));
         }
-        CatalogApplyService service = apply.getIfAvailable();
-        if (service == null) {
+        if (invoker == null) {
             throw new IllegalStateException("命令端口尚未装配，无法执行动作组");
         }
         String origin = source == null || source.isBlank() ? ActionKinds.SOURCE_CLUSTER : source.trim();
         List<CompletableFuture<ExecutionResult>> futures = new ArrayList<>(members.size());
         for (ActionMemberEntity member : members) {
-            futures.add(invokeMember(service, member, origin));
+            futures.add(invokeMember(invoker, member, origin));
         }
         return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
                 .orTimeout(ActionKinds.GROUP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
@@ -78,10 +76,10 @@ public class ActionGroupExecutor {
     }
 
     private static CompletableFuture<ExecutionResult> invokeMember(
-            CatalogApplyService service, ActionMemberEntity member, String source) {
+            CatalogCommandInvoker invoker, ActionMemberEntity member, String source) {
         Map<String, Object> arguments = JsonMaps.readMap(member.getArgumentsJson());
         try {
-            return service.invoke(
+            return invoker.invoke(
                     member.getDeviceCode(),
                     new DeviceCommandRequest(member.getFunctionId(), arguments, null, source));
         } catch (RuntimeException ex) {

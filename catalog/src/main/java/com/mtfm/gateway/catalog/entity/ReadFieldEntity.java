@@ -3,29 +3,60 @@ package com.mtfm.gateway.catalog.entity;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
+/**
+ * READ 功能下的单个读字段定义，结构与 {@link WriteOptionEntity} 对齐。
+ */
 @TableName("gw_read_field")
 public class ReadFieldEntity {
 
+    /** 主键（雪花 ID）。 */
     @TableId
     private String id;
+
+    /** 所属产品功能主键，对应 {@link ProductFunctionEntity#id}。 */
     private String productFunctionId;
+
+    /** 协议字段名或 path。 */
     private String field;
+
+    /** 字段说明，可空。 */
     private String description;
+
+    /** 访问层数据类型 wire code。 */
     private String accessDataType;
+
+    /** 传输层数据类型 wire code。 */
     private String transformDataType;
+
+    /** 是否忽略调用方入参。 */
     private Boolean ignoreRequest;
+
+    /** UI 采值约束（FieldFormat wire）。 */
     private String format;
+
+    /** 平台值生成器 wire code。 */
     private String valueGenerator;
+
+    /** 值来源：caller / platform / device / constant / mapped。 */
     private String fieldSource;
+
+    /** source=constant 时的固定值。 */
     private String constantValue;
+
+    /** MAPPED 时调用方传入的字段名。 */
     private String callerField;
     /** 协议字段顺序，按配置传入顺序保存。 */
     private Integer sortIndex;
     /** HEX/BINARY 字段占用字节数。 */
     private Integer byteLength;
     /** 字节序 big / little。 */
+    /** 字节序 big / little。 */
     private String byteOrder;
+
+    /** 入站换算运算符。 */
     private String scaleOp;
+
+    /** 入站换算操作数。 */
     private String scaleOperand;
 
     public String getId() {

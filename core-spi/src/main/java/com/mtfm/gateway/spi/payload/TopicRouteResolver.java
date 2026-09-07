@@ -10,7 +10,6 @@ public final class TopicRouteResolver {
     public static final String MQTT_REPLY_TOPIC_HINT = "mqtt.replyTopic";
     public static final String MQTT_CORRELATION_PATH_HINT = "mqtt.correlationPath";
     public static final String MQTT_CORRELATION_COMMAND_PATH_HINT = "mqtt.correlationCommandPath";
-    public static final String MQTT_RESULT_PATH_HINT = "mqtt.resultPath";
     public static final String MQTT_REPLY_TIMEOUT_MS_HINT = "mqtt.replyTimeoutMs";
 
     private TopicRouteResolver() {

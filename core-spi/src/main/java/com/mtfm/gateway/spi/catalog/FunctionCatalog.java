@@ -23,4 +23,12 @@ public interface FunctionCatalog {
      * @return 功能定义，不存在则空
      */
     Optional<FunctionDef> find(String deviceId, String functionId);
+
+    /** 功能是否为 WRITE；缺目录项视为否。 */
+    default boolean isWrite(String deviceId, String functionId) {
+        return find(deviceId, functionId)
+                .map(FunctionDef::accessType)
+                .filter(type -> "WRITE".equalsIgnoreCase(type))
+                .isPresent();
+    }
 }

@@ -3,6 +3,8 @@ package com.mtfm.gateway.spi.port;
 import com.mtfm.gateway.spi.plugin.InboundPlugin;
 import com.mtfm.gateway.spi.plugin.OutboundPlugin;
 
+import java.util.List;
+
 /**
  * 插件登记端口。{@link com.mtfm.gateway.spi.plugin.InboundPlugin#support} /
  * {@link com.mtfm.gateway.spi.plugin.OutboundPlugin#support} 为 {@code true} 才入链；按 {@code order} 升序。
@@ -20,4 +22,10 @@ public interface PluginRegistry {
 
     /** 注册出站插件。 */
     boolean register(OutboundPlugin plugin);
+
+    /** 入站插件，已按 {@code order} 升序。 */
+    List<InboundPlugin> inboundInOrder();
+
+    /** 出站插件，已按 {@code order} 升序。 */
+    List<OutboundPlugin> outboundInOrder();
 }

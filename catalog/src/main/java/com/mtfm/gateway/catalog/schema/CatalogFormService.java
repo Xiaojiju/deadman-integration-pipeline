@@ -27,6 +27,7 @@ import com.mtfm.gateway.catalog.entity.ProductFunctionEntity;
 import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.catalog.store.FunctionOptionBundle;
 import com.mtfm.gateway.spi.capability.CapabilityRegistrar;
+import com.mtfm.gateway.spi.catalog.DeviceBindingCatalog;
 import com.mtfm.gateway.spi.model.CapabilityDescriptor;
 import com.mtfm.gateway.spi.model.FunctionCommand;
 import com.mtfm.gateway.spi.model.FunctionTemplate;
@@ -42,9 +43,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 /**
  * 配置域门面：能力 schema、CRUD 与命令装配。写路径委托给专职协作类。
+ *
+ * <p>示例：{@code forms.createDevice(request)} → {@link DeviceView}
  */
 @Service
 public class CatalogFormService {
@@ -61,18 +65,45 @@ public class CatalogFormService {
     private final CatalogDeviceCommands devices;
     private final CatalogCommandFactory commands;
 
+    @Autowired
     public CatalogFormService(
             CatalogStore store,
             @Autowired(required = false) CapabilityRegistrar registrar,
-            ObjectProvider<DriverRegistry> driverRegistry) {
+            ObjectProvider<DriverRegistry> driverRegistry,
+            ObjectProvider<CatalogFormSupport> supportProvider,
+            ObjectProvider<CatalogFormViews> viewsProvider,
+            ObjectProvider<CatalogChannelCommands> channelsProvider,
+            ObjectProvider<CatalogProductCommands> productsProvider,
+            ObjectProvider<CatalogDeviceCommands> devicesProvider,
+            ObjectProvider<CatalogCommandFactory> commandsProvider) {
         this.store = store;
         this.registrar = registrar;
-        this.support = new CatalogFormSupport(store, registrar);
-        this.views = new CatalogFormViews(store, registrar, driverRegistry);
-        this.channels = new CatalogChannelCommands(store, support);
-        this.products = new CatalogProductCommands(store, support);
-        this.devices = new CatalogDeviceCommands(store, support);
-        this.commands = new CatalogCommandFactory(store, support);
+        this.support = first(supportProvider, () -> new CatalogFormSupport(store, registrar));
+        this.views = first(viewsProvider, () -> new CatalogFormViews(store, registrar, driverRegistry));
+        this.channels = first(channelsProvider, () -> new CatalogChannelCommands(store, this.support));
+        this.products = first(productsProvider, () -> new CatalogProductCommands(store, this.support));
+        this.devices = first(devicesProvider, () -> new CatalogDeviceCommands(store, this.support));
+        this.commands = first(commandsProvider, () -> new CatalogCommandFactory(store, this.support));
+    }
+
+    /** 测试装配：写路径直接注入绑定目录。 */
+    CatalogFormService(CatalogStore store, CapabilityRegistrar registrar, DeviceBindingCatalog bindings) {
+        this.store = store;
+        this.registrar = registrar;
+        this.support = new CatalogFormSupport(store, registrar, bindings);
+        this.views = new CatalogFormViews(store, registrar, null);
+        this.channels = new CatalogChannelCommands(store, this.support);
+        this.products = new CatalogProductCommands(store, this.support);
+        this.devices = new CatalogDeviceCommands(store, this.support);
+        this.commands = new CatalogCommandFactory(store, this.support);
+    }
+
+    private static <T> T first(ObjectProvider<T> provider, Supplier<T> fallback) {
+        if (provider == null) {
+            return fallback.get();
+        }
+        T bean = provider.getIfAvailable();
+        return bean != null ? bean : fallback.get();
     }
 
     public List<CapabilityDescriptor> listCapabilities() {

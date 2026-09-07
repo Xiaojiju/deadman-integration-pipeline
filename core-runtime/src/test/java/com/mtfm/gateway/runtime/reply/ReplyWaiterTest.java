@@ -20,7 +20,7 @@ class ReplyWaiterTest {
         });
         waiter.start();
         assertTrue(waiter.tryRegister(new ReplyWaiter.Pending(
-                "req-1", "door-1", "fn.open", "req-1", "ok", Instant.now().plusSeconds(5))));
+                "req-1", "door-1", "fn.open", "req-1", Instant.now().plusSeconds(5))));
         assertEquals("req-1", waiter.complete("door-1", "req-1").orElseThrow().requestId());
         assertTrue(waiter.complete("door-1", "req-1").isEmpty());
         waiter.close();
@@ -36,7 +36,7 @@ class ReplyWaiterTest {
         });
         waiter.start();
         assertTrue(waiter.tryRegister(new ReplyWaiter.Pending(
-                "req-2", "door-1", "fn.open", "req-2", null, Instant.now().plus(Duration.ofMillis(30)))));
+                "req-2", "door-1", "fn.open", "req-2", Instant.now().plus(Duration.ofMillis(30)))));
         assertTrue(latch.await(2, TimeUnit.SECONDS));
         assertEquals("req-2", expired.get().requestId());
         waiter.close();
@@ -48,10 +48,34 @@ class ReplyWaiterTest {
         });
         waiter.start();
         assertTrue(waiter.tryRegister(new ReplyWaiter.Pending(
-                "req-3", "door-1", "fn.open", "req-3", null, Instant.now().plusSeconds(5))));
+                "req-3", "door-1", "fn.open", "req-3", Instant.now().plusSeconds(5))));
         assertTrue(waiter.awaiting("door-1", "fn.open"));
         assertTrue(waiter.complete("door-1", "req-3").isPresent());
         assertFalse(waiter.awaiting("door-1", "fn.open"));
+        waiter.close();
+    }
+
+    @Test
+    void rejectsWhenGlobalCapacityReached() {
+        ReplyWaiter waiter = new ReplyWaiter(1, 4, pending -> {
+        });
+        waiter.start();
+        assertTrue(waiter.tryRegister(new ReplyWaiter.Pending(
+                "req-a", "door-1", "fn.open", "corr-a", Instant.now().plusSeconds(5))));
+        assertFalse(waiter.tryRegister(new ReplyWaiter.Pending(
+                "req-b", "door-2", "fn.open", "corr-b", Instant.now().plusSeconds(5))));
+        waiter.close();
+    }
+
+    @Test
+    void rejectsWhenDeviceCapacityReached() {
+        ReplyWaiter waiter = new ReplyWaiter(8, 1, pending -> {
+        });
+        waiter.start();
+        assertTrue(waiter.tryRegister(new ReplyWaiter.Pending(
+                "req-a", "door-1", "fn.open", "corr-a", Instant.now().plusSeconds(5))));
+        assertFalse(waiter.tryRegister(new ReplyWaiter.Pending(
+                "req-b", "door-1", "fn.close", "corr-b", Instant.now().plusSeconds(5))));
         waiter.close();
     }
 }

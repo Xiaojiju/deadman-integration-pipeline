@@ -27,4 +27,15 @@ final class MqttPayloadJson {
             return Map.of("_raw", text);
         }
     }
+
+    static String stringify(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        try {
+            return MAPPER.writeValueAsString(value);
+        } catch (Exception ex) {
+            return String.valueOf(value);
+        }
+    }
 }

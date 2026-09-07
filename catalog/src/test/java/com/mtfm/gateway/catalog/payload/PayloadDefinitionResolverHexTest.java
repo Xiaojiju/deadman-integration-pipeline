@@ -42,7 +42,12 @@ class PayloadDefinitionResolverHexTest {
     }
 
     private static WriteFieldOption option(String name, int byteLength) {
-        return new WriteFieldOption(
-                name, "", "int", "int", false, List.of(), "none", null, "caller", null, null, byteLength, "big");
+        return WriteFieldOption.builder(name)
+                .accessDataType("int")
+                .transformDataType("int")
+                .source("caller")
+                .byteLength(byteLength)
+                .byteOrder("big")
+                .build();
     }
 }

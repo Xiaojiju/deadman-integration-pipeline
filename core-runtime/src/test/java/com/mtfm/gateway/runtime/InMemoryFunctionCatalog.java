@@ -1,7 +1,6 @@
 package com.mtfm.gateway.runtime;
 
 import com.mtfm.gateway.spi.catalog.FunctionCatalog;
-import com.mtfm.gateway.spi.model.AccessPermission;
 import com.mtfm.gateway.spi.model.FunctionDef;
 
 import java.util.Optional;
@@ -14,7 +13,7 @@ final class InMemoryFunctionCatalog implements FunctionCatalog {
 
     InMemoryFunctionCatalog allow(String deviceId, String functionId) {
         defs.put(deviceId + "/" + functionId,
-                new FunctionDef(functionId, "WRITE", AccessPermission.WRITE.code(), null));
+                FunctionDef.builder(functionId).accessType("WRITE").build());
         return this;
     }
 

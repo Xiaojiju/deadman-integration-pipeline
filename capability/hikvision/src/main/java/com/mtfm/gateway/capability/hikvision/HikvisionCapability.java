@@ -77,7 +77,7 @@ public final class HikvisionCapability {
             TYPE,
             List.of(
                     SchemaField.required("host", FieldType.STRING, "ISAPI 主机"),
-                    SchemaField.optional("port", FieldType.INT, "端口", 80),
+                    SchemaField.optional("port", FieldType.INT, "端口", 80).range(1, 65535),
                     SchemaField.optional("username", FieldType.STRING, "用户名，凭证建议来自环境变量"),
                     SchemaField.optionalSecret("password", "密码，凭证建议来自环境变量")),
             List.of(SchemaField.required("deviceSerialNo", FieldType.STRING, "设备序列号（devIndex）")),

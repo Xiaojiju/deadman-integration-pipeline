@@ -70,17 +70,6 @@ public record FunctionCommand(
                 null);
     }
 
-    /** 兼容旧六参构造（无 deliveryHints）。 */
-    public FunctionCommand(
-            String requestId,
-            String deviceId,
-            String functionId,
-            String capabilityType,
-            Attributes arguments,
-            Instant deadlineAt) {
-        this(requestId, deviceId, functionId, capabilityType, arguments, Attributes.empty(), deadlineAt);
-    }
-
     /** 从已贴胶 COMMAND 信封物化命令。 */
     public static FunctionCommand from(Envelope envelope) {
         if (envelope.kind() != EnvelopeKind.COMMAND) {

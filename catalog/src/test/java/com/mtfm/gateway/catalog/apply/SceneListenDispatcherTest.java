@@ -5,20 +5,18 @@ import com.mtfm.gateway.catalog.dto.ActionGroupExecutionView;
 import com.mtfm.gateway.catalog.entity.ActionGroupEntity;
 import com.mtfm.gateway.catalog.entity.SceneTriggerEntity;
 import com.mtfm.gateway.catalog.store.CatalogActionRepository;
-import com.mtfm.gateway.catalog.store.CatalogStore;
+import com.mtfm.gateway.spi.catalog.FunctionCatalog;
 import com.mtfm.gateway.spi.model.Attributes;
-import com.mtfm.gateway.spi.model.FunctionDef;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -30,7 +28,7 @@ class SceneListenDispatcherTest {
     @Mock
     private CatalogActionRepository actions;
     @Mock
-    private CatalogStore store;
+    private FunctionCatalog catalog;
     @Mock
     private ActionGroupExecutor executor;
 
@@ -49,16 +47,14 @@ class SceneListenDispatcherTest {
         group.setKind(ActionKinds.SCENE);
         group.setEnabled(true);
 
-        FunctionDef write = mock(FunctionDef.class);
-        when(write.accessType()).thenReturn("WRITE");
         when(actions.listEnabledListen()).thenReturn(List.of(trigger));
-        when(actions.findGroup("g1")).thenReturn(Optional.of(group));
-        when(store.find("door", "open")).thenReturn(Optional.of(write));
+        when(actions.findGroupsByIds(List.of("g1"))).thenReturn(Map.of("g1", group));
+        when(catalog.isWrite("door", "open")).thenReturn(true);
         when(executor.execute("g1", ActionKinds.SOURCE_SCENE)).thenReturn(
                 CompletableFuture.completedFuture(new ActionGroupExecutionView(
                         "g1", "lights", ActionKinds.SCENE, ActionKinds.SOURCE_SCENE, List.of())));
 
-        SceneListenDispatcher dispatcher = new SceneListenDispatcher(actions, store, executor);
+        SceneListenDispatcher dispatcher = new SceneListenDispatcher(actions, catalog, executor);
         dispatcher.rebuild();
         dispatcher.onCommandSuccess("door", "open", Attributes.from(java.util.Map.of("value", "1")), null);
         dispatcher.onCommandSuccess("door", "open", Attributes.empty(), ActionKinds.SOURCE_SCENE);

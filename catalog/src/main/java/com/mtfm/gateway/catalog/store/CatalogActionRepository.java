@@ -13,7 +13,11 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -71,6 +75,46 @@ public class CatalogActionRepository {
             query.eq("kind", kind.trim().toUpperCase());
         }
         return groups.selectList(query);
+    }
+
+    public Map<String, ActionGroupEntity> findGroupsByIds(Collection<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Map.of();
+        }
+        List<ActionGroupEntity> rows = groups.selectList(new QueryWrapper<ActionGroupEntity>().in("id", ids));
+        Map<String, ActionGroupEntity> byId = new LinkedHashMap<>();
+        for (ActionGroupEntity row : rows) {
+            byId.put(row.getId(), row);
+        }
+        return byId;
+    }
+
+    public Map<String, List<ActionMemberEntity>> listMembersByGroupIds(Collection<String> groupIds) {
+        if (groupIds == null || groupIds.isEmpty()) {
+            return Map.of();
+        }
+        List<ActionMemberEntity> rows = members.selectList(new QueryWrapper<ActionMemberEntity>()
+                .in("group_id", groupIds)
+                .orderByAsc("sort_index")
+                .orderByAsc("id"));
+        Map<String, List<ActionMemberEntity>> byGroup = new LinkedHashMap<>();
+        for (ActionMemberEntity row : rows) {
+            byGroup.computeIfAbsent(row.getGroupId(), key -> new ArrayList<>()).add(row);
+        }
+        return byGroup;
+    }
+
+    public Map<String, SceneTriggerEntity> findTriggersByGroupIds(Collection<String> groupIds) {
+        if (groupIds == null || groupIds.isEmpty()) {
+            return Map.of();
+        }
+        List<SceneTriggerEntity> rows = triggers.selectList(
+                new QueryWrapper<SceneTriggerEntity>().in("group_id", groupIds));
+        Map<String, SceneTriggerEntity> byGroup = new LinkedHashMap<>();
+        for (SceneTriggerEntity row : rows) {
+            byGroup.put(row.getGroupId(), row);
+        }
+        return byGroup;
     }
 
     public boolean deleteGroup(String id) {

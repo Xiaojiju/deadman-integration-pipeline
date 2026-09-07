@@ -6,13 +6,11 @@ import com.mtfm.gateway.catalog.dto.DeviceRegisterRequest;
 import com.mtfm.gateway.catalog.entity.DeviceEntity;
 import com.mtfm.gateway.catalog.schema.CatalogFormService;
 import com.mtfm.gateway.catalog.store.CatalogStore;
+import com.mtfm.gateway.spi.catalog.DeviceBindingCatalog;
 import com.mtfm.gateway.spi.model.DeviceEndpointBinding;
 import com.mtfm.gateway.spi.model.ExecutionResult;
-import com.mtfm.gateway.spi.model.ExecutionStatus;
-import com.mtfm.gateway.spi.model.FunctionCommand;
 import com.mtfm.gateway.spi.port.DeviceScheduleRegistry;
 import com.mtfm.gateway.spi.port.DriverRegistry;
-import com.mtfm.gateway.spi.port.PipelineCommandPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -26,12 +24,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 /**
- * 设备运行时加载/卸载与手动指令服务。
+ * 设备运行时加载/卸载。单设备下发见 {@link CatalogCommandInvoker}，动作组见 {@link ActionGroupExecutor}。
  *
- * <p>
- * 对 {@link CatalogFormService} / {@link PipelineCommandPort} 使用
- * {@link ObjectProvider}
- * 延迟获取。设备绑定走独立的 {@link DriverRegistry}（{@code DefaultRegistries}），不再依赖流水线兼五职。
+ * <p>示例：{@code applyService.load("pump-01")}
  */
 @Service
 public class CatalogApplyService {
@@ -39,49 +34,60 @@ public class CatalogApplyService {
     private static final Logger LOG = LoggerFactory.getLogger(CatalogApplyService.class);
 
     private final CatalogStore store;
-    private final ObjectProvider<CatalogFormService> forms;
-    private final ObjectProvider<PipelineCommandPort> commandPort;
+    private final DeviceBindingCatalog bindings;
+    private final CatalogFormService forms;
     private final ObjectProvider<DeviceScheduleRegistry> schedules;
-    private final ObjectProvider<SceneListenDispatcher> sceneListen;
-    private final ObjectProvider<ActionGroupExecutor> actionExecutor;
+    private final ActionGroupExecutor actionExecutor;
+    private final CatalogCommandInvoker invoker;
     private DriverRegistry registry;
 
-    public CatalogApplyService(CatalogStore store,
-            ObjectProvider<CatalogFormService> forms,
-            ObjectProvider<PipelineCommandPort> commandPort) {
-        this(store, forms, commandPort, null, null, null, null);
-    }
-
-    public CatalogApplyService(CatalogStore store,
-            ObjectProvider<CatalogFormService> forms,
-            ObjectProvider<PipelineCommandPort> commandPort,
-            ObjectProvider<DriverRegistry> driverRegistry) {
-        this(store, forms, commandPort, driverRegistry, null, null, null);
-    }
-
-    public CatalogApplyService(CatalogStore store,
-            ObjectProvider<CatalogFormService> forms,
-            ObjectProvider<PipelineCommandPort> commandPort,
-            ObjectProvider<DriverRegistry> driverRegistry,
-            ObjectProvider<DeviceScheduleRegistry> schedules) {
-        this(store, forms, commandPort, driverRegistry, schedules, null, null);
-    }
-
     @Autowired
-    public CatalogApplyService(CatalogStore store,
-            ObjectProvider<CatalogFormService> forms,
-            ObjectProvider<PipelineCommandPort> commandPort,
-            ObjectProvider<DriverRegistry> driverRegistry,
+    public CatalogApplyService(
+            CatalogStore store,
+            DeviceBindingCatalog bindings,
+            CatalogFormService forms,
+            CatalogCommandInvoker invoker,
+            @Autowired(required = false) DriverRegistry driverRegistry,
             ObjectProvider<DeviceScheduleRegistry> schedules,
-            ObjectProvider<SceneListenDispatcher> sceneListen,
-            ObjectProvider<ActionGroupExecutor> actionExecutor) {
+            @Autowired(required = false) ActionGroupExecutor actionExecutor) {
         this.store = store;
+        this.bindings = bindings;
         this.forms = forms;
-        this.commandPort = commandPort;
-        this.registry = driverRegistry == null ? null : driverRegistry.getIfAvailable();
+        this.invoker = invoker;
+        this.registry = driverRegistry;
         this.schedules = schedules;
-        this.sceneListen = sceneListen;
         this.actionExecutor = actionExecutor;
+    }
+
+    /** 测试用：未装配命令/表单时只测 load/unload。 */
+    CatalogApplyService(CatalogStore store, DeviceBindingCatalog bindings, DeviceScheduleRegistry schedules) {
+        this.store = store;
+        this.bindings = bindings;
+        this.forms = null;
+        this.invoker = null;
+        this.registry = null;
+        this.schedules = new ObjectProvider<>() {
+            @Override
+            public DeviceScheduleRegistry getObject() {
+                return schedules;
+            }
+
+            @Override
+            public DeviceScheduleRegistry getObject(Object... args) {
+                return schedules;
+            }
+
+            @Override
+            public DeviceScheduleRegistry getIfAvailable() {
+                return schedules;
+            }
+
+            @Override
+            public DeviceScheduleRegistry getIfUnique() {
+                return schedules;
+            }
+        };
+        this.actionExecutor = null;
     }
 
     public void attach(DriverRegistry registry) {
@@ -92,7 +98,10 @@ public class CatalogApplyService {
      * 一次性登记设备：落库 + 可选 load。
      */
     public DeviceEntity register(DeviceRegisterRequest request) {
-        DeviceEntity device = forms.getObject().registerDevice(request);
+        if (forms == null) {
+            throw new IllegalStateException("配置门面尚未装配");
+        }
+        DeviceEntity device = forms.registerDevice(request);
         boolean shouldLoad = request.load() == null || request.load();
         if (shouldLoad) {
             load(device.getDeviceCode());
@@ -119,7 +128,7 @@ public class CatalogApplyService {
         if (Boolean.FALSE.equals(device.getEnabled())) {
             throw new IllegalArgumentException("设备已停用: " + deviceCode);
         }
-        List<DeviceEndpointBinding> all = store.findEndpoints(deviceCode);
+        List<DeviceEndpointBinding> all = bindings.findEndpoints(deviceCode);
         detach(deviceCode, all);
         if (all.isEmpty()) {
             syncSchedules(deviceCode, List.of());
@@ -157,7 +166,7 @@ public class CatalogApplyService {
         if (registry == null) {
             return;
         }
-        detach(deviceCode, store.findEndpoints(deviceCode));
+        detach(deviceCode, bindings.findEndpoints(deviceCode));
         syncSchedules(deviceCode, List.of());
     }
 
@@ -223,33 +232,18 @@ public class CatalogApplyService {
      * 手动向已加载设备下发产品功能指令。
      */
     public CompletableFuture<ExecutionResult> invoke(String deviceCode, DeviceCommandRequest request) {
-        PipelineCommandPort port = commandPort.getIfAvailable();
-        if (port == null) {
+        if (invoker == null) {
             throw new IllegalStateException("命令端口尚未装配，无法手动下发");
         }
-        FunctionCommand command = forms.getObject().buildCommand(deviceCode, request);
-        if (!isLoaded(deviceCode)) {
-            throw new IllegalStateException("设备未加载到运行时，请先 POST /catalog/devices/" + deviceCode + "/load");
-        }
-        return port.submit(command).whenComplete((result, error) -> {
-            if (error != null || result == null || result.status() != ExecutionStatus.SUCCESS) {
-                return;
-            }
-            SceneListenDispatcher dispatcher = sceneListen == null ? null : sceneListen.getIfAvailable();
-            if (dispatcher != null) {
-                dispatcher.onCommandSuccess(
-                        deviceCode, request.functionId(), command.arguments(), request.source());
-            }
-        });
+        return invoker.invoke(deviceCode, request);
     }
 
     public CompletableFuture<ActionGroupExecutionView> executeActionGroup(
             String idOrCode, String source) {
-        ActionGroupExecutor executor = actionExecutor == null ? null : actionExecutor.getIfAvailable();
-        if (executor == null) {
+        if (actionExecutor == null) {
             throw new IllegalStateException("动作组执行器尚未装配");
         }
-        return executor.execute(idOrCode, source);
+        return actionExecutor.execute(idOrCode, source);
     }
 
     public void reloadAll() {

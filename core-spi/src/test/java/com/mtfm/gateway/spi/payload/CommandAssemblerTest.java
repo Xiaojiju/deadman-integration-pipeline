@@ -47,7 +47,12 @@ class CommandAssemblerTest {
                         List.of(FieldNode.leaf("name", "string", FieldSource.CALLER, "none", null, null, "")),
                         null,
                         List.of(),
-                        ""),
+                        "",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null),
                 FieldNode.leaf("seq", "string", FieldSource.PLATFORM, "none", "uuid", null, "")));
 
         Map<String, Object> payload = CommandAssembler.assemble(new CommandAssembler.Request(
@@ -94,7 +99,12 @@ class CommandAssemblerTest {
                         FieldNode.leaf("5", "string", FieldSource.DEVICE, "none", null, null, "pin")),
                 FieldNode.leaf("item", "string", FieldSource.CALLER, "none", null, null, ""),
                 List.of(),
-                "");
+                "",
+                null,
+                null,
+                null,
+                null,
+                null);
         FieldNode root = FieldNode.objectRoot("root", List.of(
                 FieldNode.leaf("devId", "string", FieldSource.DEVICE, "none", null, null, ""),
                 FieldNode.leaf("devPsw", "string", FieldSource.CONSTANT, "none", null, "0", ""),
@@ -259,18 +269,23 @@ class CommandAssemblerTest {
                         FieldNode.leaf("1", "string", FieldSource.CALLER, "none", null, null, "phone"),
                         new FieldNode(
                                 "2", "string", "none", FieldSource.CALLER, null, null, List.of(), null, List.of(),
-                                "password", null, null, "password"),
+                                "password", null, null, "password", null, null),
                         new FieldNode(
                                 "3", "string", "none", FieldSource.CALLER, null, null, List.of(), null, List.of(),
-                                "begin", null, null, "beginTime"),
+                                "begin", null, null, "beginTime", null, null),
                         new FieldNode(
                                 "4", "string", "none", FieldSource.CALLER, null, null, List.of(), null, List.of(),
-                                "expire", null, null, "expireTime"),
+                                "expire", null, null, "expireTime", null, null),
                         FieldNode.leaf("5", "string", FieldSource.DEVICE, "none", null, null, "lockSn"),
                         FieldNode.leaf("6", "string", FieldSource.CONSTANT, "none", null, "12345678", "")),
                 FieldNode.leaf("item", "string", FieldSource.CALLER, "none", null, null, ""),
                 List.of(),
-                "");
+                "",
+                null,
+                null,
+                null,
+                null,
+                null);
         FieldNode root = FieldNode.objectRoot("root", List.of(
                 FieldNode.leaf("devId", "string", FieldSource.DEVICE, "none", null, null, ""),
                 FieldNode.leaf("devPsw", "string", FieldSource.CONSTANT, "none", null, "0", ""),

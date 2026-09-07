@@ -4,6 +4,8 @@ import com.mtfm.gateway.catalog.entity.DeviceEntity;
 import com.mtfm.gateway.catalog.entity.ProductFunctionEntity;
 import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.spi.capability.CapabilityRegistrar;
+import com.mtfm.gateway.spi.catalog.DeviceBindingCatalog;
+import com.mtfm.gateway.spi.model.DeviceBinding;
 import com.mtfm.gateway.spi.model.AccessPermission;
 import com.mtfm.gateway.spi.model.CapabilityDescriptor;
 import com.mtfm.gateway.spi.model.DeviceEndpointBinding;
@@ -13,6 +15,9 @@ import com.mtfm.gateway.spi.payload.TopicCatalog;
 import com.mtfm.gateway.spi.property.PropertyItem;
 import com.mtfm.gateway.spi.property.PropertySchemas;
 import com.mtfm.gateway.spi.property.WriteFieldOption;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -25,16 +30,27 @@ import java.util.stream.Collectors;
 /**
  * 表单写路径共享：能力查找、端点选择、覆盖校验。
  */
+@Component
 final class CatalogFormSupport {
 
     private static final Set<String> LOCKED_CONTRACT_FIELDS = Set.of("area", "dataType");
 
     private final CatalogStore store;
     private final CapabilityRegistrar registrar;
+    private final DeviceBindingCatalog bindings;
 
     CatalogFormSupport(CatalogStore store, CapabilityRegistrar registrar) {
+        this(store, registrar, EmptyBindings.INSTANCE);
+    }
+
+    @Autowired
+    CatalogFormSupport(
+            CatalogStore store,
+            @Autowired(required = false) CapabilityRegistrar registrar,
+            DeviceBindingCatalog bindings) {
         this.store = store;
         this.registrar = registrar;
+        this.bindings = bindings == null ? EmptyBindings.INSTANCE : bindings;
     }
 
     CatalogStore store() {
@@ -60,7 +76,7 @@ final class CatalogFormSupport {
 
     DeviceEndpointBinding requireEndpointForFunction(DeviceEntity device, ProductFunctionEntity function) {
         String capability = function.getCapabilityType();
-        List<DeviceEndpointBinding> matched = store.findEndpoints(device.getDeviceCode()).stream()
+        List<DeviceEndpointBinding> matched = endpointsOf(device.getDeviceCode()).stream()
                 .filter(endpoint -> capability != null && capability.equalsIgnoreCase(endpoint.capabilityType()))
                 .filter(binding -> binding.channelEnabled())
                 .collect(Collectors.toList());
@@ -90,7 +106,7 @@ final class CatalogFormSupport {
         CapabilityDescriptor descriptor = found.get();
         List<SchemaField> schema;
         if (descriptor.contractedParameters()) {
-            schema = CatalogFunctionBinding.requireContractTemplate(descriptor, function.getAccessType()).parameters();
+            schema = CatalogContractFunctionBinding.requireContractTemplate(descriptor, function.getAccessType()).parameters();
         } else {
             schema = descriptor.functionTemplate(function.getFunctionId())
                     .map(ft -> ft.parameters())
@@ -179,28 +195,16 @@ final class CatalogFormSupport {
         }
     }
 
-    static List<PropertyItem> resolveProperties(List<PropertyItem> properties, Map<String, Object> legacy) {
-        if (properties != null) {
-            return properties;
-        }
-        return PropertySchemas.fromValueMap(legacy == null ? Map.of() : legacy);
+    static List<PropertyItem> resolveProperties(List<PropertyItem> properties) {
+        return properties == null ? List.of() : properties;
     }
 
-    static Map<String, List<PropertyItem>> resolveFunctionOverrides(
-            Map<String, List<PropertyItem>> overrides, Map<String, Object> legacy) {
-        if (overrides != null) {
-            return overrides;
-        }
-        return CatalogStore.parseLegacyOverrides(legacy);
+    static Map<String, List<PropertyItem>> resolveFunctionOverrides(Map<String, List<PropertyItem>> overrides) {
+        return overrides == null ? Map.of() : overrides;
     }
 
-    static Map<String, Object> toLegacyOverrideMap(Map<String, List<PropertyItem>> overrides) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        if (overrides == null) {
-            return result;
-        }
-        overrides.forEach((functionId, items) -> result.put(functionId, PropertySchemas.toValueMap(items)));
-        return result;
+    private List<DeviceEndpointBinding> endpointsOf(String deviceCode) {
+        return bindings.findEndpoints(deviceCode);
     }
 
     private Set<String> allowedOverrideFields(ProductFunctionEntity function) {
@@ -223,5 +227,19 @@ final class CatalogFormSupport {
             }
         }
         return allowed;
+    }
+
+    private enum EmptyBindings implements DeviceBindingCatalog {
+        INSTANCE;
+
+        @Override
+        public Optional<DeviceBinding> findDevice(String deviceId) {
+            return Optional.empty();
+        }
+
+        @Override
+        public List<DeviceEndpointBinding> findEndpoints(String deviceId) {
+            return List.of();
+        }
     }
 }

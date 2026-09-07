@@ -22,6 +22,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 真实 Modbus TCP 总线：同一 host:port 复用一条 TCP，按 unitId 区分从站。
  *
  * <p>retain/release 引用计数，计数归零关闭连接。读写失败时断线并重试一次。
+ *
+ * <p>同一 TCP 流是写后阻塞读，{@code synchronized(session)} 保证事务号配对；
+ * 不能按 unitId 并行，除非另开读线程做事务多路复用。
  */
 public final class TcpModbusBus extends AbstractModbusBus {
 

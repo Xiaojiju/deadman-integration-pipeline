@@ -10,7 +10,7 @@ import java.util.function.BiConsumer;
 public final class InMemoryNorthboundMqttSession implements NorthboundMqttSession {
 
     private final CopyOnWriteArrayList<String> published = new CopyOnWriteArrayList<>();
-    private final CopyOnWriteArrayList<Subscription> subscriptions = new CopyOnWriteArrayList<>();
+    private final NorthboundSubscriptionIndex index = new NorthboundSubscriptionIndex();
 
     @Override
     public void start() {
@@ -19,16 +19,12 @@ public final class InMemoryNorthboundMqttSession implements NorthboundMqttSessio
     @Override
     public void publish(String topic, String payload) {
         published.add(topic + "|" + (payload == null ? "" : payload));
-        for (Subscription subscription : subscriptions) {
-            if (NorthboundTopics.matches(subscription.filter(), topic)) {
-                subscription.handler().accept(topic, payload == null ? "" : payload);
-            }
-        }
+        index.dispatch(topic, payload == null ? "" : payload);
     }
 
     @Override
     public void subscribe(String topicFilter, BiConsumer<String, String> handler) {
-        subscriptions.add(new Subscription(topicFilter, handler));
+        index.add(topicFilter, handler);
     }
 
     public List<String> snapshot() {
@@ -36,14 +32,11 @@ public final class InMemoryNorthboundMqttSession implements NorthboundMqttSessio
     }
 
     public int subscriptionCount() {
-        return subscriptions.size();
+        return index.size();
     }
 
     @Override
     public void close() {
-        subscriptions.clear();
-    }
-
-    private record Subscription(String filter, BiConsumer<String, String> handler) {
+        index.clear();
     }
 }

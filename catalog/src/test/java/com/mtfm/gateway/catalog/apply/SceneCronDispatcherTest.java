@@ -13,6 +13,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
@@ -56,7 +57,7 @@ class SceneCronDispatcherTest {
         group.setEnabled(true);
 
         when(actions.listEnabledTimers()).thenReturn(List.of(trigger));
-        when(actions.findGroup("g1")).thenReturn(Optional.of(group));
+        when(actions.findGroupsByIds(org.mockito.ArgumentMatchers.any())).thenReturn(Map.of("g1", group));
         when(actions.findTrigger("g1")).thenReturn(Optional.of(trigger));
         when(executor.execute("g1", ActionKinds.SOURCE_SCENE)).thenReturn(
                 CompletableFuture.completedFuture(new ActionGroupExecutionView(

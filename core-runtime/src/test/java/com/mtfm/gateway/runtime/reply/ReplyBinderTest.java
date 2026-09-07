@@ -32,7 +32,7 @@ class ReplyBinderTest {
         });
         waiter.start();
         assertTrue(waiter.tryRegister(new ReplyWaiter.Pending(
-                "req-open-1", "door-1", "fn.open", "req-open-1", "ok", Instant.now().plusSeconds(5))));
+                "req-open-1", "door-1", "fn.open", "req-open-1", Instant.now().plusSeconds(5))));
         ReplyCatalog catalog = new ReplyCatalog();
         catalog.put("door-1", openFunction());
         ReplyBinder binder = new ReplyBinder(catalog, waiter);
@@ -55,32 +55,28 @@ class ReplyBinderTest {
         });
         waiter.start();
         assertTrue(waiter.tryRegister(new ReplyWaiter.Pending(
-                "req-3", "F123", "fn.open", "F123", "params.1", Instant.now().plusSeconds(5))));
+                "req-3", "F123", "fn.open", "F123", Instant.now().plusSeconds(5))));
         ReplyCatalog catalog = new ReplyCatalog();
-        catalog.put("F123", new FunctionDef(
-                "fn.open",
-                "WRITE",
-                AccessPermission.WRITE.code(),
-                null,
-                List.of(),
-                ValueAccessType.STRUCT,
-                List.of(),
-                List.of(),
-                List.of(
-                        new WriteFieldOption(
-                                "params.1", "成败", "string", "string", true, List.of(),
-                                "none", null, "caller", null, "success"),
-                        new WriteFieldOption(
-                                "params.2", "说明", "string", "string", true, List.of(),
-                                "none", null, "caller", null, "message")),
-                List.of(),
-                PayloadEncoding.JSON,
-                "ydlink/dev/response",
-                "params.0",
-                "params.1",
-                2000,
-                null,
-                false));
+        catalog.put("F123", FunctionDef.builder("fn.open")
+                .accessType("WRITE")
+                .accessPermission(AccessPermission.WRITE.code())
+                .writeAccessType(ValueAccessType.STRUCT)
+                .readFields(List.of(
+                        WriteFieldOption.builder("params.1")
+                                .description("成败")
+                                .ignoreRequest(true)
+                                .source("caller")
+                                .callerField("success")
+                                .build(),
+                        WriteFieldOption.builder("params.2")
+                                .description("说明")
+                                .ignoreRequest(true)
+                                .source("caller")
+                                .callerField("message")
+                                .build()))
+                .payloadEncoding(PayloadEncoding.JSON)
+                .reply(FunctionDef.ReplySpec.of("ydlink/dev/response", "params.0", 2000))
+                .build());
         ReplyBinder binder = new ReplyBinder(catalog, waiter);
 
         Optional<com.mtfm.gateway.spi.model.ExecutionResult> matched = binder.bind(envelope(
@@ -102,38 +98,24 @@ class ReplyBinderTest {
         });
         waiter.start();
         assertTrue(waiter.tryRegister(new ReplyWaiter.Pending(
-                "req-4", "F123", "fn.open", "F123", "params.1", Instant.now().plusSeconds(5))));
+                "req-4", "F123", "fn.open", "F123", Instant.now().plusSeconds(5))));
         ReplyCatalog catalog = new ReplyCatalog();
-        catalog.put("F123", new FunctionDef(
-                "fn.open",
-                "WRITE",
-                AccessPermission.WRITE.code(),
-                null,
-                List.of(),
-                ValueAccessType.STRUCT,
-                List.of(),
-                List.of(),
-                List.of(new WriteFieldOption(
-                        "params.1",
-                        "成败",
-                        "string",
-                        "string",
-                        true,
-                        List.of(new ValueOption("0", "failed", "失败", "string", "string", false),
-                                new ValueOption("1", "ok", "成功", "string", "string", false)),
-                        "none",
-                        null,
-                        "caller",
-                        null,
-                        "success")),
-                List.of(),
-                PayloadEncoding.JSON,
-                "ydlink/dev/response",
-                "params.0",
-                null,
-                2000,
-                null,
-                false));
+        catalog.put("F123", FunctionDef.builder("fn.open")
+                .accessType("WRITE")
+                .accessPermission(AccessPermission.WRITE.code())
+                .writeAccessType(ValueAccessType.STRUCT)
+                .readFields(List.of(WriteFieldOption.builder("params.1")
+                        .description("成败")
+                        .ignoreRequest(true)
+                        .options(List.of(
+                                new ValueOption("0", "failed", "失败", "string", "string", false),
+                                new ValueOption("1", "ok", "成功", "string", "string", false)))
+                        .source("caller")
+                        .callerField("success")
+                        .build()))
+                .payloadEncoding(PayloadEncoding.JSON)
+                .reply(FunctionDef.ReplySpec.of("ydlink/dev/response", "params.0", 2000))
+                .build());
         ReplyBinder binder = new ReplyBinder(catalog, waiter);
 
         Optional<com.mtfm.gateway.spi.model.ExecutionResult> matched = binder.bind(envelope(
@@ -154,38 +136,24 @@ class ReplyBinderTest {
         });
         waiter.start();
         assertTrue(waiter.tryRegister(new ReplyWaiter.Pending(
-                "req-5", "F123", "fn.open", "F123", null, Instant.now().plusSeconds(5))));
+                "req-5", "F123", "fn.open", "F123", Instant.now().plusSeconds(5))));
         ReplyCatalog catalog = new ReplyCatalog();
-        catalog.put("F123", new FunctionDef(
-                "fn.open",
-                "WRITE",
-                AccessPermission.WRITE.code(),
-                null,
-                List.of(),
-                ValueAccessType.STRUCT,
-                List.of(),
-                List.of(),
-                List.of(new WriteFieldOption(
-                        "params.1",
-                        "成败",
-                        "string",
-                        "string",
-                        true,
-                        List.of(new ValueOption("0", "failed", "失败", "string", "string", false),
-                                new ValueOption("1", "ok", "成功", "string", "string", false)),
-                        "none",
-                        null,
-                        "caller",
-                        null,
-                        "success")),
-                List.of(),
-                PayloadEncoding.JSON,
-                "ydlink/dev/response",
-                "params.0",
-                null,
-                2000,
-                null,
-                false));
+        catalog.put("F123", FunctionDef.builder("fn.open")
+                .accessType("WRITE")
+                .accessPermission(AccessPermission.WRITE.code())
+                .writeAccessType(ValueAccessType.STRUCT)
+                .readFields(List.of(WriteFieldOption.builder("params.1")
+                        .description("成败")
+                        .ignoreRequest(true)
+                        .options(List.of(
+                                new ValueOption("0", "failed", "失败", "string", "string", false),
+                                new ValueOption("1", "ok", "成功", "string", "string", false)))
+                        .source("caller")
+                        .callerField("success")
+                        .build()))
+                .payloadEncoding(PayloadEncoding.JSON)
+                .reply(FunctionDef.ReplySpec.of("ydlink/dev/response", "params.0", 2000))
+                .build());
         ReplyBinder binder = new ReplyBinder(catalog, waiter);
 
         Optional<com.mtfm.gateway.spi.model.ExecutionResult> matched = binder.bind(envelope(
@@ -206,7 +174,7 @@ class ReplyBinderTest {
         });
         waiter.start();
         assertTrue(waiter.tryRegister(new ReplyWaiter.Pending(
-                "req-2", "door-1", "fn.open", "req-2", null, Instant.now().plusSeconds(5))));
+                "req-2", "door-1", "fn.open", "req-2", Instant.now().plusSeconds(5))));
         ReplyBinder binder = new ReplyBinder((deviceId, functionId) -> Optional.empty(), waiter);
 
         Optional<com.mtfm.gateway.spi.model.ExecutionResult> matched = binder.bind(envelope(
@@ -239,25 +207,16 @@ class ReplyBinderTest {
     }
 
     private static FunctionDef openFunction() {
-        return new FunctionDef(
-                "fn.open",
-                "WRITE",
-                AccessPermission.WRITE.code(),
-                null,
-                List.of(),
-                ValueAccessType.STRUCT,
-                List.of(),
-                List.of(),
-                List.of(new WriteFieldOption("seq", "", "string", "string", false, List.of()),
-                        new WriteFieldOption("ok", "", "string", "string", false, List.of())),
-                List.of(),
-                PayloadEncoding.JSON,
-                "response",
-                "seq",
-                "ok",
-                2000,
-                null,
-                false);
+        return FunctionDef.builder("fn.open")
+                .accessType("WRITE")
+                .accessPermission(AccessPermission.WRITE.code())
+                .writeAccessType(ValueAccessType.STRUCT)
+                .readFields(List.of(
+                        WriteFieldOption.builder("seq").build(),
+                        WriteFieldOption.builder("ok").build()))
+                .payloadEncoding(PayloadEncoding.JSON)
+                .reply(FunctionDef.ReplySpec.of("response", "seq", 2000))
+                .build();
     }
 
     private static final class ReplyCatalog implements FunctionCatalog {

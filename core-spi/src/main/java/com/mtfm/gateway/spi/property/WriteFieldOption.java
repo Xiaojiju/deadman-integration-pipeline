@@ -66,93 +66,131 @@ public record WriteFieldOption(
         }
     }
 
-    /** 兼容旧 11 参构造（无 byteLength / byteOrder）。 */
-    public WriteFieldOption(
-            String field,
-            String description,
-            String accessDataType,
-            String transformDataType,
-            boolean ignoreRequest,
-            List<ValueOption> options,
-            String format,
-            String valueGenerator,
-            String source,
-            String constant,
-            String callerField) {
-        this(field, description, accessDataType, transformDataType, ignoreRequest, options, format, valueGenerator,
-                source, constant, callerField, null, null, null, null);
+    /**
+     * 按字段 path 起 builder。未设置项走规范默认值（string / format=none / source 由 generator 推断）。
+     *
+     * <p>使用示例：
+     * <pre>{@code
+     * WriteFieldOption field = WriteFieldOption.builder("params.0")
+     *         .description("动作")
+     *         .source("mapped")
+     *         .callerField("action")
+     *         .build();
+     * }</pre>
+     */
+    public static Builder builder(String field) {
+        return new Builder(field);
     }
 
-    /** 兼容旧 13 参构造（无 scale）。 */
-    public WriteFieldOption(
-            String field,
-            String description,
-            String accessDataType,
-            String transformDataType,
-            boolean ignoreRequest,
-            List<ValueOption> options,
-            String format,
-            String valueGenerator,
-            String source,
-            String constant,
-            String callerField,
-            Integer byteLength,
-            String byteOrder) {
-        this(field, description, accessDataType, transformDataType, ignoreRequest, options, format, valueGenerator,
-                source, constant, callerField, byteLength, byteOrder, null, null);
-    }
+    public static final class Builder {
+        private final String field;
+        private String description = "";
+        private String accessDataType = "string";
+        private String transformDataType;
+        private boolean ignoreRequest;
+        private List<ValueOption> options = List.of();
+        private String format = "none";
+        private String valueGenerator;
+        private String source;
+        private String constant;
+        private String callerField;
+        private Integer byteLength;
+        private String byteOrder;
+        private String scaleOp;
+        private String scaleOperand;
 
-    /** 兼容旧 10 参构造（无 callerField）。 */
-    public WriteFieldOption(
-            String field,
-            String description,
-            String accessDataType,
-            String transformDataType,
-            boolean ignoreRequest,
-            List<ValueOption> options,
-            String format,
-            String valueGenerator,
-            String source,
-            String constant) {
-        this(field, description, accessDataType, transformDataType, ignoreRequest, options, format, valueGenerator,
-                source, constant, null, null, null);
-    }
+        private Builder(String field) {
+            this.field = field;
+        }
 
-    /** 兼容旧 8 参构造（无 source / constant）。 */
-    public WriteFieldOption(
-            String field,
-            String description,
-            String accessDataType,
-            String transformDataType,
-            boolean ignoreRequest,
-            List<ValueOption> options,
-            String format,
-            String valueGenerator) {
-        this(field, description, accessDataType, transformDataType, ignoreRequest, options, format, valueGenerator,
-                null, null);
-    }
+        public Builder description(String description) {
+            this.description = description;
+            return this;
+        }
 
-    /** 兼容旧 7 参构造（无 valueGenerator）。 */
-    public WriteFieldOption(
-            String field,
-            String description,
-            String accessDataType,
-            String transformDataType,
-            boolean ignoreRequest,
-            List<ValueOption> options,
-            String format) {
-        this(field, description, accessDataType, transformDataType, ignoreRequest, options, format, null, null, null);
-    }
+        public Builder accessDataType(String accessDataType) {
+            this.accessDataType = accessDataType;
+            return this;
+        }
 
-    /** 兼容旧 6 参构造（format=none，无 valueGenerator）。 */
-    public WriteFieldOption(
-            String field,
-            String description,
-            String accessDataType,
-            String transformDataType,
-            boolean ignoreRequest,
-            List<ValueOption> options) {
-        this(field, description, accessDataType, transformDataType, ignoreRequest, options, "none", null, null, null);
+        public Builder transformDataType(String transformDataType) {
+            this.transformDataType = transformDataType;
+            return this;
+        }
+
+        public Builder ignoreRequest(boolean ignoreRequest) {
+            this.ignoreRequest = ignoreRequest;
+            return this;
+        }
+
+        public Builder options(List<ValueOption> options) {
+            this.options = options;
+            return this;
+        }
+
+        public Builder format(String format) {
+            this.format = format;
+            return this;
+        }
+
+        public Builder valueGenerator(String valueGenerator) {
+            this.valueGenerator = valueGenerator;
+            return this;
+        }
+
+        public Builder source(String source) {
+            this.source = source;
+            return this;
+        }
+
+        public Builder constant(String constant) {
+            this.constant = constant;
+            return this;
+        }
+
+        public Builder callerField(String callerField) {
+            this.callerField = callerField;
+            return this;
+        }
+
+        public Builder byteLength(Integer byteLength) {
+            this.byteLength = byteLength;
+            return this;
+        }
+
+        public Builder byteOrder(String byteOrder) {
+            this.byteOrder = byteOrder;
+            return this;
+        }
+
+        public Builder scaleOp(String scaleOp) {
+            this.scaleOp = scaleOp;
+            return this;
+        }
+
+        public Builder scaleOperand(String scaleOperand) {
+            this.scaleOperand = scaleOperand;
+            return this;
+        }
+
+        public WriteFieldOption build() {
+            return new WriteFieldOption(
+                    field,
+                    description,
+                    accessDataType,
+                    transformDataType,
+                    ignoreRequest,
+                    options,
+                    format,
+                    valueGenerator,
+                    source,
+                    constant,
+                    callerField,
+                    byteLength,
+                    byteOrder,
+                    scaleOp,
+                    scaleOperand);
+        }
     }
 
     /** 是否平台自动生成，调用方无需传递。 */

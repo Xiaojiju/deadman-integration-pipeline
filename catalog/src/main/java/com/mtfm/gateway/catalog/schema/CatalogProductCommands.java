@@ -19,6 +19,8 @@ import com.mtfm.gateway.spi.property.ValueAccessType;
 import com.mtfm.gateway.spi.property.ValueOption;
 import com.mtfm.gateway.spi.property.WriteFieldOption;
 
+import org.springframework.stereotype.Component;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -26,6 +28,7 @@ import java.util.Optional;
 /**
  * 产品与产品功能的创建、更新、导入。
  */
+@Component
 final class CatalogProductCommands {
 
     private final CatalogStore store;
@@ -37,12 +40,6 @@ final class CatalogProductCommands {
     }
 
     ProductEntity createProduct(ProductWriteRequest request) {
-        if (request == null || request.code() == null || request.code().isBlank()) {
-            throw new IllegalArgumentException("产品 code 不能为空");
-        }
-        if (request.name() == null || request.name().isBlank()) {
-            throw new IllegalArgumentException("产品 name 不能为空");
-        }
         if (store.findProductByCode(request.code()).isPresent()) {
             throw new IllegalArgumentException("产品编码已存在: " + request.code());
         }
@@ -90,13 +87,7 @@ final class CatalogProductCommands {
     }
 
     ProductFunctionEntity createFunction(String productId, ProductFunctionWriteRequest request) {
-        if (request == null || request.functionId() == null || request.functionId().isBlank()) {
-            throw new IllegalArgumentException("functionId 不能为空");
-        }
         store.findProduct(productId).orElseThrow(() -> new IllegalArgumentException("产品不存在: " + productId));
-        if (request.capabilityType() == null || request.capabilityType().isBlank()) {
-            throw new IllegalArgumentException("capabilityType 不能为空");
-        }
         if (store.findFunction(productId, request.functionId()).isPresent()) {
             throw new IllegalArgumentException("产品功能已存在: " + productId + "/" + request.functionId());
         }
@@ -110,15 +101,15 @@ final class CatalogProductCommands {
                 && (request.accessType() == null || request.accessType().isBlank())) {
             throw new IllegalArgumentException("自定义功能须指定 accessType（READ/WRITE）");
         }
-        boolean openLockedEmpty = CatalogFunctionBinding.isOpenLockedEmptyTemplate(descriptor, template);
+        boolean openLockedEmpty = CatalogOpenFunctionBinding.isOpenLockedEmptyTemplate(descriptor, template);
         if (openLockedEmpty) {
-            CatalogFunctionBinding.rejectOpenLockedStructureMutation(request);
+            CatalogOpenFunctionBinding.rejectOpenLockedStructureMutation(request);
         }
         List<PropertyItem> items = descriptor.fixedFunctions()
-                ? CatalogFunctionBinding.resolveFunctionProperties(request, template)
+                ? CatalogOpenFunctionBinding.resolveFunctionProperties(request, template)
                 : List.of();
         if (descriptor.fixedFunctions() && template.isPresent()) {
-            items = CatalogFunctionBinding.constrainFixedProperties(items, template.get());
+            items = CatalogFixedFunctionBinding.constrainFixedProperties(items, template.get());
         }
         if (openLockedEmpty) {
             items = List.of();
@@ -147,8 +138,7 @@ final class CatalogProductCommands {
                                 ? AccessPermission.READ.code()
                                 : AccessPermission.WRITE.code()));
         entity.setCapabilityType(request.capabilityType());
-        entity.setOptionSchema(JsonMaps.write(PropertySchemas.toValueMap(items)));
-        entity.setProtocolMapping(null);
+        entity.setOptionSchema(JsonMaps.EMPTY_OBJECT);
         entity.setSortIndex(request.sortIndex());
         entity.setWriteAccessType(writeAccess.name());
         entity.setDescription(request.description() != null
@@ -183,9 +173,9 @@ final class CatalogProductCommands {
         }
         CapabilityDescriptor descriptor = support.requireCapability(entity.getCapabilityType());
         Optional<FunctionTemplate> template = descriptor.functionTemplate(functionId);
-        boolean openLockedEmpty = CatalogFunctionBinding.isOpenLockedEmptyTemplate(descriptor, template);
+        boolean openLockedEmpty = CatalogOpenFunctionBinding.isOpenLockedEmptyTemplate(descriptor, template);
         if (openLockedEmpty) {
-            CatalogFunctionBinding.rejectOpenLockedStructureMutation(request);
+            CatalogOpenFunctionBinding.rejectOpenLockedStructureMutation(request);
         }
         if (request.properties() != null) {
             List<PropertyItem> items = openLockedEmpty
@@ -194,9 +184,9 @@ final class CatalogProductCommands {
                             ? request.properties()
                             : List.of());
             if (descriptor.fixedFunctions() && template.isPresent()) {
-                items = CatalogFunctionBinding.constrainFixedProperties(items, template.get());
+                items = CatalogFixedFunctionBinding.constrainFixedProperties(items, template.get());
             }
-            entity.setOptionSchema(JsonMaps.write(PropertySchemas.toValueMap(items)));
+            entity.setOptionSchema(JsonMaps.EMPTY_OBJECT);
             store.properties().replaceFunctionProperties(entity.getId(), items);
         }
         String previousAccess = entity.getAccessType();
@@ -248,7 +238,7 @@ final class CatalogProductCommands {
         if (request.readFields() != null && !descriptor.fixedFunctions() && !openLockedEmpty
                 && !descriptor.contractedParameters()) {
             store.properties().replaceReadFields(entity.getId(),
-                    CatalogFunctionBinding.nullSafeFields(request.readFields()));
+                    CatalogOpenFunctionBinding.nullSafeFields(request.readFields()));
         }
         if (request.publishTopicSlot() != null) {
             entity.setPublishTopicSlot(request.publishTopicSlot());
@@ -280,7 +270,7 @@ final class CatalogProductCommands {
             } else if (descriptor.fixedFunctions() && template.isPresent()) {
                 readOpts = readOpts.isEmpty()
                         ? List.of()
-                        : CatalogFunctionBinding.constrainFixedValueOptions(readOpts, template.get());
+                        : CatalogFixedFunctionBinding.constrainFixedValueOptions(readOpts, template.get());
             }
             store.properties().replaceReadValueOptions(entity.getId(), readOpts);
         }
@@ -292,8 +282,8 @@ final class CatalogProductCommands {
         CapabilityDescriptor descriptor = support.requireCapability(capabilityType);
         List<PropertyItem> properties = PropertySchemas.toPropertyItems(template.parameters());
         List<WriteFieldOption> writeFields = descriptor.contractedParameters()
-                ? CatalogFunctionBinding.bindContractFields(template, null, PayloadMode.STRUCT)
-                : CatalogFunctionBinding.templateWriteFields(template);
+                ? CatalogContractFunctionBinding.bindContractFields(template, null, PayloadMode.STRUCT)
+                : CatalogFixedFunctionBinding.templateWriteFields(template);
         boolean read = "READ".equalsIgnoreCase(template.accessType());
         return createFunction(productId, new ProductFunctionWriteRequest(
                 template.functionId(),
@@ -311,6 +301,14 @@ final class CatalogProductCommands {
                 null,
                 null,
                 null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null));
     }
 
@@ -322,19 +320,19 @@ final class CatalogProductCommands {
         }
         CapabilityDescriptor descriptor = support.requireCapability(capabilityType);
         Optional<FunctionTemplate> locked = Optional.of(template);
-        if (CatalogFunctionBinding.isOpenLockedEmptyTemplate(descriptor, locked)) {
+        if (CatalogOpenFunctionBinding.isOpenLockedEmptyTemplate(descriptor, locked)) {
             return entity;
         }
         PayloadMode mode = PayloadMode.from(entity.getPayloadMode());
         boolean read = "READ".equalsIgnoreCase(entity.getAccessType());
         if (descriptor.contractedParameters()) {
-            FunctionTemplate contract = CatalogFunctionBinding.requireContractTemplate(descriptor,
+            FunctionTemplate contract = CatalogContractFunctionBinding.requireContractTemplate(descriptor,
                     entity.getAccessType());
             List<WriteFieldOption> existing = read
                     ? store.properties().listReadFields(entity.getId())
                     : store.properties().listWriteFields(entity.getId());
-            List<WriteFieldOption> known = CatalogFunctionBinding.filterKnownFields(existing, contract);
-            List<WriteFieldOption> bound = CatalogFunctionBinding.bindContractFields(contract,
+            List<WriteFieldOption> known = CatalogFunctionSchemas.filterKnownFields(existing, contract);
+            List<WriteFieldOption> bound = CatalogContractFunctionBinding.bindContractFields(contract,
                     known.isEmpty() ? null : known, mode);
             if (read) {
                 store.properties().replaceReadFields(entity.getId(), bound);
@@ -347,9 +345,9 @@ final class CatalogProductCommands {
             }
         } else if (descriptor.fixedFunctions()) {
             List<WriteFieldOption> existing = store.properties().listWriteFields(entity.getId());
-            List<WriteFieldOption> known = CatalogFunctionBinding.filterKnownFields(existing, template);
-            List<WriteFieldOption> bound = CatalogFunctionBinding.constrainFixedWriteFields(
-                    known.isEmpty() ? CatalogFunctionBinding.templateWriteFields(template) : known, template);
+            List<WriteFieldOption> known = CatalogFunctionSchemas.filterKnownFields(existing, template);
+            List<WriteFieldOption> bound = CatalogFixedFunctionBinding.constrainFixedWriteFields(
+                    known.isEmpty() ? CatalogFixedFunctionBinding.templateWriteFields(template) : known, template);
             store.properties().replaceWriteOptions(entity.getId(), ValueAccessType.STRUCT, List.of(), bound);
         }
         return entity;
@@ -364,9 +362,6 @@ final class CatalogProductCommands {
         }
         if (request.correlationCommandPath() != null) {
             entity.setCorrelationCommandPath(blankToNull(request.correlationCommandPath()));
-        }
-        if (request.resultPath() != null) {
-            entity.setResultPath(blankToNull(request.resultPath()));
         }
         if (request.replyTimeoutMs() != null) {
             entity.setReplyTimeoutMs(request.replyTimeoutMs() <= 0 ? null : request.replyTimeoutMs());

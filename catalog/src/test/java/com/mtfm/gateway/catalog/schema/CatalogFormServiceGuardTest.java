@@ -6,6 +6,7 @@ import com.mtfm.gateway.catalog.entity.ProductFunctionEntity;
 import com.mtfm.gateway.catalog.store.CatalogPropertyRepository;
 import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.spi.capability.CapabilityRegistrar;
+import com.mtfm.gateway.spi.catalog.DeviceBindingCatalog;
 import com.mtfm.gateway.spi.model.Attributes;
 import com.mtfm.gateway.spi.model.DeviceEndpointBinding;
 import com.mtfm.gateway.spi.model.FunctionCommand;
@@ -13,7 +14,6 @@ import com.mtfm.gateway.spi.property.WriteFieldOption;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -35,8 +35,9 @@ class CatalogFormServiceGuardTest {
     private CatalogPropertyRepository properties;
     @Mock
     private CapabilityRegistrar registrar;
+    @Mock
+    private DeviceBindingCatalog bindings;
 
-    @InjectMocks
     private CatalogFormService forms;
 
     private DeviceEntity device;
@@ -52,6 +53,7 @@ class CatalogFormServiceGuardTest {
 
         mqttWrite = function("fn-mqtt", "pub.cmd", "WRITE", 2, "MQTT");
 
+        forms = new CatalogFormService(store, registrar, bindings);
         when(store.resolveDevice("lamp-1")).thenReturn(Optional.of(device));
     }
 
@@ -60,7 +62,7 @@ class CatalogFormServiceGuardTest {
         device.setEnabled(false);
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
-                forms.buildCommand("lamp-1", new DeviceCommandRequest("pub.cmd", Map.of())));
+                forms.buildCommand("lamp-1", new DeviceCommandRequest("pub.cmd", Map.of(), null, null)));
         assertTrue(ex.getMessage().contains("停用"));
     }
 
@@ -70,7 +72,7 @@ class CatalogFormServiceGuardTest {
         when(store.findFunction("p1", "pub.cmd")).thenReturn(Optional.of(mqttWrite));
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
-                forms.buildCommand("lamp-1", new DeviceCommandRequest("pub.cmd", Map.of())));
+                forms.buildCommand("lamp-1", new DeviceCommandRequest("pub.cmd", Map.of(), null, null)));
         assertTrue(ex.getMessage().contains("写权限"));
     }
 
@@ -78,25 +80,25 @@ class CatalogFormServiceGuardTest {
     void picksMqttEndpointNotTheFirstModbusOne() {
         stubCommandAssembly(mqttWrite);
         when(store.findFunction("p1", "pub.cmd")).thenReturn(Optional.of(mqttWrite));
-        when(store.findEndpoints("lamp-1")).thenReturn(List.of(
+        when(bindings.findEndpoints("lamp-1")).thenReturn(List.of(
                 endpoint("MODBUS", "modbus-ch", Map.of("slaveId", 1)),
                 endpoint("MQTT", "mqtt-ch", Map.of("default_pub", "dev/lamp/cmd"))));
         when(store.loadDeviceOverrides(device, "pub.cmd")).thenReturn(List.of());
         when(properties.listDeviceFieldOverrides("dev-1", "pub.cmd")).thenReturn(Map.of());
         when(properties.listDeviceTopicOverrides("dev-1", "pub.cmd")).thenReturn(Map.of());
 
-        FunctionCommand command = forms.buildCommand("lamp-1", new DeviceCommandRequest("pub.cmd", Map.of()));
+        FunctionCommand command = forms.buildCommand("lamp-1", new DeviceCommandRequest("pub.cmd", Map.of(), null, null));
         assertEquals("dev/lamp/cmd", command.deliveryHints().get("mqtt.publishTopic").orElseThrow());
     }
 
     @Test
     void missingCapabilityEndpointIsRejected() {
         when(store.findFunction("p1", "pub.cmd")).thenReturn(Optional.of(mqttWrite));
-        when(store.findEndpoints("lamp-1")).thenReturn(List.of(
+        when(bindings.findEndpoints("lamp-1")).thenReturn(List.of(
                 endpoint("MODBUS", "modbus-ch", Map.of("slaveId", 1))));
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
-                forms.buildCommand("lamp-1", new DeviceCommandRequest("pub.cmd", Map.of())));
+                forms.buildCommand("lamp-1", new DeviceCommandRequest("pub.cmd", Map.of(), null, null)));
         assertTrue(ex.getMessage().contains("未绑定 MQTT"));
     }
 
@@ -104,21 +106,21 @@ class CatalogFormServiceGuardTest {
     void unknownFieldOverrideIsRejected() {
         stubCommandAssembly(mqttWrite);
         when(store.findFunction("p1", "pub.cmd")).thenReturn(Optional.of(mqttWrite));
-        when(store.findEndpoints("lamp-1")).thenReturn(List.of(
+        when(bindings.findEndpoints("lamp-1")).thenReturn(List.of(
                 endpoint("MQTT", "mqtt-ch", Map.of("default_pub", "dev/lamp/cmd"))));
         when(store.loadDeviceOverrides(device, "pub.cmd")).thenReturn(List.of());
         when(store.loadFunctionProperties(mqttWrite)).thenReturn(List.of());
         when(properties.listDeviceFieldOverrides("dev-1", "pub.cmd")).thenReturn(Map.of("hack", 1));
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
-                forms.buildCommand("lamp-1", new DeviceCommandRequest("pub.cmd", Map.of())));
+                forms.buildCommand("lamp-1", new DeviceCommandRequest("pub.cmd", Map.of(), null, null)));
         assertTrue(ex.getMessage().contains("契约"));
     }
 
     @Test
     void replaceRejectsUnknownTopicSlot() {
         when(store.findFunction("p1", "pub.cmd")).thenReturn(Optional.of(mqttWrite));
-        when(store.findEndpoints("lamp-1")).thenReturn(List.of(
+        when(bindings.findEndpoints("lamp-1")).thenReturn(List.of(
                 endpoint("MQTT", "mqtt-ch", Map.of("default_pub", "dev/lamp/cmd"))));
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
@@ -129,12 +131,12 @@ class CatalogFormServiceGuardTest {
     @Test
     void twoEnabledMqttEndpointsAreRejected() {
         when(store.findFunction("p1", "pub.cmd")).thenReturn(Optional.of(mqttWrite));
-        when(store.findEndpoints("lamp-1")).thenReturn(List.of(
+        when(bindings.findEndpoints("lamp-1")).thenReturn(List.of(
                 endpoint("MQTT", "mqtt-a", Map.of("default_pub", "a/cmd")),
                 endpoint("MQTT", "mqtt-b", Map.of("default_pub", "b/cmd"))));
 
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
-                forms.buildCommand("lamp-1", new DeviceCommandRequest("pub.cmd", Map.of())));
+                forms.buildCommand("lamp-1", new DeviceCommandRequest("pub.cmd", Map.of(), null, null)));
         assertTrue(ex.getMessage().contains("多个 MQTT"));
     }
 
@@ -142,21 +144,21 @@ class CatalogFormServiceGuardTest {
     void disabledMatchingEndpointIsSkipped() {
         stubCommandAssembly(mqttWrite);
         when(store.findFunction("p1", "pub.cmd")).thenReturn(Optional.of(mqttWrite));
-        when(store.findEndpoints("lamp-1")).thenReturn(List.of(
+        when(bindings.findEndpoints("lamp-1")).thenReturn(List.of(
                 endpoint("MQTT", "mqtt-dead", Map.of("default_pub", "dead/cmd"), false),
                 endpoint("MQTT", "mqtt-ch", Map.of("default_pub", "dev/lamp/cmd"), true)));
         when(store.loadDeviceOverrides(device, "pub.cmd")).thenReturn(List.of());
         when(properties.listDeviceFieldOverrides("dev-1", "pub.cmd")).thenReturn(Map.of());
         when(properties.listDeviceTopicOverrides("dev-1", "pub.cmd")).thenReturn(Map.of());
 
-        FunctionCommand command = forms.buildCommand("lamp-1", new DeviceCommandRequest("pub.cmd", Map.of()));
+        FunctionCommand command = forms.buildCommand("lamp-1", new DeviceCommandRequest("pub.cmd", Map.of(), null, null));
         assertEquals("dev/lamp/cmd", command.deliveryHints().get("mqtt.publishTopic").orElseThrow());
     }
 
     private void stubCommandAssembly(ProductFunctionEntity function) {
         when(store.properties()).thenReturn(properties);
         when(properties.listWriteFields(function.getId())).thenReturn(List.of(
-                new WriteFieldOption("value", "值", "string", "string", false, List.of(), "none")));
+                WriteFieldOption.builder("value").description("值").build()));
         when(properties.listWriteValueOptions(function.getId())).thenReturn(List.of());
     }
 

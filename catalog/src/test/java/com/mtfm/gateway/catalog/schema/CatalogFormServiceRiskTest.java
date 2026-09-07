@@ -156,7 +156,6 @@ class CatalogFormServiceRiskTest {
                         List.of(
                                 PropertyItem.of("host", "127.0.0.1"),
                                 PropertyItem.of("extra", "nope")),
-                        null,
                         true)));
         assertTrue(ex.getMessage().contains("未声明字段"));
     }
@@ -173,7 +172,6 @@ class CatalogFormServiceRiskTest {
                         List.of(
                                 PropertyItem.of("host", "127.0.0.1"),
                                 PropertyItem.of("port", 70000, "int", "")),
-                        null,
                         true)));
         assertTrue(ex.getMessage().contains("port"));
     }
@@ -201,8 +199,12 @@ class CatalogFormServiceRiskTest {
             return entity;
         });
         when(properties.listWriteFields("pf-write")).thenReturn(List.of(
-                new WriteFieldOption("area", "寄存器区", "string", "string", true, List.of(), "none",
-                        null, "constant", "HOLDING", null)));
+                WriteFieldOption.builder("area")
+                        .description("寄存器区")
+                        .ignoreRequest(true)
+                        .source("constant")
+                        .constant("HOLDING")
+                        .build()));
         when(properties.listWriteValueOptions("pf-write")).thenReturn(List.of());
         when(registrar.find("MODBUS")).thenReturn(Optional.of(modbusContract()));
 
@@ -284,12 +286,11 @@ class CatalogFormServiceRiskTest {
                 List.of(
                         PropertyItem.of("host", "broker.local"),
                         new PropertyItem("password", "s3cret", "password", "密码")),
-                null,
                 true));
 
         ArgumentCaptor<ChannelEntity> saved = ArgumentCaptor.forClass(ChannelEntity.class);
         verify(store).saveChannel(saved.capture());
-        assertTrue(saved.getValue().getConnection().contains("enc:s3cret"));
+        assertEquals("{}", saved.getValue().getConnection());
         ArgumentCaptor<List<PropertyItem>> items = ArgumentCaptor.captor();
         verify(properties).replaceChannelProperties(any(), items.capture());
         assertEquals("enc:s3cret", items.getValue().stream()
@@ -323,37 +324,46 @@ class CatalogFormServiceRiskTest {
     }
 
     private static ProductFunctionWriteRequest accessOnly(String accessType) {
-        return new ProductFunctionWriteRequest(
-                "light.switch", accessType, null, "MODBUS",
-                null, null, null, null, null, null,
-                null, null, null, null, null, null);
+        return functionWrite("light.switch", accessType, null, null, null, null, null, null);
     }
 
     private static ProductFunctionWriteRequest accessWithReadFields(String accessType) {
-        return new ProductFunctionWriteRequest(
-                "light.switch", accessType, null, "MODBUS",
-                null, null, null, null, List.of(), null,
-                null, null, null, null, null, null);
+        return functionWrite("light.switch", accessType, null, null, List.of(), null, null, null);
     }
 
     private static ProductFunctionWriteRequest scaleOnly(String scaleOp, String scaleOperand) {
+        return functionWrite("light.switch", null, null, null, null, null, scaleOp, scaleOperand);
+    }
+
+    private static ProductFunctionWriteRequest writeValueOptions(List<ValueOption> options) {
+        return functionWrite("light.switch", "WRITE", "VALUE", options, null, null, null, null);
+    }
+
+    private static ProductFunctionWriteRequest functionWrite(
+            String functionId,
+            String accessType,
+            String writeAccessType,
+            List<ValueOption> writeValueOptions,
+            List<WriteFieldOption> readFields,
+            String payloadMode,
+            String scaleOp,
+            String scaleOperand) {
         return new ProductFunctionWriteRequest(
-                "light.switch",
-                null,
+                functionId,
+                accessType,
                 null,
                 "MODBUS",
+                writeAccessType,
+                null,
+                writeValueOptions,
+                null,
+                readFields,
+                null,
+                writeAccessType == null && payloadMode == null ? null : 0,
                 null,
                 null,
                 null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
+                payloadMode == null ? writeAccessType : payloadMode,
                 null,
                 null,
                 null,
@@ -363,13 +373,6 @@ class CatalogFormServiceRiskTest {
                 null,
                 scaleOp,
                 scaleOperand);
-    }
-
-    private static ProductFunctionWriteRequest writeValueOptions(List<ValueOption> options) {
-        return new ProductFunctionWriteRequest(
-                "light.switch", "WRITE", null, "MODBUS",
-                "VALUE", null, options, null, null, null,
-                0, null, null, null, "VALUE", null);
     }
 
     private static WriteFieldOption field(List<WriteFieldOption> fields, String name) {
