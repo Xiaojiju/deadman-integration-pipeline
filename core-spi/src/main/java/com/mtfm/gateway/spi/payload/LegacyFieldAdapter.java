@@ -202,6 +202,8 @@ public final class LegacyFieldAdapter {
         node.byteLength = field.byteLength();
         node.byteOrder = field.byteOrder();
         node.callerField = field.callerField();
+        node.scaleOp = field.scaleOp();
+        node.scaleOperand = field.scaleOperand();
     }
 
     private static MutableNode findChild(MutableNode parent, String name) {
@@ -251,7 +253,9 @@ public final class LegacyFieldAdapter {
                 constantToString(node.constant()),
                 node.callerField(),
                 node.byteLength(),
-                node.byteOrder()));
+                node.byteOrder(),
+                node.scaleOp(),
+                node.scaleOperand()));
     }
 
     private static String leafType(String type) {
@@ -320,6 +324,8 @@ public final class LegacyFieldAdapter {
         private Integer byteLength;
         private String byteOrder;
         private String callerField;
+        private String scaleOp;
+        private String scaleOperand;
 
         private static MutableNode object(String name) {
             MutableNode node = new MutableNode();
@@ -349,7 +355,9 @@ public final class LegacyFieldAdapter {
                     description,
                     byteLength,
                     byteOrder,
-                    callerField);
+                    callerField,
+                    scaleOp,
+                    scaleOperand);
         }
     }
 }

@@ -99,7 +99,9 @@ export function ContractFieldEditor({ label, description, schema, value, onChang
               </div>
               {source === "constant" ? (
                 <div className="flex flex-col gap-1.5">
-                  <FieldLabel>常量值</FieldLabel>
+                  <FieldLabel>
+                    {row.field === "offset" ? "常量值（设备参数可覆盖）" : "常量值"}
+                  </FieldLabel>
                   {choices.length > 0 ? (
                     <Select
                       value={row.constant || String(spec?.defaultValue ?? choices[0] ?? "")}
@@ -132,7 +134,7 @@ export function ContractFieldEditor({ label, description, schema, value, onChang
                 </p>
               ) : (
                 <p className="self-center text-xs text-muted-foreground">
-                  {source === "device" ? "由本设备参数覆盖" : "由调用方传入"}
+                  {source === "device" ? "由本设备参数覆盖，未填则下发失败" : "由调用方传入"}
                 </p>
               )}
             </div>

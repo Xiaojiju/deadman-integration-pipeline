@@ -1,6 +1,9 @@
 package com.mtfm.gateway.catalog.web;
 
 import com.mtfm.gateway.catalog.apply.CatalogApplyService;
+import com.mtfm.gateway.catalog.dto.ActionGroupExecutionView;
+import com.mtfm.gateway.catalog.dto.ActionGroupView;
+import com.mtfm.gateway.catalog.dto.ActionGroupWriteRequest;
 import com.mtfm.gateway.catalog.dto.ChannelView;
 import com.mtfm.gateway.catalog.dto.ChannelWriteRequest;
 import com.mtfm.gateway.catalog.dto.DeviceCommandRequest;
@@ -24,6 +27,7 @@ import com.mtfm.gateway.catalog.dto.ProductView;
 import com.mtfm.gateway.catalog.dto.ProductWriteRequest;
 import com.mtfm.gateway.catalog.dto.SupportedFunctionView;
 import com.mtfm.gateway.catalog.dto.SupportedSchemaView;
+import com.mtfm.gateway.catalog.schema.CatalogActionService;
 import com.mtfm.gateway.catalog.schema.CatalogFormService;
 import com.mtfm.gateway.catalog.store.CatalogNorthbound;
 import com.mtfm.gateway.spi.model.CapabilityDescriptor;
@@ -54,14 +58,17 @@ public class CatalogController {
 
     private final CatalogApplyService applyService;
     private final CatalogFormService forms;
+    private final CatalogActionService actions;
     private final CatalogNorthbound northbound;
 
     public CatalogController(
             CatalogApplyService applyService,
             CatalogFormService forms,
+            CatalogActionService actions,
             CatalogNorthbound northbound) {
         this.applyService = applyService;
         this.forms = forms;
+        this.actions = actions;
         this.northbound = northbound;
     }
 
@@ -305,6 +312,82 @@ public class CatalogController {
     public CompletableFuture<ExecutionResult> invoke(@PathVariable String deviceCode,
             @RequestBody DeviceCommandRequest request) {
         return applyService.invoke(deviceCode, request);
+    }
+
+    @GetMapping("/clusters")
+    public List<ActionGroupView> listClusters() {
+        return actions.list("CLUSTER");
+    }
+
+    @PostMapping("/clusters")
+    public ActionGroupView createCluster(@RequestBody ActionGroupWriteRequest request) {
+        return actions.create("CLUSTER", request);
+    }
+
+    @GetMapping("/clusters/{id}")
+    public ActionGroupView getCluster(@PathVariable String id) {
+        ActionGroupView view = actions.require(id);
+        if (!"CLUSTER".equalsIgnoreCase(view.kind())) {
+            throw new IllegalArgumentException("不是集群: " + id);
+        }
+        return view;
+    }
+
+    @PutMapping("/clusters/{id}")
+    public ActionGroupView updateCluster(@PathVariable String id, @RequestBody ActionGroupWriteRequest request) {
+        ActionGroupView existing = getCluster(id);
+        return actions.update(existing.id(), request);
+    }
+
+    @DeleteMapping("/clusters/{id}")
+    public Map<String, Object> deleteCluster(@PathVariable String id) {
+        ActionGroupView existing = getCluster(id);
+        boolean deleted = actions.delete(existing.id());
+        return Map.of("id", existing.id(), "deleted", deleted);
+    }
+
+    @PostMapping("/clusters/{id}/execute")
+    public CompletableFuture<ActionGroupExecutionView> executeCluster(@PathVariable String id) {
+        ActionGroupView existing = getCluster(id);
+        return applyService.executeActionGroup(existing.id(), "cluster");
+    }
+
+    @GetMapping("/scenes")
+    public List<ActionGroupView> listScenes() {
+        return actions.list("SCENE");
+    }
+
+    @PostMapping("/scenes")
+    public ActionGroupView createScene(@RequestBody ActionGroupWriteRequest request) {
+        return actions.create("SCENE", request);
+    }
+
+    @GetMapping("/scenes/{id}")
+    public ActionGroupView getScene(@PathVariable String id) {
+        ActionGroupView view = actions.require(id);
+        if (!"SCENE".equalsIgnoreCase(view.kind())) {
+            throw new IllegalArgumentException("不是场景: " + id);
+        }
+        return view;
+    }
+
+    @PutMapping("/scenes/{id}")
+    public ActionGroupView updateScene(@PathVariable String id, @RequestBody ActionGroupWriteRequest request) {
+        ActionGroupView existing = getScene(id);
+        return actions.update(existing.id(), request);
+    }
+
+    @DeleteMapping("/scenes/{id}")
+    public Map<String, Object> deleteScene(@PathVariable String id) {
+        ActionGroupView existing = getScene(id);
+        boolean deleted = actions.delete(existing.id());
+        return Map.of("id", existing.id(), "deleted", deleted);
+    }
+
+    @PostMapping("/scenes/{id}/execute")
+    public CompletableFuture<ActionGroupExecutionView> executeScene(@PathVariable String id) {
+        ActionGroupView existing = getScene(id);
+        return applyService.executeActionGroup(existing.id(), "scene");
     }
 
     @GetMapping("/devices/{deviceCode}/functions/{functionId}/field-overrides")

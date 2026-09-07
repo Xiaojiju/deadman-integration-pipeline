@@ -447,7 +447,12 @@ public final class GatewayPipeline implements PipelineIngress, PipelineCommandPo
             return;
         }
         boolean enqueued = scheduler.execute(command.deviceId(), () -> {
-            ExecutionResult result = engine.execute(command);
+            ExecutionResult executed = engine.execute(command);
+            ExecutionResult result = functionCatalog == null
+                    ? executed
+                    : functionCatalog.find(command.deviceId(), command.functionId())
+                            .map(def -> com.mtfm.gateway.spi.payload.ResultValueMapper.apply(def, executed))
+                            .orElse(executed);
             if (awaitingReply && result.status() == com.mtfm.gateway.spi.model.ExecutionStatus.ACCEPTED) {
                 complete(work, result);
                 return;

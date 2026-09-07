@@ -70,7 +70,8 @@ public final class MqttReadInboundPlugin implements InboundPlugin {
                                 .appendTrace(name(), "unpack-" + encoding.wire()));
             }
             Map<String, Object> points = PayloadDisassembler.project(
-                    unpacked, function.readFields(), function.readValueOptions());
+                    unpacked, function.readFields(), function.readValueOptions(),
+                    function.scaleOp(), function.scaleOperand());
             if (skipUnpicked(function, points)) {
                 return InboundApplyResult.drop();
             }
@@ -89,7 +90,8 @@ public final class MqttReadInboundPlugin implements InboundPlugin {
                     draft.withPayload(payload).withHeaders(headers).appendTrace(name(), "reply-keep"));
         }
         Map<String, Object> points = PayloadDisassembler.project(
-                json, function.readFields(), function.readValueOptions());
+                json, function.readFields(), function.readValueOptions(),
+                function.scaleOp(), function.scaleOperand());
         if (skipUnpicked(function, points)) {
             return InboundApplyResult.drop();
         }

@@ -111,6 +111,21 @@ class CatalogFormServiceRiskTest {
     }
 
     @Test
+    void updateFunctionClearsScaleWhenOpBlank() {
+        ProductFunctionEntity entity = function("pf-1", "light.switch", "READ");
+        entity.setScaleOp("divide");
+        entity.setScaleOperand("10");
+        when(store.findFunction("p1", "light.switch")).thenReturn(Optional.of(entity));
+        when(store.updateFunction(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(registrar.find("MODBUS")).thenReturn(Optional.of(modbusContract()));
+
+        forms.updateFunction("p1", "light.switch", scaleOnly("", "10"));
+
+        assertEquals("none", entity.getScaleOp());
+        assertEquals("", entity.getScaleOperand());
+    }
+
+    @Test
     void contractValueOptionsMayBeCustomWhenValueHasNoChoices() {
         stubCreate();
         forms.createFunction("p1",
@@ -319,6 +334,35 @@ class CatalogFormServiceRiskTest {
                 "light.switch", accessType, null, "MODBUS",
                 null, null, null, null, List.of(), null,
                 null, null, null, null, null, null);
+    }
+
+    private static ProductFunctionWriteRequest scaleOnly(String scaleOp, String scaleOperand) {
+        return new ProductFunctionWriteRequest(
+                "light.switch",
+                null,
+                null,
+                "MODBUS",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                scaleOp,
+                scaleOperand);
     }
 
     private static ProductFunctionWriteRequest writeValueOptions(List<ValueOption> options) {

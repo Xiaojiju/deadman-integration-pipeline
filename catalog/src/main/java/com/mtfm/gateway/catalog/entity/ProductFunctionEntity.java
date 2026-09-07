@@ -1,5 +1,6 @@
 package com.mtfm.gateway.catalog.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -269,5 +270,29 @@ public class ProductFunctionEntity {
 
     public void setScheduleEnabled(Boolean scheduleEnabled) {
         this.scheduleEnabled = scheduleEnabled;
+    }
+
+    /** 入站换算运算符 add / subtract / multiply / divide；none 表示不换算。 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String scaleOp;
+
+    /** 入站换算操作数。 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String scaleOperand;
+
+    public String getScaleOp() {
+        return scaleOp;
+    }
+
+    public void setScaleOp(String scaleOp) {
+        this.scaleOp = scaleOp;
+    }
+
+    public String getScaleOperand() {
+        return scaleOperand;
+    }
+
+    public void setScaleOperand(String scaleOperand) {
+        this.scaleOperand = scaleOperand;
     }
 }

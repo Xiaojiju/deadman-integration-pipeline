@@ -12,6 +12,7 @@ import com.mtfm.gateway.spi.model.CapabilityDescriptor;
 import com.mtfm.gateway.spi.model.FunctionTemplate;
 import com.mtfm.gateway.spi.payload.PayloadEncoding;
 import com.mtfm.gateway.spi.payload.PayloadMode;
+import com.mtfm.gateway.spi.payload.ScaleTransform;
 import com.mtfm.gateway.spi.property.PropertyItem;
 import com.mtfm.gateway.spi.property.PropertySchemas;
 import com.mtfm.gateway.spi.property.ValueAccessType;
@@ -376,6 +377,31 @@ final class CatalogProductCommands {
         if (request.scheduleEnabled() != null) {
             entity.setScheduleEnabled(request.scheduleEnabled());
         }
+        if (request.scaleOp() != null || request.scaleOperand() != null) {
+            applyScale(entity, request.scaleOp(), request.scaleOperand());
+        }
+    }
+
+    /**
+     * 取消换算必须写成 {@code none} / 空串，不能落 null：MyBatis-Plus updateById 默认跳过 null。
+     */
+    private static void applyScale(ProductFunctionEntity entity, String scaleOp, String scaleOperand) {
+        String op = persistScaleOp(scaleOp);
+        entity.setScaleOp(op);
+        if (ScaleTransform.NONE.equals(op)) {
+            entity.setScaleOperand("");
+            return;
+        }
+        if (scaleOperand != null) {
+            entity.setScaleOperand(scaleOperand.trim());
+        }
+    }
+
+    private static String persistScaleOp(String raw) {
+        if (raw == null || raw.isBlank() || ScaleTransform.NONE.equalsIgnoreCase(raw.trim())) {
+            return ScaleTransform.NONE;
+        }
+        return raw.trim().toLowerCase();
     }
 
     private static String blankToNull(String value) {

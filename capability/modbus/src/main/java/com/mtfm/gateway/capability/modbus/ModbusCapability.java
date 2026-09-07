@@ -35,6 +35,7 @@ public final class ModbusCapability {
                             List.of("TCP", "RTU")),
                     SchemaField.optional("host", FieldType.STRING, "TCP 主机"),
                     SchemaField.optional("port", FieldType.INT, "TCP 端口", 502).range(1, 65535),
+                    SchemaField.optional("keepAlive", FieldType.BOOLEAN, "保持 TCP 连接；关闭则每次指令后断开", true),
                     SchemaField.optional("serialPort", FieldType.STRING, "RTU 串口，如 /dev/ttyUSB0 或 COM3"),
                     SchemaField.optional("baudRate", FieldType.INT, "波特率", 9600).atLeast(1),
                     SchemaField.optional("dataBits", FieldType.INT, "数据位", 8).range(5, 8),

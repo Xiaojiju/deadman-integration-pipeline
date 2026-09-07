@@ -99,7 +99,6 @@ final class CatalogFormViews {
         } else {
             schema = CatalogFunctionBinding.schemaFromProperties(properties);
         }
-        List<FormField> fields = SchemaForms.bind(schema, values);
         List<ValueOption> writeOptions = options.writeValueOptions();
         boolean openStructForm = template.isEmpty() && !structFields.isEmpty();
         if (!contracted && writeOptions.isEmpty() && !openStructForm) {
@@ -109,6 +108,12 @@ final class CatalogFormViews {
             writeOptions = CatalogFunctionBinding.flattenChoiceOptions(
                     PropertySchemas.choiceOptionsByField(template.get().parameters()));
         }
+        boolean valueMode = writeAccess == ValueAccessType.VALUE
+                || "VALUE".equalsIgnoreCase(function.getPayloadMode());
+        if (valueMode) {
+            schema = CatalogFunctionBinding.applyWriteValueOptionChoices(schema, structFields, writeOptions);
+        }
+        List<FormField> fields = SchemaForms.bind(schema, values);
         return new FunctionFormView(
                 function.getFunctionId(),
                 resolveDescription(function),
@@ -162,7 +167,9 @@ final class CatalogFormViews {
                 function.getResultPath(),
                 function.getReplyTimeoutMs(),
                 function.getScheduleIntervalMs(),
-                function.getScheduleEnabled());
+                function.getScheduleEnabled(),
+                function.getScaleOp(),
+                function.getScaleOperand());
     }
 
     ChannelView toChannelView(ChannelEntity entity) {

@@ -31,6 +31,7 @@ type FieldRow = {
   hint?: string
   value: string
   fromSchema: boolean
+  productDefault?: string
 }
 
 type Props = {
@@ -68,12 +69,18 @@ function parseValue(raw: string): unknown {
   return text
 }
 
-function deviceSourceFields(fn: ProductFunctionEntity | undefined): WriteFieldOption[] {
+function overridableFields(fn: ProductFunctionEntity | undefined): WriteFieldOption[] {
   if (!fn) {
     return []
   }
   const fields = fn.accessType?.toUpperCase() === "READ" ? fn.readFields : fn.writeFields
-  return (fields ?? []).filter((item) => (item.source ?? "").toLowerCase() === "device")
+  return (fields ?? []).filter((item) => {
+    const source = (item.source ?? "").toLowerCase()
+    if (source === "device") {
+      return true
+    }
+    return source === "constant" && item.field === "offset"
+  })
 }
 
 function topicSlotsOf(fn: ProductFunctionEntity | undefined): Array<{ key: string; label: string }> {
@@ -118,6 +125,10 @@ function mergeFieldRows(
       hint: field.field,
       value: stringifyValue(value),
       fromSchema: true,
+      productDefault:
+        field.constant != null && String(field.constant).trim() !== ""
+          ? String(field.constant)
+          : undefined,
     }
   })
   for (const [key, value] of Object.entries(remain)) {
@@ -182,7 +193,7 @@ export function DeviceOverrideDialog({ open, onOpenChange, device, product }: Pr
       catalogApi.deviceTopicOverrides(code, fn.functionId),
       catalogApi.deviceSchedule(code, fn.functionId),
     ])
-    setFieldRows(mergeFieldRows(deviceSourceFields(fn), fields))
+    setFieldRows(mergeFieldRows(overridableFields(fn), fields))
     setTopicRows(mergeTopicRows(topicSlotsOf(fn), topics))
     setScheduleEnabledChoice(
       schedule.overrideEnabled == null ? "inherit" : schedule.overrideEnabled ? "on" : "off"
@@ -282,7 +293,7 @@ export function DeviceOverrideDialog({ open, onOpenChange, device, product }: Pr
         <DialogHeader>
           <DialogTitle>设备参数 · {device?.deviceCode}</DialogTitle>
           <DialogDescription>
-            下列字段来自产品功能里需要按设备填写的项，只需填本设备的值。
+            仅 offset 可按设备覆盖，area / dataType 沿用产品。留空沿用产品默认（直连批量导入）；填写则区分网关下不同地址段。
             {product ? ` 产品：${product.name || product.code}` : null}
           </DialogDescription>
         </DialogHeader>
@@ -318,7 +329,7 @@ export function DeviceOverrideDialog({ open, onOpenChange, device, product }: Pr
               <FieldLabel>设备字段</FieldLabel>
               {fieldRows.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  该功能没有 source=device 的字段，下发时不需要在这里填值。
+                  该功能没有可覆盖的设备字段或 offset。
                 </p>
               ) : (
                 fieldRows.map((row, index) => (
@@ -334,7 +345,11 @@ export function DeviceOverrideDialog({ open, onOpenChange, device, product }: Pr
                     <div className="flex gap-2">
                       <Input
                         id={`dev-field-${index}`}
-                        placeholder="本设备的值"
+                        placeholder={
+                          row.productDefault
+                            ? `留空沿用产品默认 ${row.productDefault}`
+                            : "本设备的值，留空沿用产品"
+                        }
                         value={row.value}
                         onChange={(e) => updateValue("field", index, e.target.value)}
                       />

@@ -21,6 +21,8 @@ import java.util.List;
  * @param byteLength      HEX/BINARY 占用字节数
  * @param byteOrder       字节序 big / little
  * @param callerField     CALLER / MAPPED 时调用方 JSON 键，空则用协议 path
+ * @param scaleOp         入站换算运算符
+ * @param scaleOperand    入站换算操作数
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record FieldNode(
@@ -36,7 +38,9 @@ public record FieldNode(
         String description,
         Integer byteLength,
         String byteOrder,
-        String callerField
+        String callerField,
+        String scaleOp,
+        String scaleOperand
 ) {
 
     public FieldNode {
@@ -56,6 +60,27 @@ public record FieldNode(
             byteOrder = null;
         }
         callerField = (callerField == null || callerField.isBlank()) ? null : callerField.trim();
+        scaleOp = (scaleOp == null || scaleOp.isBlank()) ? null : scaleOp.trim();
+        scaleOperand = (scaleOperand == null || scaleOperand.isBlank()) ? null : scaleOperand.trim();
+    }
+
+    /** 兼容旧 13 参构造（无 scale）。 */
+    public FieldNode(
+            String name,
+            String type,
+            String format,
+            FieldSource source,
+            String valueGenerator,
+            Object constant,
+            List<FieldNode> children,
+            FieldNode element,
+            List<String> choices,
+            String description,
+            Integer byteLength,
+            String byteOrder,
+            String callerField) {
+        this(name, type, format, source, valueGenerator, constant, children, element, choices, description,
+                byteLength, byteOrder, callerField, null, null);
     }
 
     /** 兼容旧 12 参构造（无 callerField）。 */

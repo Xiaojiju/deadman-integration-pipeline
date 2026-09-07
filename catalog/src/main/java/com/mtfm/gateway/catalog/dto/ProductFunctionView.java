@@ -34,5 +34,7 @@ public record ProductFunctionView(
         String resultPath,
         Integer replyTimeoutMs,
         Long scheduleIntervalMs,
-        Boolean scheduleEnabled) {
+        Boolean scheduleEnabled,
+        String scaleOp,
+        String scaleOperand) {
 }

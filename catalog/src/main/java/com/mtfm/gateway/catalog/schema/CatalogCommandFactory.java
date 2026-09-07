@@ -53,6 +53,7 @@ final class CatalogCommandFactory {
                 device.getId(), function.getFunctionId());
         Map<String, Object> deviceFieldOverrides = new LinkedHashMap<>(legacyOverrides);
         deviceFieldOverrides.putAll(pathOverrides);
+        deviceFieldOverrides = support.stripLockedContractOverrides(deviceFieldOverrides);
         support.validateFieldOverrides(function, deviceFieldOverrides);
 
         Map<String, Object> payload = PayloadDefinitionResolver.assemble(
@@ -80,7 +81,9 @@ final class CatalogCommandFactory {
                 deliveryHints.put(TopicRouteResolver.MQTT_PUBLISH_TOPIC_HINT, resolved.publishTopic());
             }
             if ("READ".equalsIgnoreCase(function.getAccessType())) {
-                deliveryHints.put("mqtt.subscribeOnly", "true");
+                if (resolved.publishTopic() == null) {
+                    deliveryHints.put("mqtt.subscribeOnly", "true");
+                }
                 if (resolved.subscribeTopic() != null) {
                     deliveryHints.put(TopicRouteResolver.MQTT_SUBSCRIBE_TOPIC_HINT, resolved.subscribeTopic());
                 }

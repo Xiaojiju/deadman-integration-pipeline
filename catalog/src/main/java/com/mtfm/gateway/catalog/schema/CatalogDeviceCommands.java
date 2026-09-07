@@ -153,7 +153,8 @@ final class CatalogDeviceCommands {
         DeviceEntity device = support.requireDevice(deviceCode);
         ProductFunctionEntity function = store.findFunction(device.getProductId(), functionId)
                 .orElseThrow(() -> new IllegalArgumentException("功能不存在: " + functionId));
-        Map<String, Object> safe = overrides == null ? Map.of() : overrides;
+        Map<String, Object> safe = support.stripLockedContractOverrides(
+                overrides == null ? Map.of() : overrides);
         support.validateFieldOverrides(function, safe);
         store.properties().replaceDeviceFieldOverrides(device.getId(), functionId, safe);
     }

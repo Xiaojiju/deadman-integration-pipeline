@@ -1,3 +1,4 @@
+import { DateTimePicker } from "@/components/date-time-picker"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -48,14 +49,7 @@ export function SchemaFieldControl({ field, value, onChange, idPrefix = "field" 
   const isSelect = type === "select" || choices.length > 0
 
   if (format === "datetime_iso8601" || format === "datetime") {
-    return (
-      <Input
-        id={id}
-        type="datetime-local"
-        value={toDatetimeLocalValue(value)}
-        onChange={(event) => onChange(fromDatetimeLocalValue(event.target.value))}
-      />
-    )
+    return <DateTimePicker id={id} value={value} onChange={onChange} />
   }
 
   if (format === "image_base64" || format === "image") {
@@ -188,31 +182,4 @@ function labelForChoice(choice: string): string {
     off: "关 off",
   }
   return map[choice] ?? choice
-}
-
-/** ISO / 任意可解析时间 → datetime-local 值（yyyy-MM-ddTHH:mm）。 */
-function toDatetimeLocalValue(raw: string): string {
-  if (!raw) {
-    return ""
-  }
-  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T")
-  const date = new Date(normalized)
-  if (Number.isNaN(date.getTime())) {
-    // 已是本地控件格式则直接用前 16 位
-    return normalized.length >= 16 ? normalized.slice(0, 16) : normalized
-  }
-  const pad = (n: number) => String(n).padStart(2, "0")
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
-/** datetime-local → ISO-8601（本地时区偏移）。 */
-function fromDatetimeLocalValue(local: string): string {
-  if (!local) {
-    return ""
-  }
-  const date = new Date(local)
-  if (Number.isNaN(date.getTime())) {
-    return local
-  }
-  return date.toISOString()
 }

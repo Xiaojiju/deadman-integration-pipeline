@@ -20,6 +20,8 @@ import java.util.List;
  * @param callerField       source=mapped 时调用方传入的字段名，默认 value
  * @param byteLength        HEX/BINARY 占用字节数；空则打包时按 1
  * @param byteOrder         字节序 big / little，空则 big
+ * @param scaleOp           入站换算运算符 add/subtract/multiply/divide
+ * @param scaleOperand      入站换算操作数
  */
 public record WriteFieldOption(
         String field,
@@ -34,7 +36,9 @@ public record WriteFieldOption(
         String constant,
         String callerField,
         Integer byteLength,
-        String byteOrder
+        String byteOrder,
+        String scaleOp,
+        String scaleOperand
 ) {
 
     public WriteFieldOption {
@@ -54,6 +58,8 @@ public record WriteFieldOption(
         callerField = normalizeCallerField(source, callerField);
         byteLength = normalizeByteLength(byteLength);
         byteOrder = normalizeByteOrder(byteOrder);
+        scaleOp = normalizeScaleOp(scaleOp);
+        scaleOperand = (scaleOperand == null || scaleOperand.isBlank()) ? null : scaleOperand.trim();
         if (FieldSource.from(source) != FieldSource.CALLER
                 || FieldValueGenerators.isPlatformGenerated(valueGenerator)) {
             ignoreRequest = true;
@@ -74,7 +80,26 @@ public record WriteFieldOption(
             String constant,
             String callerField) {
         this(field, description, accessDataType, transformDataType, ignoreRequest, options, format, valueGenerator,
-                source, constant, callerField, null, null);
+                source, constant, callerField, null, null, null, null);
+    }
+
+    /** 兼容旧 13 参构造（无 scale）。 */
+    public WriteFieldOption(
+            String field,
+            String description,
+            String accessDataType,
+            String transformDataType,
+            boolean ignoreRequest,
+            List<ValueOption> options,
+            String format,
+            String valueGenerator,
+            String source,
+            String constant,
+            String callerField,
+            Integer byteLength,
+            String byteOrder) {
+        this(field, description, accessDataType, transformDataType, ignoreRequest, options, format, valueGenerator,
+                source, constant, callerField, byteLength, byteOrder, null, null);
     }
 
     /** 兼容旧 10 参构造（无 callerField）。 */
@@ -188,5 +213,12 @@ public record WriteFieldOption(
             return "little";
         }
         return "big";
+    }
+
+    private static String normalizeScaleOp(String raw) {
+        if (raw == null || raw.isBlank() || "none".equalsIgnoreCase(raw.trim())) {
+            return null;
+        }
+        return raw.trim().toLowerCase();
     }
 }

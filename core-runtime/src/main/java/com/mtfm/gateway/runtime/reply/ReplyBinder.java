@@ -49,9 +49,17 @@ public final class ReplyBinder {
             return Optional.empty();
         }
         ReplyWaiter.Pending pending = matched.get();
-        List<WriteFieldOption> fields = replyFields(envelope);
+        Optional<FunctionDef> def = catalog == null
+                ? Optional.empty()
+                : catalog.find(envelope.deviceId(), envelope.functionId());
+        List<WriteFieldOption> fields = def.map(FunctionDef::readFields).orElse(List.of());
+        List<ValueOption> options = def.map(FunctionDef::readValueOptions).orElse(List.of());
         Map<String, Object> projected = PayloadDisassembler.project(
-                data, fields, replyValueOptions(envelope));
+                data,
+                fields,
+                options,
+                def.map(FunctionDef::scaleOp).orElse(null),
+                def.map(FunctionDef::scaleOperand).orElse(null));
         if (isFailure(data, fields)) {
             return Optional.of(ExecutionResult.failed(
                     new com.mtfm.gateway.spi.model.FunctionCommand(
@@ -65,8 +73,12 @@ public final class ReplyBinder {
                     Failure.executorError("reply", "设备应答失败", false),
                     projected));
         }
-        return Optional.of(ExecutionResult.success(
-                pending.requestId(), pending.deviceId(), pending.functionId(), projected));
+        ExecutionResult result = ExecutionResult.success(
+                pending.requestId(), pending.deviceId(), pending.functionId(), projected);
+        if (fields.isEmpty() && def.isPresent()) {
+            result = com.mtfm.gateway.spi.payload.ResultValueMapper.apply(def.get(), result);
+        }
+        return Optional.of(result);
     }
 
     private static Object firstPresent(Map<String, Object> data, String... keys) {
@@ -102,24 +114,6 @@ public final class ReplyBinder {
                 .map(FunctionDef::correlationPath)
                 .orElse(null);
         return fromDef != null ? fromDef : header;
-    }
-
-    private List<WriteFieldOption> replyFields(Envelope envelope) {
-        if (catalog == null) {
-            return List.of();
-        }
-        return catalog.find(envelope.deviceId(), envelope.functionId())
-                .map(FunctionDef::readFields)
-                .orElse(List.of());
-    }
-
-    private List<ValueOption> replyValueOptions(Envelope envelope) {
-        if (catalog == null) {
-            return List.of();
-        }
-        return catalog.find(envelope.deviceId(), envelope.functionId())
-                .map(FunctionDef::readValueOptions)
-                .orElse(List.of());
     }
 
     static boolean isFailure(Map<String, Object> data, List<WriteFieldOption> fields) {

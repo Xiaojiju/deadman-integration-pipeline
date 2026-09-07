@@ -27,6 +27,8 @@ import java.util.stream.Collectors;
  */
 final class CatalogFormSupport {
 
+    private static final Set<String> LOCKED_CONTRACT_FIELDS = Set.of("area", "dataType");
+
     private final CatalogStore store;
     private final CapabilityRegistrar registrar;
 
@@ -109,6 +111,21 @@ final class CatalogFormSupport {
             throw new IllegalArgumentException(
                     "设备字段覆盖不在功能契约内: " + unknown + "（功能 " + function.getFunctionId() + "）");
         }
+    }
+
+    /** area / dataType 只能用产品常量，设备覆盖里出现时直接丢掉。 */
+    Map<String, Object> stripLockedContractOverrides(Map<String, Object> overrides) {
+        if (overrides == null || overrides.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> kept = new LinkedHashMap<>();
+        overrides.forEach((key, value) -> {
+            if (key == null || key.isBlank() || LOCKED_CONTRACT_FIELDS.contains(key)) {
+                return;
+            }
+            kept.put(key, value);
+        });
+        return kept;
     }
 
     void validateTopicOverrides(

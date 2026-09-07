@@ -70,10 +70,12 @@ final class CatalogFunctionBinding {
             boolean isRead = "READ".equalsIgnoreCase(access);
             writeFields = isRead ? List.of() : bindContractFields(contract, request.writeFields(), mode);
             readFields = isRead ? bindContractFields(contract, request.readFields(), mode) : List.of();
-            writeValueOptions = constrainContractValueOptions(
-                    request.writeValueOptions() == null ? List.of() : request.writeValueOptions(),
-                    contract,
-                    mode);
+            writeValueOptions = isRead
+                    ? List.of()
+                    : constrainContractValueOptions(
+                            request.writeValueOptions() == null ? List.of() : request.writeValueOptions(),
+                            contract,
+                            mode);
             SchemaValidator.requireConstraints(contract.parameters(), constantsOf(writeFields), "功能参数");
             SchemaValidator.requireConstraints(contract.parameters(), constantsOf(readFields), "功能参数");
         } else {
@@ -569,6 +571,88 @@ final class CatalogFunctionBinding {
                     null));
         }
         return List.copyOf(byName.values());
+    }
+
+    /**
+     * 把 writeValueOptions 的业务值补到 MAPPED 调用方字段的 choices，
+     * 指令表单才能按枚举渲染按钮；CALLER 透传字段保持无 choices（输入框）。
+     */
+    static List<SchemaField> applyWriteValueOptionChoices(
+            List<SchemaField> schema,
+            List<WriteFieldOption> writeFields,
+            List<ValueOption> writeValueOptions) {
+        if (writeValueOptions == null || writeValueOptions.isEmpty()) {
+            return schema == null ? List.of() : schema;
+        }
+        List<String> choices = new ArrayList<>();
+        for (ValueOption option : writeValueOptions) {
+            String choice = option.mappingValue() == null || option.mappingValue().isBlank()
+                    ? option.optionValue()
+                    : option.mappingValue();
+            if (choice != null && !choice.isBlank() && !choices.contains(choice)) {
+                choices.add(choice);
+            }
+        }
+        if (choices.isEmpty()) {
+            return schema == null ? List.of() : schema;
+        }
+        LinkedHashSet<String> targets = new LinkedHashSet<>();
+        if (writeFields != null) {
+            for (WriteFieldOption field : writeFields) {
+                if (FieldSource.from(field.source()) != FieldSource.MAPPED) {
+                    continue;
+                }
+                targets.add(field.callerField() == null || field.callerField().isBlank()
+                        ? "value"
+                        : field.callerField());
+            }
+        }
+        if (targets.isEmpty()) {
+            targets.add("value");
+        }
+        List<SchemaField> result = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (SchemaField field : schema == null ? List.<SchemaField>of() : schema) {
+            if (targets.contains(field.name())) {
+                result.add(withChoices(field, choices));
+                seen.add(field.name());
+            } else {
+                result.add(field);
+            }
+        }
+        for (String target : targets) {
+            if (seen.contains(target)) {
+                continue;
+            }
+            result.add(new SchemaField(
+                    target,
+                    FieldType.STRING,
+                    true,
+                    "",
+                    target,
+                    choices.get(0),
+                    false,
+                    List.copyOf(choices),
+                    FieldFormat.NONE,
+                    null,
+                    null));
+        }
+        return List.copyOf(result);
+    }
+
+    private static SchemaField withChoices(SchemaField field, List<String> choices) {
+        return new SchemaField(
+                field.name(),
+                field.type(),
+                field.required(),
+                field.description(),
+                field.label(),
+                field.defaultValue() != null ? field.defaultValue() : choices.get(0),
+                field.secret(),
+                List.copyOf(choices),
+                field.format(),
+                field.minimum(),
+                field.maximum());
     }
 
     static List<SchemaField> schemaFromProperties(List<PropertyItem> items) {

@@ -25,6 +25,8 @@ public class ReadFieldEntity {
     private Integer byteLength;
     /** 字节序 big / little。 */
     private String byteOrder;
+    private String scaleOp;
+    private String scaleOperand;
 
     public String getId() {
         return id;
@@ -144,5 +146,21 @@ public class ReadFieldEntity {
 
     public void setByteOrder(String byteOrder) {
         this.byteOrder = byteOrder;
+    }
+
+    public String getScaleOp() {
+        return scaleOp;
+    }
+
+    public void setScaleOp(String scaleOp) {
+        this.scaleOp = scaleOp;
+    }
+
+    public String getScaleOperand() {
+        return scaleOperand;
+    }
+
+    public void setScaleOperand(String scaleOperand) {
+        this.scaleOperand = scaleOperand;
     }
 }

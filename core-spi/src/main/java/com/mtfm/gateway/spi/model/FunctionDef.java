@@ -29,6 +29,8 @@ import java.util.List;
  * @param replyTimeoutMs     等待设备应答毫秒数
  * @param scheduleIntervalMs 定时下发间隔（阶段 C）
  * @param scheduleEnabled    是否启用定时下发（阶段 C）
+ * @param scaleOp            入站换算运算符 add/subtract/multiply/divide
+ * @param scaleOperand       入站换算操作数
  */
 public record FunctionDef(
         String functionId,
@@ -47,7 +49,9 @@ public record FunctionDef(
         String resultPath,
         Integer replyTimeoutMs,
         Long scheduleIntervalMs,
-        boolean scheduleEnabled
+        boolean scheduleEnabled,
+        String scaleOp,
+        String scaleOperand
 ) {
 
     public FunctionDef {
@@ -69,6 +73,31 @@ public record FunctionDef(
         resultPath = blankToNull(resultPath);
     }
 
+    /** 兼容旧 17 参构造（无换算）。 */
+    public FunctionDef(
+            String functionId,
+            String accessType,
+            int accessPermission,
+            Option optionSchema,
+            List<PropertyItem> properties,
+            ValueAccessType writeAccessType,
+            List<ValueOption> writeValueOptions,
+            List<WriteFieldOption> writeFields,
+            List<WriteFieldOption> readFields,
+            List<ValueOption> readValueOptions,
+            PayloadEncoding payloadEncoding,
+            String replyTopicSlot,
+            String correlationPath,
+            String resultPath,
+            Integer replyTimeoutMs,
+            Long scheduleIntervalMs,
+            boolean scheduleEnabled) {
+        this(functionId, accessType, accessPermission, optionSchema, properties, writeAccessType,
+                writeValueOptions, writeFields, readFields, readValueOptions, payloadEncoding,
+                replyTopicSlot, correlationPath, resultPath, replyTimeoutMs, scheduleIntervalMs,
+                scheduleEnabled, null, null);
+    }
+
     /** 兼容旧 11 参构造（无应答/调度字段）。 */
     public FunctionDef(
             String functionId,
@@ -84,7 +113,7 @@ public record FunctionDef(
             PayloadEncoding payloadEncoding) {
         this(functionId, accessType, accessPermission, optionSchema, properties, writeAccessType,
                 writeValueOptions, writeFields, readFields, readValueOptions, payloadEncoding,
-                null, null, null, null, null, false);
+                null, null, null, null, null, false, null, null);
     }
 
     /** 兼容旧 10 参构造（无 payloadEncoding）。 */

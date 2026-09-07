@@ -13,6 +13,9 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -24,17 +27,33 @@ public final class TcpModbusBus extends AbstractModbusBus {
 
     private static final Logger LOG = LoggerFactory.getLogger(TcpModbusBus.class);
 
+    static final long DEFAULT_IDLE_TIMEOUT_MS = 10 * 60 * 1000L;
+
     private final int connectTimeoutMs;
     private final int requestTimeoutMs;
+    private final long idleTimeoutMs;
     private final ConcurrentHashMap<String, Session> sessions = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService idleWatch;
 
     public TcpModbusBus() {
         this(3000, 3000);
     }
 
     public TcpModbusBus(int connectTimeoutMs, int requestTimeoutMs) {
+        this(connectTimeoutMs, requestTimeoutMs, DEFAULT_IDLE_TIMEOUT_MS);
+    }
+
+    public TcpModbusBus(int connectTimeoutMs, int requestTimeoutMs, long idleTimeoutMs) {
         this.connectTimeoutMs = Math.max(200, connectTimeoutMs);
         this.requestTimeoutMs = Math.max(200, requestTimeoutMs);
+        this.idleTimeoutMs = Math.max(50L, idleTimeoutMs);
+        this.idleWatch = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "modbus-tcp-idle");
+            thread.setDaemon(true);
+            return thread;
+        });
+        long period = Math.min(30_000L, this.idleTimeoutMs);
+        this.idleWatch.scheduleAtFixedRate(this::closeIdleSockets, period, period, TimeUnit.MILLISECONDS);
     }
 
     @Override
@@ -63,6 +82,7 @@ public final class TcpModbusBus extends AbstractModbusBus {
 
     @Override
     public void close() {
+        idleWatch.shutdownNow();
         for (Session session : sessions.values()) {
             session.closeQuietly();
         }
@@ -77,17 +97,34 @@ public final class TcpModbusBus extends AbstractModbusBus {
         Session session = sessions.computeIfAbsent(channel.sessionKey(), key -> new Session(channel));
         synchronized (session) {
             try {
-                return session.transact(unitId, pdu);
+                byte[] response = session.transact(unitId, pdu);
+                if (!channel.keepAlive()) {
+                    session.closeQuietly();
+                }
+                return response;
             } catch (IOException first) {
                 session.closeQuietly();
                 try {
-                    return session.transact(unitId, pdu);
+                    byte[] response = session.transact(unitId, pdu);
+                    if (!channel.keepAlive()) {
+                        session.closeQuietly();
+                    }
+                    return response;
                 } catch (IOException retry) {
                     session.closeQuietly();
                     throw new ModbusException(
                             "Modbus TCP 失败 " + channel.sessionKey() + " unitId=" + unitId + ": " + retry.getMessage(),
                             retry);
                 }
+            }
+        }
+    }
+
+    private void closeIdleSockets() {
+        long now = System.currentTimeMillis();
+        for (Session session : sessions.values()) {
+            synchronized (session) {
+                session.closeIfIdle(now, idleTimeoutMs);
             }
         }
     }
@@ -99,6 +136,7 @@ public final class TcpModbusBus extends AbstractModbusBus {
         private Socket socket;
         private DataInputStream in;
         private DataOutputStream out;
+        private long lastUsedMs;
 
         private Session(ModbusChannel channel) {
             this.channel = channel;
@@ -106,6 +144,7 @@ public final class TcpModbusBus extends AbstractModbusBus {
 
         private byte[] transact(int unitId, byte[] pdu) throws IOException {
             ensureConnected();
+            lastUsedMs = System.currentTimeMillis();
             int tid = transactionId.incrementAndGet() & 0xFFFF;
             int length = 1 + pdu.length;
             out.writeShort(tid);
@@ -136,12 +175,16 @@ public final class TcpModbusBus extends AbstractModbusBus {
                 throw new IOException("从站号不匹配 expect=" + unitId + " actual=" + respUnit);
             }
             ModbusPdu.requireSuccess(respPdu);
+            lastUsedMs = System.currentTimeMillis();
             return respPdu;
         }
 
         private void ensureConnected() throws IOException {
+            long now = System.currentTimeMillis();
             if (socket != null && socket.isConnected() && !socket.isClosed()) {
-                return;
+                if (!channel.keepAlive() || lastUsedMs <= 0 || now - lastUsedMs <= idleTimeoutMs) {
+                    return;
+                }
             }
             closeQuietly();
             Socket next = new Socket();
@@ -152,7 +195,18 @@ public final class TcpModbusBus extends AbstractModbusBus {
             socket = next;
             in = new DataInputStream(next.getInputStream());
             out = new DataOutputStream(next.getOutputStream());
+            lastUsedMs = System.currentTimeMillis();
             LOG.info("已连接 Modbus TCP {}", channel.sessionKey());
+        }
+
+        private void closeIfIdle(long now, long timeoutMs) {
+            if (!channel.keepAlive() || socket == null || lastUsedMs <= 0) {
+                return;
+            }
+            if (now - lastUsedMs > timeoutMs) {
+                LOG.info("Modbus TCP 空闲超时，关闭 {}", channel.sessionKey());
+                closeQuietly();
+            }
         }
 
         private void closeQuietly() {

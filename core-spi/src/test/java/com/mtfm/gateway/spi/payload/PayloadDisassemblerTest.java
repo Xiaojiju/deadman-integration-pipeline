@@ -81,4 +81,13 @@ class PayloadDisassemblerTest {
         assertEquals("failed", points.get("success"));
         assertEquals(1, points.size());
     }
+
+    @Test
+    void appliesFunctionScaleOnSingleValueField() {
+        Map<String, Object> json = Map.of("value", 238);
+        List<WriteFieldOption> fields = List.of(
+                new WriteFieldOption("value", "温度", "int", "int", false, List.of(), "none", null));
+        Map<String, Object> points = PayloadDisassembler.project(json, fields, List.of(), "divide", "10");
+        assertEquals(23.8, ((Number) points.get("value")).doubleValue(), 0.0001);
+    }
 }

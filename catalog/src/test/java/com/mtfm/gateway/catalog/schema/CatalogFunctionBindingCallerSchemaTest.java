@@ -81,4 +81,38 @@ class CatalogFunctionBindingCallerSchemaTest {
         assertTrue(area.options().stream().anyMatch(option -> "HOLDING".equals(option.optionValue())));
         assertTrue(area.options().stream().anyMatch(option -> "COIL".equals(option.optionValue())));
     }
+
+    @Test
+    void applyWriteValueOptionChoicesPutsButtonsOnMappedCallerOnly() {
+        List<SchemaField> schema = CatalogFunctionBinding.schemaFromWriteFields(List.of(
+                new WriteFieldOption(
+                        "value", "写入值", "string", "string", true,
+                        List.of(), "none", null, "mapped", null),
+                new WriteFieldOption(
+                        "note", "备注", "string", "string", false,
+                        List.of(), "none", null, "caller", null, "remark")),
+                true);
+        List<SchemaField> withChoices = CatalogFunctionBinding.applyWriteValueOptionChoices(
+                schema,
+                List.of(
+                        new WriteFieldOption(
+                                "value", "写入值", "string", "string", true,
+                                List.of(), "none", null, "mapped", null),
+                        new WriteFieldOption(
+                                "note", "备注", "string", "string", false,
+                                List.of(), "none", null, "caller", null, "remark")),
+                List.of(
+                        new ValueOption("1", "open", "开", "string", "string", false),
+                        new ValueOption("0", "close", "关", "string", "string", false)));
+        SchemaField value = withChoices.stream()
+                .filter(field -> "value".equals(field.name()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(List.of("open", "close"), value.choices());
+        SchemaField remark = withChoices.stream()
+                .filter(field -> "remark".equals(field.name()))
+                .findFirst()
+                .orElseThrow();
+        assertTrue(remark.choices() == null || remark.choices().isEmpty());
+    }
 }

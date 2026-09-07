@@ -71,4 +71,30 @@ class TopicCatalogTest {
                 true);
         assertEquals("a/door/write", resolved.publishTopic());
     }
+
+    @Test
+    void readWithoutPublishSlotStaysSubscribeOnly() {
+        TopicCatalog catalog = TopicCatalog.fromAddressMap(Map.of(
+                "topics", Map.of("default_pub", "a/cmd", "default_sub", "a/evt")));
+        var resolved = TopicRouteResolver.resolve(
+                catalog,
+                FunctionRoute.empty(),
+                Map.of(),
+                false);
+        org.junit.jupiter.api.Assertions.assertNull(resolved.publishTopic());
+        assertEquals("a/evt", resolved.subscribeTopic());
+    }
+
+    @Test
+    void readWithPublishSlotResolvesBoth() {
+        TopicCatalog catalog = TopicCatalog.fromAddressMap(Map.of(
+                "topics", Map.of("default_pub", "a/cmd", "default_sub", "a/evt", "poll", "a/poll")));
+        var resolved = TopicRouteResolver.resolve(
+                catalog,
+                new FunctionRoute("poll", "default_sub"),
+                Map.of(),
+                false);
+        assertEquals("a/poll", resolved.publishTopic());
+        assertEquals("a/evt", resolved.subscribeTopic());
+    }
 }

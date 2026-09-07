@@ -27,6 +27,8 @@ public final class FieldOptionSupport {
             String callerField,
             Integer byteLength,
             String byteOrder,
+            String scaleOp,
+            String scaleOperand,
             List<ValueOption> options) {
         return new WriteFieldOption(
                 field,
@@ -41,7 +43,9 @@ public final class FieldOptionSupport {
                 constantValue,
                 callerField,
                 byteLength,
-                byteOrder);
+                byteOrder,
+                scaleOp,
+                scaleOperand);
     }
 
     public static WriteFieldOption from(WriteOptionEntity field, List<ValueOption> options) {
@@ -58,6 +62,8 @@ public final class FieldOptionSupport {
                 field.getCallerField(),
                 field.getByteLength(),
                 field.getByteOrder(),
+                field.getScaleOp(),
+                field.getScaleOperand(),
                 options);
     }
 
@@ -75,6 +81,8 @@ public final class FieldOptionSupport {
                 field.getCallerField(),
                 field.getByteLength(),
                 field.getByteOrder(),
+                field.getScaleOp(),
+                field.getScaleOperand(),
                 options);
     }
 
@@ -107,6 +115,8 @@ public final class FieldOptionSupport {
         row.setCallerField(field.callerField());
         row.setByteLength(field.byteLength());
         row.setByteOrder(field.byteOrder());
+        row.setScaleOp(field.scaleOp());
+        row.setScaleOperand(field.scaleOperand());
     }
 
     private static void applyReadField(ReadFieldEntity row, WriteFieldOption field) {
@@ -122,5 +132,7 @@ public final class FieldOptionSupport {
         row.setCallerField(field.callerField());
         row.setByteLength(field.byteLength());
         row.setByteOrder(field.byteOrder());
+        row.setScaleOp(field.scaleOp());
+        row.setScaleOperand(field.scaleOperand());
     }
 }

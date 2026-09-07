@@ -27,6 +27,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -106,6 +107,38 @@ class TcpModbusBusTest {
     }
 
     @Test
+    void keepAliveReusesOneTcpConnection() {
+        bus.writeNumeric(channel, 1, ModbusArea.HOLDING, 3, ModbusDataType.INT16, 1);
+        bus.writeNumeric(channel, 1, ModbusArea.HOLDING, 3, ModbusDataType.INT16, 2);
+        bus.writeNumeric(channel, 1, ModbusArea.HOLDING, 3, ModbusDataType.INT16, 3);
+        assertEquals(1, slave.acceptCount());
+    }
+
+    @Test
+    void keepAliveFalseClosesAfterEachCommand() {
+        bus.close();
+        bus = new TcpModbusBus(1000, 1000);
+        ModbusChannel oneShot = new ModbusChannel("oneshot", "127.0.0.1", slave.port(), false);
+        bus.retain(oneShot);
+        bus.writeNumeric(oneShot, 1, ModbusArea.HOLDING, 3, ModbusDataType.INT16, 11);
+        bus.writeNumeric(oneShot, 1, ModbusArea.HOLDING, 3, ModbusDataType.INT16, 22);
+        assertEquals(2, slave.acceptCount());
+    }
+
+    @Test
+    void idleTimeoutReconnectsKeepAliveSession() throws InterruptedException {
+        bus.close();
+        bus = new TcpModbusBus(1000, 1000, 120);
+        ModbusChannel kept = new ModbusChannel("idle", "127.0.0.1", slave.port(), true);
+        bus.retain(kept);
+        bus.writeNumeric(kept, 1, ModbusArea.HOLDING, 3, ModbusDataType.INT16, 7);
+        assertEquals(1, slave.acceptCount());
+        Thread.sleep(400);
+        bus.writeNumeric(kept, 1, ModbusArea.HOLDING, 3, ModbusDataType.INT16, 8);
+        assertEquals(2, slave.acceptCount());
+    }
+
+    @Test
     void connectFailureIsModbusException() {
         TcpModbusBus isolated = new TcpModbusBus(200, 200);
         ModbusChannel dead = new ModbusChannel("dead", "127.0.0.1", 1);
@@ -122,6 +155,7 @@ class TcpModbusBusTest {
         private final AtomicBoolean running = new AtomicBoolean(true);
         private final ConcurrentHashMap<String, Integer> holdings = new ConcurrentHashMap<>();
         private final ConcurrentHashMap<String, Boolean> coils = new ConcurrentHashMap<>();
+        private final AtomicInteger accepts = new AtomicInteger();
 
         private LoopbackModbusTcpSlave(ServerSocket server) {
             this.server = server;
@@ -137,10 +171,15 @@ class TcpModbusBusTest {
             return server.getLocalPort();
         }
 
+        int acceptCount() {
+            return accepts.get();
+        }
+
         private void acceptLoop() {
             while (running.get()) {
                 try {
                     Socket socket = server.accept();
+                    accepts.incrementAndGet();
                     pool.execute(() -> handle(socket));
                 } catch (IOException ex) {
                     if (running.get()) {

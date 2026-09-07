@@ -54,7 +54,9 @@ public record ProductFunctionWriteRequest(
         String resultPath,
         Integer replyTimeoutMs,
         Long scheduleIntervalMs,
-        Boolean scheduleEnabled) {
+        Boolean scheduleEnabled,
+        String scaleOp,
+        String scaleOperand) {
 
     public ProductFunctionWriteRequest(
             String functionId,
@@ -76,6 +78,6 @@ public record ProductFunctionWriteRequest(
         this(functionId, accessType, accessPermission, capabilityType, writeAccessType, properties,
                 writeValueOptions, writeFields, readFields, readValueOptions, sortIndex, description,
                 publishTopicSlot, subscribeTopicSlot, payloadMode, payloadEncoding,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
     }
 }

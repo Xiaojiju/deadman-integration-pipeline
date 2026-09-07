@@ -78,6 +78,10 @@ export type WriteFieldOption = {
   byteLength?: number | null
   /** 字节序 big / little */
   byteOrder?: string | null
+  /** 入站换算运算符 add/subtract/multiply/divide */
+  scaleOp?: string
+  /** 入站换算操作数 */
+  scaleOperand?: string
 }
 
 export type FunctionTemplate = {
@@ -155,6 +159,10 @@ export type ProductFunctionEntity = {
   replyTimeoutMs?: number
   scheduleIntervalMs?: number
   scheduleEnabled?: boolean
+  /** 入站换算运算符 add/subtract/multiply/divide */
+  scaleOp?: string
+  /** 入站换算操作数 */
+  scaleOperand?: string
 }
 
 export type DeviceFunctionScheduleView = {
@@ -258,4 +266,68 @@ export type NorthboundWriteRequest = {
   httpWebhookUrl: string
   httpTimeoutMs: number
   httpMaxAttempts: number
+}
+
+export type ActionMemberView = {
+  id?: string
+  deviceCode: string
+  functionId: string
+  arguments?: Record<string, unknown>
+  sortIndex?: number
+}
+
+export type SceneTriggerView = {
+  id?: string
+  mode: string
+  listenDeviceCode?: string
+  listenFunctionId?: string
+  listenMatch?: Record<string, unknown>
+  timerKind?: string
+  timerAt?: string
+  cronExpr?: string
+  timezone?: string
+  enabled?: boolean
+}
+
+export type ActionGroupView = {
+  id: string
+  code: string
+  name: string
+  description?: string
+  kind: string
+  enabled: boolean
+  members: ActionMemberView[]
+  trigger?: SceneTriggerView | null
+}
+
+export type ActionGroupWriteRequest = {
+  code: string
+  name: string
+  description?: string
+  enabled?: boolean
+  members?: Array<{
+    deviceCode: string
+    functionId: string
+    arguments?: Record<string, unknown>
+    sortIndex?: number
+  }>
+  trigger?: {
+    mode: string
+    listenDeviceCode?: string
+    listenFunctionId?: string
+    listenMatch?: Record<string, unknown>
+    timerKind?: string
+    timerAt?: string
+    cronExpr?: string
+    timezone?: string
+    enabled?: boolean
+  }
+}
+
+export type ActionGroupExecutionView = {
+  groupId: string
+  code: string
+  kind: string
+  source: string
+  items: ExecutionResult[]
 }

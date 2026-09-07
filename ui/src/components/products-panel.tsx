@@ -16,14 +16,20 @@ import {
   mergeFixedWriteFields,
   schemaToFixedWriteFields,
 } from "@/components/fixed-write-field-editor"
-import { filterValidValueOptions } from "@/components/value-option-list-editor"
+import {
+  ValueOptionListEditor,
+  filterValidValueOptions,
+} from "@/components/value-option-list-editor"
 import {
   ContractFieldEditor,
   mergeContractFields,
   schemaToContractFields,
 } from "@/components/contract-field-editor"
 import { FieldNodeTreeEditor } from "@/components/field-node-tree-editor"
-import { ValueMappingEditor, filterValidMappings } from "@/components/value-mapping-editor"
+import {
+  ValueMappingEditor,
+  filterValidMappings,
+} from "@/components/value-mapping-editor"
 import { ListPagination } from "@/components/list-pagination"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -48,7 +54,12 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty"
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import {
@@ -101,7 +112,11 @@ type Props = {
   onChanged: () => void
 }
 
-export function ProductsPanel({ productOptions, capabilities, onChanged }: Props) {
+export function ProductsPanel({
+  productOptions,
+  capabilities,
+  onChanged,
+}: Props) {
   const [products, setProducts] = useState<ProductEntity[]>([])
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
@@ -110,19 +125,24 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
   const [pending, setPending] = useState(false)
 
   const [productDialogOpen, setProductDialogOpen] = useState(false)
-  const [editingProduct, setEditingProduct] = useState<ProductEntity | null>(null)
+  const [editingProduct, setEditingProduct] = useState<ProductEntity | null>(
+    null
+  )
   const [code, setCode] = useState("")
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [seedCapabilityType, setSeedCapabilityType] = useState("")
 
   const [viewProduct, setViewProduct] = useState<ProductEntity | null>(null)
-  const [productFunctions, setProductFunctions] = useState<ProductFunctionEntity[]>([])
+  const [productFunctions, setProductFunctions] = useState<
+    ProductFunctionEntity[]
+  >([])
   const [functionsLoading, setFunctionsLoading] = useState(false)
 
   const [fnOpen, setFnOpen] = useState(false)
   const [fnMode, setFnMode] = useState<"create" | "edit">("create")
-  const [editingFunction, setEditingFunction] = useState<ProductFunctionEntity | null>(null)
+  const [editingFunction, setEditingFunction] =
+    useState<ProductFunctionEntity | null>(null)
   const [productId, setProductId] = useState("")
   const [capabilityType, setCapabilityType] = useState("")
   const [functionId, setFunctionId] = useState("")
@@ -143,30 +163,43 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
   const [scheduleEnabled, setScheduleEnabled] = useState(false)
   const [scheduleIntervalMs, setScheduleIntervalMs] = useState("")
   const [payloadMode, setPayloadMode] = useState<"VALUE" | "STRUCT">("STRUCT")
-  const [payloadEncoding, setPayloadEncoding] = useState<"JSON" | "HEX" | "BINARY">("JSON")
-  const [structRoot, setStructRoot] = useState<FieldNodeModel>(() => emptyObjectRoot())
+  const [payloadEncoding, setPayloadEncoding] = useState<
+    "JSON" | "HEX" | "BINARY"
+  >("JSON")
+  const [structRoot, setStructRoot] = useState<FieldNodeModel>(() =>
+    emptyObjectRoot()
+  )
   const [valueMappings, setValueMappings] = useState<ValueMappingModel[]>([])
+  const [scaleOp, setScaleOp] = useState("")
+  const [scaleOperand, setScaleOperand] = useState("")
 
-  const selectedCapability = capabilities.find((item) => item.capabilityType === capabilityType)
+  const selectedCapability = capabilities.find(
+    (item) => item.capabilityType === capabilityType
+  )
   const templates = selectedCapability?.functionTemplates ?? []
   const isFixed = selectedCapability?.functionMode === "FIXED"
   const isContracted = selectedCapability?.functionMode === "CONTRACT"
-  const selectedTemplate = templates.find((item) => item.functionId === functionId)
+  const selectedTemplate = templates.find(
+    (item) => item.functionId === functionId
+  )
   /** OPEN 能力下无参预置功能（如 MQTT publish/subscribe）结构锁定 */
   const isCapabilityDefaultFn = Boolean(
     !isFixed &&
-      !isContracted &&
-      selectedTemplate &&
-      (selectedTemplate.parameters?.length ?? 0) === 0
+    !isContracted &&
+    selectedTemplate &&
+    (selectedTemplate.parameters?.length ?? 0) === 0
   )
   const structureLocked = isFixed || isCapabilityDefaultFn
-  const contractTemplate = templates.find((item) => item.accessType === accessType)
+  const contractTemplate = templates.find(
+    (item) => item.accessType === accessType
+  )
   const contractSchema: SchemaField[] = useMemo(
     () => contractTemplate?.parameters ?? [],
     [contractTemplate]
   )
   const paramSchema: SchemaField[] = useMemo(
-    () => (isContracted ? contractSchema : selectedTemplate?.parameters ?? []),
+    () =>
+      isContracted ? contractSchema : (selectedTemplate?.parameters ?? []),
     [isContracted, contractSchema, selectedTemplate]
   )
   const templateFixedProperties = useMemo(
@@ -182,33 +215,42 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
     [templateFixedProperties, customProperties]
   )
   const displayFixedWriteFields = useMemo(
-    () => mergeFixedWriteFields(templateFixedWriteFields, writeFields, writeValueOptions),
+    () =>
+      mergeFixedWriteFields(
+        templateFixedWriteFields,
+        writeFields,
+        writeValueOptions
+      ),
     [templateFixedWriteFields, writeFields, writeValueOptions]
   )
   const displayFixedReadOptions = useMemo(
-    () => mergeFixedOptions(
-      templateFixedWriteFields.flatMap((item) => item.options ?? []),
-      readValueOptions
-    ).filter((item) =>
-      readValueOptions.some((saved) => saved.optionValue === item.optionValue)
-    ),
+    () =>
+      mergeFixedOptions(
+        templateFixedWriteFields.flatMap((item) => item.options ?? []),
+        readValueOptions
+      ).filter((item) =>
+        readValueOptions.some((saved) => saved.optionValue === item.optionValue)
+      ),
     [templateFixedWriteFields, readValueOptions]
   )
 
-  const load = useCallback(async (targetPage = page) => {
-    setLoading(true)
-    try {
-      const result = await catalogApi.listProducts(targetPage, PAGE_SIZE)
-      setProducts(result.items)
-      setPage(result.page)
-      setTotal(result.total)
-      setTotalPages(result.totalPages)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "加载产品失败")
-    } finally {
-      setLoading(false)
-    }
-  }, [page])
+  const load = useCallback(
+    async (targetPage = page) => {
+      setLoading(true)
+      try {
+        const result = await catalogApi.listProducts(targetPage, PAGE_SIZE)
+        setProducts(result.items)
+        setPage(result.page)
+        setTotal(result.total)
+        setTotalPages(result.totalPages)
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "加载产品失败")
+      } finally {
+        setLoading(false)
+      }
+    },
+    [page]
+  )
 
   useEffect(() => {
     void load(page)
@@ -308,8 +350,13 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
     }
   }
 
-  function seedContractedFields(cap: CapabilityDescriptor | undefined, access: string) {
-    const tpl = cap?.functionTemplates.find((item) => item.accessType === access)
+  function seedContractedFields(
+    cap: CapabilityDescriptor | undefined,
+    access: string
+  ) {
+    const tpl = cap?.functionTemplates.find(
+      (item) => item.accessType === access
+    )
     return schemaToContractFields(tpl?.parameters ?? [])
   }
 
@@ -343,6 +390,8 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
     setPayloadEncoding("JSON")
     setStructRoot(emptyObjectRoot())
     setValueMappings([])
+    setScaleOp("")
+    setScaleOperand("")
     setFnOpen(true)
   }
 
@@ -365,19 +414,33 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
     setReplyTopicSlot(fn.replyTopicSlot ?? "")
     setCorrelationPath(fn.correlationPath ?? "")
     setCorrelationCommandPath(fn.correlationCommandPath ?? "")
-    setReplyTimeoutMs(fn.replyTimeoutMs != null ? String(fn.replyTimeoutMs) : "")
+    setReplyTimeoutMs(
+      fn.replyTimeoutMs != null ? String(fn.replyTimeoutMs) : ""
+    )
     setScheduleEnabled(fn.scheduleEnabled === true)
-    setScheduleIntervalMs(fn.scheduleIntervalMs != null ? String(fn.scheduleIntervalMs) : "")
+    setScheduleIntervalMs(
+      fn.scheduleIntervalMs != null ? String(fn.scheduleIntervalMs) : ""
+    )
     const mode = resolvePayloadMode(fn)
     setPayloadMode(mode)
     const encoding = (fn.payloadEncoding || "JSON").toUpperCase()
-    setPayloadEncoding(encoding === "HEX" || encoding === "BINARY" ? encoding : "JSON")
+    setPayloadEncoding(
+      encoding === "HEX" || encoding === "BINARY" ? encoding : "JSON"
+    )
     setStructRoot(writeFieldsToFieldNode(fn.writeFields ?? []))
-    setValueMappings(editMappingsFromFunction(fn.writeFields ?? [], fn.writeValueOptions ?? []))
+    setValueMappings(
+      editMappingsFromFunction(fn.writeFields ?? [], fn.writeValueOptions ?? [])
+    )
+    setScaleOp(!fn.scaleOp || fn.scaleOp === "none" ? "" : fn.scaleOp)
+    setScaleOperand(fn.scaleOp && fn.scaleOp !== "none" ? (fn.scaleOperand ?? "") : "")
     setFnOpen(true)
   }
 
-  function seedOptionsFromTemplate(template?: { parameters?: SchemaField[]; accessType?: string; description?: string }) {
+  function seedOptionsFromTemplate(template?: {
+    parameters?: SchemaField[]
+    accessType?: string
+    description?: string
+  }) {
     if (!template) {
       return
     }
@@ -399,10 +462,15 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
     setValueMappings([])
   }
 
-  function onCapabilityOrFunctionChange(nextCapability: string, nextFunctionId: string) {
+  function onCapabilityOrFunctionChange(
+    nextCapability: string,
+    nextFunctionId: string
+  ) {
     setCapabilityType(nextCapability)
     setFunctionId(nextFunctionId)
-    const cap = capabilities.find((item) => item.capabilityType === nextCapability)
+    const cap = capabilities.find(
+      (item) => item.capabilityType === nextCapability
+    )
     if (cap?.functionMode === "CONTRACT") {
       if (fnMode === "create") {
         const access = accessType || "WRITE"
@@ -421,7 +489,9 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
       }
       return
     }
-    const template = cap?.functionTemplates.find((item) => item.functionId === nextFunctionId)
+    const template = cap?.functionTemplates.find(
+      (item) => item.functionId === nextFunctionId
+    )
     if (fnMode === "create") {
       if (template) {
         seedOptionsFromTemplate(template)
@@ -451,49 +521,68 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
     const lockedOpenDefault = isCapabilityDefaultFn
     const properties = isFixed ? displayFixedProperties : undefined
     const fixedFields = isFixed ? displayFixedWriteFields : []
-    const mappings = !isFixed && !lockedOpenDefault && payloadMode === "VALUE"
-      ? filterValidMappings(valueMappings).map((row) =>
-          isContracted
-            ? {
-                ...row,
-                patches: (row.patches ?? []).map((patch) => ({
-                  ...patch,
-                  path: patch.path?.trim() || "value",
-                })),
-              }
-            : row
-        )
-      : []
+    const mappings =
+      !isFixed && !lockedOpenDefault && payloadMode === "VALUE"
+        ? filterValidMappings(valueMappings).map((row) =>
+            isContracted
+              ? {
+                  ...row,
+                  patches: (row.patches ?? []).map((patch) => ({
+                    ...patch,
+                    path: patch.path?.trim() || "value",
+                  })),
+                }
+              : row
+          )
+        : []
     const contractBound = isContracted
       ? mergeContractFields(
           schemaToContractFields(contractSchema),
           accessType === "READ" ? readFields : writeFields
         )
       : []
-    const contractWithMaps = isContracted && payloadMode === "VALUE"
-      ? mergeMappingsIntoFields(contractBound, mappings)
-      : contractBound
+    const contractWithMaps =
+      isContracted && payloadMode === "VALUE"
+        ? mergeMappingsIntoFields(contractBound, mappings)
+        : contractBound
     const writeStructFields = isFixed
       ? fixedFields
       : lockedOpenDefault
         ? []
         : accessType === "WRITE"
-          ? (isContracted ? contractWithMaps : mergeMappingsIntoFields(fieldNodeToWriteFields(structRoot), mappings))
+          ? isContracted
+            ? contractWithMaps
+            : mergeMappingsIntoFields(
+                fieldNodeToWriteFields(structRoot),
+                mappings
+              )
           : []
-    const writeOpts = isFixed || lockedOpenDefault
+    const writeOpts =
+      isFixed || lockedOpenDefault || accessType === "READ"
+        ? []
+        : mappingsToValueOptions(mappings)
+    const readStructFields =
+      isFixed || lockedOpenDefault
+        ? []
+        : accessType === "READ"
+          ? isContracted
+            ? filterValidWriteFields(contractBound)
+            : filterValidWriteFields(readFields)
+          : capabilityType === "MQTT"
+            ? filterValidWriteFields(readFields)
+            : []
+    const readOpts = lockedOpenDefault
       ? []
-      : mappingsToValueOptions(mappings)
-    const readStructFields = isFixed || lockedOpenDefault
-      ? []
-      : accessType === "READ"
-        ? (isContracted ? filterValidWriteFields(contractBound) : filterValidWriteFields(readFields))
-        : capabilityType === "MQTT"
-          ? filterValidWriteFields(readFields)
-          : []
-    const readOpts = isFixed && !lockedOpenDefault ? filterValidValueOptions(readValueOptions) : []
+      : accessType === "READ" || isFixed
+        ? filterValidValueOptions(readValueOptions)
+        : []
 
-    const intervalValue = scheduleIntervalMs.trim() === "" ? 0 : Number(scheduleIntervalMs)
-    if (scheduleIntervalMs.trim() && (!Number.isFinite(intervalValue) || intervalValue < MIN_SCHEDULE_MS)) {
+    const intervalValue =
+      scheduleIntervalMs.trim() === "" ? 0 : Number(scheduleIntervalMs)
+    if (
+      scheduleIntervalMs.trim() &&
+      (!Number.isFinite(intervalValue) || intervalValue < MIN_SCHEDULE_MS)
+    ) {
       toast.error(`定时间隔不能小于 ${MIN_SCHEDULE_MS} 毫秒`)
       return
     }
@@ -501,8 +590,13 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
       toast.error(`启用定时下发时须填写不少于 ${MIN_SCHEDULE_MS} 毫秒的间隔`)
       return
     }
-    const timeoutValue = replyTimeoutMs.trim() === "" ? 0 : Number(replyTimeoutMs)
-    if (capabilityType === "MQTT" && replyTimeoutMs.trim() && (!Number.isFinite(timeoutValue) || timeoutValue < 0)) {
+    const timeoutValue =
+      replyTimeoutMs.trim() === "" ? 0 : Number(replyTimeoutMs)
+    if (
+      capabilityType === "MQTT" &&
+      replyTimeoutMs.trim() &&
+      (!Number.isFinite(timeoutValue) || timeoutValue < 0)
+    ) {
       toast.error("应答超时须为非负整数毫秒")
       return
     }
@@ -510,7 +604,9 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
     setPending(true)
     try {
       const body = {
-        accessType: lockedOpenDefault ? selectedTemplate?.accessType ?? accessType : accessType,
+        accessType: lockedOpenDefault
+          ? (selectedTemplate?.accessType ?? accessType)
+          : accessType,
         properties: lockedOpenDefault ? undefined : properties,
         writeAccessType: payloadMode === "VALUE" ? "VALUE" : "STRUCT",
         writeValueOptions: writeOpts,
@@ -519,20 +615,38 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
         readValueOptions: readOpts,
         sortIndex: Number(sortIndex) || 0,
         description: fnDescription.trim() || undefined,
-        publishTopicSlot: capabilityType === "MQTT" ? publishTopicSlot.trim() || undefined : undefined,
-        subscribeTopicSlot: capabilityType === "MQTT" ? subscribeTopicSlot.trim() || undefined : undefined,
+        publishTopicSlot:
+          capabilityType === "MQTT"
+            ? publishTopicSlot.trim() || undefined
+            : undefined,
+        subscribeTopicSlot:
+          capabilityType === "MQTT"
+            ? subscribeTopicSlot.trim() || undefined
+            : undefined,
         payloadMode: isFixed || lockedOpenDefault ? undefined : payloadMode,
-        payloadEncoding: isFixed || lockedOpenDefault || isContracted ? undefined : payloadEncoding,
-        replyTopicSlot: capabilityType === "MQTT" ? replyTopicSlot.trim() : undefined,
-        correlationPath: capabilityType === "MQTT" ? correlationPath.trim() : undefined,
-        correlationCommandPath: capabilityType === "MQTT" ? correlationCommandPath.trim() : undefined,
+        payloadEncoding:
+          isFixed || lockedOpenDefault || isContracted
+            ? undefined
+            : payloadEncoding,
+        replyTopicSlot:
+          capabilityType === "MQTT" ? replyTopicSlot.trim() : undefined,
+        correlationPath:
+          capabilityType === "MQTT" ? correlationPath.trim() : undefined,
+        correlationCommandPath:
+          capabilityType === "MQTT" ? correlationCommandPath.trim() : undefined,
         resultPath: capabilityType === "MQTT" ? "" : undefined,
         replyTimeoutMs: capabilityType === "MQTT" ? timeoutValue : undefined,
         scheduleEnabled,
         scheduleIntervalMs: intervalValue,
+        scaleOp: scaleOp.trim() || "none",
+        scaleOperand: scaleOp.trim() ? scaleOperand.trim() : "",
       }
       if (fnMode === "edit" && editingFunction) {
-        await catalogApi.updateProductFunction(productId, editingFunction.functionId, body)
+        await catalogApi.updateProductFunction(
+          productId,
+          editingFunction.functionId,
+          body
+        )
         toast.success(`功能 ${editingFunction.functionId} 已更新`)
       } else {
         await catalogApi.createProductFunction(productId, {
@@ -602,15 +716,25 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
         <div className="flex flex-col gap-1.5">
           <CardTitle>产品</CardTitle>
           <CardDescription>
-            同质设备模板。FIXED 一键导入封闭 API；CONTRACT（如 Modbus）自定义业务 functionId、参数名锁死；OPEN 可自定义协议字段。
+            同质设备模板。FIXED 一键导入封闭 API；CONTRACT（如
+            Modbus）自定义业务 functionId、参数名锁死；OPEN 可自定义协议字段。
           </CardDescription>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => void load(page)} disabled={loading}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void load(page)}
+            disabled={loading}
+          >
             <RefreshCwIcon data-icon="inline-start" />
             刷新
           </Button>
-          <Button size="sm" variant="outline" onClick={() => openCreateFunction()}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => openCreateFunction()}
+          >
             创建功能
           </Button>
           <Button size="sm" onClick={openCreateProduct}>
@@ -629,7 +753,9 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
           <Empty className="border border-dashed">
             <EmptyHeader>
               <EmptyTitle>暂无产品</EmptyTitle>
-              <EmptyDescription>创建产品后，再为其创建或导入功能。</EmptyDescription>
+              <EmptyDescription>
+                创建产品后，再为其创建或导入功能。
+              </EmptyDescription>
             </EmptyHeader>
           </Empty>
         ) : (
@@ -645,7 +771,9 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
             <TableBody>
               {products.map((product) => (
                 <TableRow key={product.id}>
-                  <TableCell className="font-mono text-sm">{product.code}</TableCell>
+                  <TableCell className="font-mono text-sm">
+                    {product.code}
+                  </TableCell>
                   <TableCell>{product.name}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {product.description || "—"}
@@ -692,9 +820,13 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
       <Dialog open={productDialogOpen} onOpenChange={setProductDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingProduct ? "编辑产品" : "新建产品"}</DialogTitle>
+            <DialogTitle>
+              {editingProduct ? "编辑产品" : "新建产品"}
+            </DialogTitle>
             <DialogDescription>
-              {editingProduct ? "可修改名称与说明；编码不可改。" : "定义同质设备的共享功能模板。"}
+              {editingProduct
+                ? "可修改名称与说明；编码不可改。"
+                : "定义同质设备的共享功能模板。"}
             </DialogDescription>
           </DialogHeader>
           <FieldGroup>
@@ -709,7 +841,11 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
             </Field>
             <Field>
               <FieldLabel htmlFor="productName">名称</FieldLabel>
-              <Input id="productName" value={name} onChange={(e) => setName(e.target.value)} />
+              <Input
+                id="productName"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
             </Field>
             <Field>
               <FieldLabel htmlFor="productDesc">说明</FieldLabel>
@@ -735,7 +871,10 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                     <SelectGroup>
                       <SelectItem value="__none__">不导入</SelectItem>
                       {capabilities.map((item) => (
-                        <SelectItem key={item.capabilityType} value={item.capabilityType}>
+                        <SelectItem
+                          key={item.capabilityType}
+                          value={item.capabilityType}
+                        >
                           {item.capabilityType}
                           {item.functionMode === "FIXED"
                             ? " · FIXED"
@@ -751,7 +890,10 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
             ) : null}
           </FieldGroup>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setProductDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setProductDialogOpen(false)}
+            >
               取消
             </Button>
             <Button onClick={() => void saveProduct()} disabled={pending}>
@@ -764,7 +906,9 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
       <Dialog open={fnOpen} onOpenChange={setFnOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{fnMode === "edit" ? "编辑产品功能" : "创建产品功能"}</DialogTitle>
+            <DialogTitle>
+              {fnMode === "edit" ? "编辑产品功能" : "创建产品功能"}
+            </DialogTitle>
             <DialogDescription>
               {fnMode === "edit"
                 ? structureLocked
@@ -804,7 +948,9 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
               <Select
                 value={capabilityType}
                 disabled={fnMode === "edit"}
-                onValueChange={(value) => onCapabilityOrFunctionChange(value, "")}
+                onValueChange={(value) =>
+                  onCapabilityOrFunctionChange(value, "")
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="选择能力" />
@@ -812,7 +958,10 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                 <SelectContent>
                   <SelectGroup>
                     {capabilities.map((item) => (
-                      <SelectItem key={item.capabilityType} value={item.capabilityType}>
+                      <SelectItem
+                        key={item.capabilityType}
+                        value={item.capabilityType}
+                      >
                         {item.capabilityType}
                         {item.functionMode === "FIXED"
                           ? " · FIXED"
@@ -825,12 +974,15 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                 </SelectContent>
               </Select>
             </Field>
-            {fnMode === "create" && (isFixed || (templates.length > 0 && !isContracted)) ? (
+            {fnMode === "create" &&
+            (isFixed || (templates.length > 0 && !isContracted)) ? (
               <Field>
                 <FieldLabel>功能（模板）</FieldLabel>
                 <Select
                   value={functionId}
-                  onValueChange={(value) => onCapabilityOrFunctionChange(capabilityType, value)}
+                  onValueChange={(value) =>
+                    onCapabilityOrFunctionChange(capabilityType, value)
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="选择功能" />
@@ -838,7 +990,10 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                   <SelectContent>
                     <SelectGroup>
                       {templates.map((item) => (
-                        <SelectItem key={item.functionId} value={item.functionId}>
+                        <SelectItem
+                          key={item.functionId}
+                          value={item.functionId}
+                        >
                           {item.functionId}
                           {item.description ? ` · ${item.description}` : ""}
                         </SelectItem>
@@ -855,7 +1010,9 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                   id="customFn"
                   value={functionId}
                   onChange={(e) => setFunctionId(e.target.value)}
-                  placeholder={isContracted ? "例如 light.switch" : "例如 pump.readTemp"}
+                  placeholder={
+                    isContracted ? "例如 light.switch" : "例如 pump.readTemp"
+                  }
                 />
               </Field>
             ) : null}
@@ -911,11 +1068,13 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
             </Field>
             {!structureLocked && !isContracted ? (
               <p className="text-sm text-muted-foreground">
-                WRITE 配置下发协议 JSON；READ 配置解析上报字段。platform / device / constant 来源的字段调用方不用传。
+                WRITE 配置下发协议 JSON；READ 配置解析上报字段。platform /
+                device / constant 来源的字段调用方不用传。
               </p>
             ) : isContracted ? (
               <p className="text-sm text-muted-foreground">
-                参数名由 Modbus 契约锁死。寻址字段配常量或设备覆盖；写入值用 mapped，调用方只传业务简值。
+                参数名由 Modbus 契约锁死。寻址字段配常量或设备覆盖；写入值用
+                mapped，调用方只传业务简值。
               </p>
             ) : null}
             {!isFixed && !isCapabilityDefaultFn && !isContracted ? (
@@ -923,7 +1082,9 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                 <FieldLabel>载荷编码 payloadEncoding</FieldLabel>
                 <Select
                   value={payloadEncoding}
-                  onValueChange={(v) => setPayloadEncoding(v as "JSON" | "HEX" | "BINARY")}
+                  onValueChange={(v) =>
+                    setPayloadEncoding(v as "JSON" | "HEX" | "BINARY")
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -931,15 +1092,20 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                   <SelectContent>
                     <SelectGroup>
                       <SelectItem value="JSON">JSON — 对象/数组报文</SelectItem>
-                      <SelectItem value="HEX">HEX — 按字段顺序紧排成空格分隔 hex</SelectItem>
-                      <SelectItem value="BINARY">BINARY — 按字段顺序紧排成原始字节</SelectItem>
+                      <SelectItem value="HEX">
+                        HEX — 按字段顺序紧排成空格分隔 hex
+                      </SelectItem>
+                      <SelectItem value="BINARY">
+                        BINARY — 按字段顺序紧排成原始字节
+                      </SelectItem>
                     </SelectGroup>
                   </SelectContent>
                 </Select>
                 {payloadEncoding === "HEX" ? (
                   <ConfigExample title="示例 · Modbus 透传 hex 帧">
                     <p>
-                      字段顺序即帧布局：area 1 字节、func 1 字节、offset 2 字节、quantity 2 字节。
+                      字段顺序即帧布局：area 1 字节、func 1 字节、offset 2
+                      字节、quantity 2 字节。
                     </p>
                     <p>
                       值 0,0,0,1 打包为{" "}
@@ -974,13 +1140,16 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                     description="optionValue 不可改，可改说明"
                     options={displayFixedReadOptions}
                     defaultOptionValue={
-                      displayFixedReadOptions.find((item) => item.isDefault)?.optionValue
+                      displayFixedReadOptions.find((item) => item.isDefault)
+                        ?.optionValue
                     }
                     onDefaultChange={(optionValue) => {
                       setReadValueOptions(
                         displayFixedReadOptions.map((item) => ({
                           ...item,
-                          isDefault: optionValue ? item.optionValue === optionValue : false,
+                          isDefault: optionValue
+                            ? item.optionValue === optionValue
+                            : false,
                         }))
                       )
                     }}
@@ -989,7 +1158,9 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                 ) : (
                   <Field>
                     <FieldLabel>读值选项 readValueOptions</FieldLabel>
-                    <p className="text-sm text-muted-foreground">当前无读值选项。</p>
+                    <p className="text-sm text-muted-foreground">
+                      当前无读值选项。
+                    </p>
                   </Field>
                 )}
               </>
@@ -1008,9 +1179,13 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                             row.field === "value"
                               ? {
                                   ...row,
-                                  source: next === "VALUE" ? "mapped" : "caller",
+                                  source:
+                                    next === "VALUE" ? "mapped" : "caller",
                                   ignoreRequest: next === "VALUE",
-                                  callerField: next === "VALUE" ? row.callerField || "value" : undefined,
+                                  callerField:
+                                    next === "VALUE"
+                                      ? row.callerField || "value"
+                                      : undefined,
                                 }
                               : row
                           )
@@ -1022,27 +1197,33 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
-                          <SelectItem value="STRUCT">STRUCT — 调用方按契约字段填</SelectItem>
-                          <SelectItem value="VALUE">VALUE — 调用方只传业务简值</SelectItem>
+                          <SelectItem value="STRUCT">
+                            STRUCT — 调用方按契约字段填
+                          </SelectItem>
+                          <SelectItem value="VALUE">
+                            VALUE — 调用方只传业务简值
+                          </SelectItem>
                         </SelectGroup>
                       </SelectContent>
                     </Select>
                     <ConfigExample title="示例 · 开灯">
                       <p>
-                        functionId 填 <CodeSample>light.switch</CodeSample>，area=COIL、offset=10 配常量，
-                        value 设 mapped。调用方传{" "}
-                        <CodeSample>{`{ "value": "on" }`}</CodeSample>
-                        。
+                        functionId 填 <CodeSample>light.switch</CodeSample>
+                        ，area=COIL、offset=10 配常量， value 设
+                        mapped。调用方传{" "}
+                        <CodeSample>{`{ "value": "on" }`}</CodeSample>。
                       </p>
                     </ConfigExample>
                   </Field>
                 ) : null}
                 <ContractFieldEditor
                   label={accessType === "READ" ? "读点位契约" : "写点位契约"}
-                  description="字段名不可改。area/offset/dataType 建议 constant 或 device；WRITE 的 value 建议 mapped。映射枚举只在下方 VALUE 映射填写。"
+                  description="字段名不可改。area/offset/dataType 建议 constant 或 device；仅 offset 可在设备参数覆盖地址段。WRITE 的 value 建议 mapped。映射枚举只在下方 VALUE 映射填写。"
                   schema={contractSchema}
                   value={accessType === "READ" ? readFields : writeFields}
-                  onChange={accessType === "READ" ? setReadFields : setWriteFields}
+                  onChange={
+                    accessType === "READ" ? setReadFields : setWriteFields
+                  }
                 />
                 {accessType === "WRITE" && payloadMode === "VALUE" ? (
                   <ValueMappingEditor
@@ -1053,68 +1234,109 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                     defaultPatchPath="value"
                   />
                 ) : null}
+                {accessType === "READ" ? (
+                  <ValueOptionListEditor
+                    label="读值映射"
+                    description="设备原值 optionValue → 业务值 mappingValue。例如 2 → cool。不配则原样返回。"
+                    value={readValueOptions}
+                    onChange={setReadValueOptions}
+                  />
+                ) : null}
+                <ScaleEditor
+                  scaleOp={scaleOp}
+                  scaleOperand={scaleOperand}
+                  onOpChange={setScaleOp}
+                  onOperandChange={setScaleOperand}
+                />
               </>
             ) : accessType === "READ" ? (
-              <WriteFieldListEditor
-                label="读字段 readFields"
-                description={
-                  payloadEncoding === "JSON"
-                    ? "从上报 JSON 拾取多个 path。没有的字段跳过；一个都没有则本条监听不北向。返回名是北向键，选项把 optionValue（设备值）翻成 mappingValue（业务值）。"
-                    : "按字段顺序从 hex/二进制帧切片。每个叶子配置 byteLength，顺序即帧布局。"
-                }
-                value={readFields}
-                onChange={setReadFields}
-                showByteLayout={payloadEncoding !== "JSON"}
-                showOutputName={payloadEncoding === "JSON"}
-              />
+              <>
+                <WriteFieldListEditor
+                  label="读字段 readFields"
+                  description={
+                    payloadEncoding === "JSON"
+                      ? "从上报 JSON 拾取多个 path。没有的字段跳过；一个都没有则本条监听不北向。返回名是北向键，选项把 optionValue（设备值）翻成 mappingValue（业务值）。"
+                      : "按字段顺序从 hex/二进制帧切片。每个叶子配置 byteLength，顺序即帧布局。"
+                  }
+                  value={readFields}
+                  onChange={setReadFields}
+                  showByteLayout={payloadEncoding !== "JSON"}
+                  showOutputName={payloadEncoding === "JSON"}
+                />
+                <ValueOptionListEditor
+                  label="读值映射"
+                  description="设备原值 optionValue → 业务值 mappingValue。例如 2 → cool。不配则原样返回。"
+                  value={readValueOptions}
+                  onChange={setReadValueOptions}
+                />
+                <ScaleEditor
+                  scaleOp={scaleOp}
+                  scaleOperand={scaleOperand}
+                  onOpChange={setScaleOp}
+                  onOperandChange={setScaleOperand}
+                />
+              </>
             ) : (
               <>
                 <Field>
                   <FieldLabel>载荷模式 payloadMode</FieldLabel>
                   <Select
                     value={payloadMode}
-                    onValueChange={(v) => setPayloadMode(v as "VALUE" | "STRUCT")}
+                    onValueChange={(v) =>
+                      setPayloadMode(v as "VALUE" | "STRUCT")
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
-                        <SelectItem value="STRUCT">STRUCT — 调用方按协议字段填</SelectItem>
-                        <SelectItem value="VALUE">VALUE — 调用方只传业务简值</SelectItem>
+                        <SelectItem value="STRUCT">
+                          STRUCT — 调用方按协议字段填
+                        </SelectItem>
+                        <SelectItem value="VALUE">
+                          VALUE — 调用方只传业务简值
+                        </SelectItem>
                       </SelectGroup>
                     </SelectContent>
                   </Select>
                   {payloadMode === "VALUE" ? (
                     <ConfigExample title="示例 · VALUE 远程控门">
                       <p>
-                        调用方传{" "}
-                        <CodeSample>{`{ "lock": "open" }`}</CodeSample>
+                        调用方传 <CodeSample>{`{ "lock": "open" }`}</CodeSample>
                         ，需要两个参数时传{" "}
                         <CodeSample>{`{ "lock": "open", "mode": "night" }`}</CodeSample>
                         。
                       </p>
                       <p>
-                        协议里 <CodeSample>params.0</CodeSample> 设为 mapped；下方 VALUE 映射把调用方字段{" "}
-                        <CodeSample>lock</CodeSample>、业务值 open 写成协议值 open。
+                        协议里 <CodeSample>params.0</CodeSample> 设为
+                        mapped；下方 VALUE 映射把调用方字段{" "}
+                        <CodeSample>lock</CodeSample>、业务值 open 写成协议值
+                        open。
                       </p>
                       <p>
-                        密码、生效时间这类任意字符串：叶子 source 选 CALLER，调用方字段填{" "}
-                        <CodeSample>password</CodeSample> / <CodeSample>beginTime</CodeSample>
+                        密码、生效时间这类任意字符串：叶子 source 选
+                        CALLER，调用方字段填 <CodeSample>password</CodeSample> /{" "}
+                        <CodeSample>beginTime</CodeSample>
                         ，或在下方 VALUE 映射选「调用方原样填入」。调用方传{" "}
                         <CodeSample>{`{ "lock": "add", "password": "112233", "beginTime": "2024-08-01 19:20:15" }`}</CodeSample>
                         。
                       </p>
-                      <p>at / seq 用 platform 生成，devId 用 device 覆盖，固定口令用 constant，都不必出现在调用参数里。</p>
+                      <p>
+                        at / seq 用 platform 生成，devId 用 device
+                        覆盖，固定口令用 constant，都不必出现在调用参数里。
+                      </p>
                     </ConfigExample>
                   ) : (
                     <ConfigExample title="示例 · STRUCT 直接填字段">
                       <p>
                         调用方按协议字段名传值，例如{" "}
-                        <CodeSample>{`{ "command": "open" }`}</CodeSample>
-                        。
+                        <CodeSample>{`{ "command": "open" }`}</CodeSample>。
                       </p>
-                      <p>source=caller 的叶子来自请求；platform / device / constant 执行时自动填。</p>
+                      <p>
+                        source=caller 的叶子来自请求；platform / device /
+                        constant 执行时自动填。
+                      </p>
                     </ConfigExample>
                   )}
                 </Field>
@@ -1137,6 +1359,12 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                     onChange={setValueMappings}
                   />
                 ) : null}
+                <ScaleEditor
+                  scaleOp={scaleOp}
+                  scaleOperand={scaleOperand}
+                  onOpChange={setScaleOp}
+                  onOperandChange={setScaleOperand}
+                />
               </>
             )}
             {capabilityType === "MQTT" ? (
@@ -1148,18 +1376,22 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                     value={publishTopicSlot}
                     onChange={(e) => setPublishTopicSlot(e.target.value)}
                     placeholder="ydlink/FFFA25101101/thing/action/execute"
-                    disabled={accessType === "READ"}
                   />
                   <FieldDescription>
                     下发指令的完整 topic，层级必须用 <CodeSample>/</CodeSample>
                     ，不要用点号。写成
                     <CodeSample>ydlink.xxx.execute</CodeSample> 会自动变成
                     <CodeSample>ydlink/xxx/execute</CodeSample>
-                    。也可只填设备 Address 里的 slot 名，如 <CodeSample>default_pub</CodeSample>。
+                    。也可只填设备 Address 里的 slot 名，如{" "}
+                    <CodeSample>default_pub</CodeSample>
+                    。READ 填了发布 Topic
+                    即可主动下发读指令；不填则仍只订阅上报。
                   </FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="subscribeTopicSlot">订阅 Topic</FieldLabel>
+                  <FieldLabel htmlFor="subscribeTopicSlot">
+                    订阅 Topic
+                  </FieldLabel>
                   <Input
                     id="subscribeTopicSlot"
                     value={subscribeTopicSlot}
@@ -1169,7 +1401,8 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                   />
                   <FieldDescription>
                     READ 监听用。同样只用 <CodeSample>/</CodeSample>
-                    ，或填 slot 名 <CodeSample>default_sub</CodeSample>。WRITE 应答请填下面的应答 Topic。
+                    ，或填 slot 名 <CodeSample>default_sub</CodeSample>。WRITE
+                    应答请填下面的应答 Topic。
                   </FieldDescription>
                 </Field>
                 <Field>
@@ -1181,11 +1414,14 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                     placeholder="ydlink/FFFA25101101/thing/action/execute_response"
                   />
                   <FieldDescription>
-                    设备回包订阅的完整路径，可直接填 topic，不必先在 Address 里登记。留空则不等待回包，指令发出即结束。
+                    设备回包订阅的完整路径，可直接填 topic，不必先在 Address
+                    里登记。留空则不等待回包，指令发出即结束。
                   </FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="correlationCommandPath">指令关联 path</FieldLabel>
+                  <FieldLabel htmlFor="correlationCommandPath">
+                    指令关联 path
+                  </FieldLabel>
                   <Input
                     id="correlationCommandPath"
                     value={correlationCommandPath}
@@ -1193,15 +1429,19 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                     placeholder="$deviceCode 或 seq 或 params.3"
                   />
                   <FieldDescription>
-                    从<strong>下发 JSON</strong>里取用来对上的值。回包装设备编码时填
+                    从<strong>下发 JSON</strong>
+                    里取用来对上的值。回包装设备编码时填
                     <CodeSample>$deviceCode</CodeSample>
                     ；回包带回序列号时填 <CodeSample>seq</CodeSample>
                     ；数组下标写成 <CodeSample>params.3</CodeSample>
-                    。留空则先试「回包关联 path」在下发里的同名字段，再退回 requestId。
+                    。留空则先试「回包关联 path」在下发里的同名字段，再退回
+                    requestId。
                   </FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="correlationPath">回包关联 path</FieldLabel>
+                  <FieldLabel htmlFor="correlationPath">
+                    回包关联 path
+                  </FieldLabel>
                   <Input
                     id="correlationPath"
                     value={correlationPath}
@@ -1209,12 +1449,15 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                     placeholder="params.0 或 seq"
                   />
                   <FieldDescription>
-                    从<strong>回包 JSON</strong>里取与上面同一含义的字段，必须和指令关联 path
-                    对得上。支持 <CodeSample>params.0</CodeSample> 这种数组下标。
+                    从<strong>回包 JSON</strong>
+                    里取与上面同一含义的字段，必须和指令关联 path 对得上。支持{" "}
+                    <CodeSample>params.0</CodeSample> 这种数组下标。
                   </FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="replyTimeoutMs">应答超时（毫秒）</FieldLabel>
+                  <FieldLabel htmlFor="replyTimeoutMs">
+                    应答超时（毫秒）
+                  </FieldLabel>
                   <Input
                     id="replyTimeoutMs"
                     type="number"
@@ -1238,19 +1481,27 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
                 ) : null}
                 <ConfigExample title="怎么填 · 远程控门应答">
                   <p>
-                    发布 Topic 填 <CodeSample>ydlink/网关号/thing/action/execute</CodeSample>
-                    ，应答 Topic 填 <CodeSample>…/execute_response</CodeSample>，中间用 / 不用点。
+                    发布 Topic 填{" "}
+                    <CodeSample>ydlink/网关号/thing/action/execute</CodeSample>
+                    ，应答 Topic 填 <CodeSample>…/execute_response</CodeSample>
+                    ，中间用 / 不用点。
                   </p>
                   <p>
-                    回包装设备编码：指令关联填 <CodeSample>$deviceCode</CodeSample>
-                    ，回包关联填回包里的设备编码字段（如 <CodeSample>params.0</CodeSample>）。
-                    回包带回 seq：两边都填 <CodeSample>seq</CodeSample>。
+                    回包装设备编码：指令关联填{" "}
+                    <CodeSample>$deviceCode</CodeSample>
+                    ，回包关联填回包里的设备编码字段（如{" "}
+                    <CodeSample>params.0</CodeSample>）。 回包带回 seq：两边都填{" "}
+                    <CodeSample>seq</CodeSample>。
                   </p>
                   <p>
-                    应答取值配回包里要带回的字段：path <CodeSample>params.1</CodeSample> 返回名
-                    <CodeSample>success</CodeSample>；path <CodeSample>params.2</CodeSample> 返回名
-                    <CodeSample>message</CodeSample>。其中协议值 <CodeSample>0</CodeSample> /
-                    <CodeSample>false</CodeSample> / <CodeSample>fail</CodeSample> 会使命令 FAILED；对上关联号且这些字段都不是失败值则为成功。
+                    应答取值配回包里要带回的字段：path{" "}
+                    <CodeSample>params.1</CodeSample> 返回名
+                    <CodeSample>success</CodeSample>；path{" "}
+                    <CodeSample>params.2</CodeSample> 返回名
+                    <CodeSample>message</CodeSample>。其中协议值{" "}
+                    <CodeSample>0</CodeSample> /<CodeSample>false</CodeSample> /{" "}
+                    <CodeSample>fail</CodeSample> 会使命令
+                    FAILED；对上关联号且这些字段都不是失败值则为成功。
                   </p>
                 </ConfigExample>
               </>
@@ -1264,7 +1515,9 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
               />
             </Field>
             <Field>
-              <FieldLabel htmlFor="scheduleIntervalMs">定时间隔（毫秒）</FieldLabel>
+              <FieldLabel htmlFor="scheduleIntervalMs">
+                定时间隔（毫秒）
+              </FieldLabel>
               <Input
                 id="scheduleIntervalMs"
                 type="number"
@@ -1275,7 +1528,8 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
               />
             </Field>
             <p className="text-sm text-muted-foreground">
-              到期走现有下发队列。设备可再覆盖间隔或关掉。MQTT 有应答时，上一拍未完成会跳过本拍。
+              到期走现有下发队列。设备可再覆盖间隔或关掉。MQTT
+              有应答时，上一拍未完成会跳过本拍。
             </p>
             <Field>
               <FieldLabel htmlFor="sortIndex">排序</FieldLabel>
@@ -1297,7 +1551,11 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
               取消
             </Button>
             {fnMode === "create" && templates.length > 0 ? (
-              <Button variant="secondary" onClick={() => void importAll()} disabled={pending}>
+              <Button
+                variant="secondary"
+                onClick={() => void importAll()}
+                disabled={pending}
+              >
                 一键导入全部
               </Button>
             ) : null}
@@ -1322,7 +1580,9 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
             <DialogTitle>
               产品功能 · {viewProduct?.name || viewProduct?.code}
             </DialogTitle>
-            <DialogDescription>查看、创建、编辑或移除该产品下的功能。</DialogDescription>
+            <DialogDescription>
+              查看、创建、编辑或移除该产品下的功能。
+            </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end">
             <Button
@@ -1343,7 +1603,9 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
             <Empty className="border border-dashed">
               <EmptyHeader>
                 <EmptyTitle>尚未挂载功能</EmptyTitle>
-                <EmptyDescription>点击「创建功能」或使用一键导入。</EmptyDescription>
+                <EmptyDescription>
+                  点击「创建功能」或使用一键导入。
+                </EmptyDescription>
               </EmptyHeader>
             </Empty>
           ) : (
@@ -1360,10 +1622,14 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
               <TableBody>
                 {productFunctions.map((fn) => (
                   <TableRow key={fn.id || fn.functionId}>
-                    <TableCell className="font-mono text-sm">{fn.functionId}</TableCell>
+                    <TableCell className="font-mono text-sm">
+                      {fn.functionId}
+                    </TableCell>
                     <TableCell>{fn.description || "—"}</TableCell>
                     <TableCell>
-                      <Badge variant="outline">{fn.capabilityType || "—"}</Badge>
+                      <Badge variant="outline">
+                        {fn.capabilityType || "—"}
+                      </Badge>
                     </TableCell>
                     <TableCell>{fn.accessType}</TableCell>
                     <TableCell className="flex gap-1">
@@ -1397,5 +1663,60 @@ export function ProductsPanel({ productOptions, capabilities, onChanged }: Props
         </DialogContent>
       </Dialog>
     </Card>
+  )
+}
+
+function ScaleEditor({
+  scaleOp,
+  scaleOperand,
+  onOpChange,
+  onOperandChange,
+}: {
+  scaleOp: string
+  scaleOperand: string
+  onOpChange: (next: string) => void
+  onOperandChange: (next: string) => void
+}) {
+  return (
+    <Field>
+      <FieldLabel>数值换算</FieldLabel>
+      <p className="mb-2 text-xs text-muted-foreground">
+        按入站方向配置：设备 238、运算 divide 10 → 业务
+        23.8。写出时自动取逆，调用方传 23.8 会下发
+        238。有读值映射命中时不再换算。
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Select
+          value={scaleOp || "none"}
+          onValueChange={(next) => {
+            if (next === "none") {
+              onOpChange("")
+              onOperandChange("")
+              return
+            }
+            onOpChange(next)
+          }}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="不换算" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="none">不换算</SelectItem>
+              <SelectItem value="divide">除 divide</SelectItem>
+              <SelectItem value="multiply">乘 multiply</SelectItem>
+              <SelectItem value="add">加 add</SelectItem>
+              <SelectItem value="subtract">减 subtract</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        <Input
+          value={scaleOperand}
+          onChange={(e) => onOperandChange(e.target.value)}
+          placeholder="操作数，例如 10"
+          disabled={!scaleOp}
+        />
+      </div>
+    </Field>
   )
 }

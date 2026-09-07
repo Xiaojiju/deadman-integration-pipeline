@@ -207,7 +207,9 @@ public class CatalogStore implements FunctionCatalog, DeviceBindingCatalog {
                 function.getResultPath(),
                 function.getReplyTimeoutMs(),
                 function.getScheduleIntervalMs(),
-                Boolean.TRUE.equals(function.getScheduleEnabled())));
+                Boolean.TRUE.equals(function.getScheduleEnabled()),
+                function.getScaleOp(),
+                function.getScaleOperand()));
     }
 
     @Override

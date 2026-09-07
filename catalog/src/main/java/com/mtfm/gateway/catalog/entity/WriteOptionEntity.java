@@ -30,6 +30,10 @@ public class WriteOptionEntity {
     private Integer byteLength;
     /** 字节序 big / little。 */
     private String byteOrder;
+    /** 入站换算运算符。 */
+    private String scaleOp;
+    /** 入站换算操作数。 */
+    private String scaleOperand;
 
     public String getId() {
         return id;
@@ -149,5 +153,21 @@ public class WriteOptionEntity {
 
     public void setByteOrder(String byteOrder) {
         this.byteOrder = byteOrder;
+    }
+
+    public String getScaleOp() {
+        return scaleOp;
+    }
+
+    public void setScaleOp(String scaleOp) {
+        this.scaleOp = scaleOp;
+    }
+
+    public String getScaleOperand() {
+        return scaleOperand;
+    }
+
+    public void setScaleOperand(String scaleOperand) {
+        this.scaleOperand = scaleOperand;
     }
 }

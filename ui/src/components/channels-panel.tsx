@@ -63,7 +63,7 @@ type Props = {
 
 type Mode = "create" | "edit"
 
-const MODBUS_TCP_FIELDS = new Set(["transport", "host", "port"])
+const MODBUS_TCP_FIELDS = new Set(["transport", "host", "port", "keepAlive"])
 const MODBUS_RTU_FIELDS = new Set(["transport", "serialPort", "baudRate", "dataBits", "parity", "stopBits"])
 
 function visibleConnectionSchema(

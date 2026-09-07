@@ -112,8 +112,14 @@ public final class PipelineEngine {
                 Failure failure = Failure.functionNotFound(sealed.deviceId(), sealed.functionId());
                 return NormalizeOutcome.failSealed(sealed, failure);
             }
-            if (!AccessPermission.contains(def.get().accessPermission(), AccessPermission.WRITE)
-                    && "WRITE".equalsIgnoreCase(def.get().accessType())) {
+            if ("WRITE".equalsIgnoreCase(def.get().accessType())
+                    && !AccessPermission.contains(def.get().accessPermission(), AccessPermission.WRITE)) {
+                Failure failure = Failure.accessDenied(sealed.deviceId(), sealed.functionId());
+                return NormalizeOutcome.failSealed(sealed, failure);
+            }
+            if ("READ".equalsIgnoreCase(def.get().accessType())
+                    && !AccessPermission.contains(def.get().accessPermission(), AccessPermission.READ)
+                    && def.get().accessPermission() != AccessPermission.WRITE.code()) {
                 Failure failure = Failure.accessDenied(sealed.deviceId(), sealed.functionId());
                 return NormalizeOutcome.failSealed(sealed, failure);
             }

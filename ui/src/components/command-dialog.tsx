@@ -2,7 +2,11 @@ import { Loader2Icon } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
-import { SchemaFieldControl } from "@/components/schema-field-control"
+import {
+  ActionArgumentFields,
+  collectActionArguments,
+  isValueModeOf,
+} from "@/components/action-argument-fields"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -22,38 +26,13 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { catalogApi } from "@/lib/api"
-import { isBooleanFieldType, isIntFieldType, isArrayFieldType, toFieldStringMap } from "@/lib/schema-form"
+import { toFieldStringMap } from "@/lib/schema-form"
 import type { FunctionFormView, ValueOption } from "@/lib/types"
 
 type Props = {
   open: boolean
   onOpenChange: (open: boolean) => void
   deviceCode: string
-}
-
-function parseFieldValue(field: { type?: string; name: string }, raw: string): unknown {
-  if (raw === "") {
-    return raw
-  }
-  if (isIntFieldType(field.type)) {
-    return Number(raw)
-  }
-  if (isBooleanFieldType(field.type)) {
-    return raw === "true" || raw === "1"
-  }
-  if (
-    isArrayFieldType(field.type) ||
-    field.type === "json" ||
-    raw.trim().startsWith("[") ||
-    raw.trim().startsWith("{")
-  ) {
-    try {
-      return JSON.parse(raw)
-    } catch {
-      return raw
-    }
-  }
-  return raw
 }
 
 export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
@@ -64,22 +43,23 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
   const [loading, setLoading] = useState(false)
   const [pending, setPending] = useState(false)
 
-  const writeFunctions = useMemo(
-    () => functions.filter((item) => item.accessType?.toUpperCase() === "WRITE"),
+  const commandFunctions = useMemo(
+    () =>
+      functions.filter((item) => {
+        const access = item.accessType?.toUpperCase()
+        return access === "WRITE" || access === "READ"
+      }),
     [functions]
   )
 
   const selected = useMemo(
-    () => writeFunctions.find((item) => item.functionId === functionId),
-    [writeFunctions, functionId]
+    () => commandFunctions.find((item) => item.functionId === functionId) ?? null,
+    [commandFunctions, functionId]
   )
-
+  const isRead = selected?.accessType?.toUpperCase() === "READ"
   const writeOptions: ValueOption[] = selected?.writeValueOptions ?? []
-  const isValueMode =
-    selected?.payloadMode === "VALUE" ||
-    (writeOptions.length > 0 && selected?.writeAccessType === "VALUE")
-
-  const callerFields = useMemo(() => selected?.parameters ?? [], [selected])
+  const isValueMode = isValueModeOf(selected)
+  const callerFields = selected?.parameters ?? []
 
   useEffect(() => {
     if (!open || !deviceCode) {
@@ -89,9 +69,12 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
     catalogApi
       .deviceFunctions(deviceCode)
       .then((items) => {
-        const writable = items.filter((item) => item.accessType?.toUpperCase() === "WRITE")
+        const commandable = items.filter((item) => {
+          const access = item.accessType?.toUpperCase()
+          return access === "WRITE" || access === "READ"
+        })
         setFunctions(items)
-        const first = writable[0]
+        const first = commandable[0]
         setFunctionId(first?.functionId ?? "")
         setValues(toFieldStringMap(first?.values ?? {}))
       })
@@ -114,9 +97,16 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
       ?? ""
     setSelectedOptionValue(preferred)
     const next = toFieldStringMap(selected.values ?? {})
-    for (const field of selected.parameters ?? []) {
+    const valueMode = isValueModeOf(selected)
+    const parameters = selected.parameters ?? []
+    for (const field of parameters) {
       if (!next[field.name]) {
-        const choice = field.choices?.[0]
+        const fromChoices = field.choices?.[0]
+        const fromOptions =
+          valueMode && (parameters.length === 1 || field.name === "value")
+            ? (options[0]?.mappingValue || options[0]?.optionValue)
+            : undefined
+        const choice = fromChoices ?? fromOptions
         if (choice != null) {
           next[field.name] = String(choice)
         }
@@ -126,61 +116,23 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
   }, [selected])
 
   async function submit() {
-    if (!functionId) {
+    if (!functionId || !selected) {
       toast.error("请选择功能")
       return
     }
     setPending(true)
     try {
-      const args: Record<string, unknown> = {}
-      if (isValueMode && callerFields.length > 0) {
-        for (const field of callerFields) {
-          const raw = values[field.name] ?? ""
-          if (raw === "" && !field.required) {
-            continue
-          }
-          if (raw === "") {
-            toast.error(`请填写 ${field.label || field.name}`)
-            setPending(false)
-            return
-          }
-          args[field.name] = parseFieldValue(field, raw)
-        }
-      } else if (callerFields.length > 0) {
-        for (const field of callerFields) {
-          const raw = values[field.name] ?? ""
-          if (raw === "" && !field.required) {
-            continue
-          }
-          args[field.name] = parseFieldValue(field, raw)
-        }
-      } else if (writeOptions.length > 0) {
-        if (!selectedOptionValue) {
-          toast.error("请选择写选项")
-          setPending(false)
-          return
-        }
-        const selectedOpt = writeOptions.find(
-          (item) =>
-            item.optionValue === selectedOptionValue || item.mappingValue === selectedOptionValue
-        )
-        const mapped = selectedOpt?.mappingValue || selectedOptionValue
-        if (isValueMode) {
-          args.value = mapped
-        } else {
-          const target = callerFields.length === 1 ? callerFields[0].name : "command"
-          args[target] = selectedOptionValue
-        }
-      } else {
-        for (const field of callerFields) {
-          const raw = values[field.name] ?? ""
-          if (raw === "" && !field.required) {
-            continue
-          }
-          args[field.name] = parseFieldValue(field, raw)
-        }
+      const collected = collectActionArguments({
+        selected,
+        values,
+        selectedOptionValue,
+      })
+      if (!collected.ok) {
+        toast.error(collected.error)
+        setPending(false)
+        return
       }
-      const result = await catalogApi.invokeCommand(deviceCode, functionId, args)
+      const result = await catalogApi.invokeCommand(deviceCode, functionId, collected.args)
       if (result.status === "SUCCESS") {
         toast.success(`${functionId} 执行成功`)
       } else {
@@ -198,9 +150,11 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
     !pending &&
     !loading &&
     !!functionId &&
-    (isValueMode && callerFields.length > 0
+    (isRead
       ? callerFields.every((field) => !field.required || Boolean(values[field.name]))
-      : writeOptions.length === 0 || !!selectedOptionValue)
+      : isValueMode && callerFields.length > 0
+        ? callerFields.every((field) => !field.required || Boolean(values[field.name]))
+        : writeOptions.length === 0 || !!selectedOptionValue)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -208,7 +162,7 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
         <DialogHeader>
           <DialogTitle>手动下发 · {deviceCode}</DialogTitle>
           <DialogDescription>
-            仅需填写调用方字段；seq、at、deviceId 等平台/设备字段由配置自动填充。
+            可下发 WRITE 或主动 READ。调用方字段按需填写；seq、at、deviceId 等平台/设备字段由配置自动填充。
           </DialogDescription>
         </DialogHeader>
         {loading ? (
@@ -216,8 +170,8 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
             <Loader2Icon className="size-4 animate-spin" />
             加载功能列表…
           </div>
-        ) : writeFunctions.length === 0 ? (
-          <p className="text-sm text-muted-foreground">该设备产品尚未配置 WRITE 功能。</p>
+        ) : commandFunctions.length === 0 ? (
+          <p className="text-sm text-muted-foreground">该设备产品尚未配置可下发的 READ / WRITE 功能。</p>
         ) : (
           <FieldGroup>
             <Field>
@@ -228,7 +182,7 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    {writeFunctions.map((item) => (
+                    {commandFunctions.map((item) => (
                       <SelectItem key={item.functionId} value={item.functionId}>
                         {item.description && item.description !== item.functionId
                           ? `${item.functionId} · ${item.description}`
@@ -239,83 +193,15 @@ export function CommandDialogPanel({ open, onOpenChange, deviceCode }: Props) {
                 </SelectContent>
               </Select>
             </Field>
-            {isValueMode && callerFields.length > 0 ? (
-              callerFields.map((field) => (
-                <Field key={field.name}>
-                  <FieldLabel htmlFor={`cmd-${field.name}`}>
-                    {field.label || field.name}
-                    {field.required ? " *" : ""}
-                  </FieldLabel>
-                  {(field.choices ?? []).length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {(field.choices ?? []).map((choice) => (
-                        <Button
-                          key={choice}
-                          type="button"
-                          variant={values[field.name] === String(choice) ? "default" : "outline"}
-                          disabled={pending}
-                          onClick={() =>
-                            setValues((prev) => ({ ...prev, [field.name]: String(choice) }))
-                          }
-                        >
-                          {choice}
-                        </Button>
-                      ))}
-                    </div>
-                  ) : (
-                    <SchemaFieldControl
-                      field={field}
-                      value={values[field.name] ?? ""}
-                      idPrefix="cmd"
-                      onChange={(next) =>
-                        setValues((prev) => ({ ...prev, [field.name]: next }))
-                      }
-                    />
-                  )}
-                </Field>
-              ))
-            ) : callerFields.length > 0 ? (
-              callerFields.map((field) => (
-                <Field key={field.name}>
-                  <FieldLabel htmlFor={`cmd-${field.name}`}>
-                    {field.label || field.name}
-                    {field.required ? " *" : ""}
-                  </FieldLabel>
-                  <SchemaFieldControl
-                    field={field}
-                    value={values[field.name] ?? ""}
-                    idPrefix="cmd"
-                    onChange={(next) =>
-                      setValues((prev) => ({ ...prev, [field.name]: next }))
-                    }
-                  />
-                </Field>
-              ))
-            ) : writeOptions.length > 0 ? (
-              <Field>
-                <FieldLabel>{isValueMode ? "业务值" : "写选项"}</FieldLabel>
-                <div className="flex flex-wrap gap-2">
-                  {writeOptions.map((option) => {
-                    const key = option.mappingValue || option.optionValue
-                    return (
-                    <Button
-                      key={option.optionValue}
-                      type="button"
-                      variant={
-                        selectedOptionValue === key || selectedOptionValue === option.optionValue
-                          ? "default"
-                          : "outline"
-                      }
-                      disabled={pending}
-                      onClick={() => setSelectedOptionValue(key)}
-                    >
-                      {option.description || option.optionValue}
-                    </Button>
-                    )
-                  })}
-                </div>
-              </Field>
-            ) : null}
+            <ActionArgumentFields
+              selected={selected}
+              values={values}
+              onValuesChange={setValues}
+              selectedOptionValue={selectedOptionValue}
+              onSelectedOptionValue={setSelectedOptionValue}
+              pending={pending}
+              idPrefix="cmd"
+            />
           </FieldGroup>
         )}
         <DialogFooter>

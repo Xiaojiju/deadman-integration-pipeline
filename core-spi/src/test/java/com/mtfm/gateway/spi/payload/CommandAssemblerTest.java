@@ -325,6 +325,35 @@ class CommandAssemblerTest {
     }
 
     @Test
+    void deviceOverrideReplacesContractConstantOffset() {
+        FieldNode root = FieldNode.objectRoot("root", List.of(
+                FieldNode.leaf("area", "string", FieldSource.CONSTANT, "none", null, "HOLDING", ""),
+                FieldNode.leaf("offset", "int", FieldSource.CONSTANT, "none", null, "6", ""),
+                FieldNode.leaf("value", "string", FieldSource.MAPPED, "none", null, null, ""),
+                FieldNode.leaf("dataType", "string", FieldSource.CONSTANT, "none", null, "INT16", "")));
+
+        Map<String, Object> inherited = CommandAssembler.assemble(new CommandAssembler.Request(
+                PayloadMode.VALUE,
+                root,
+                List.of(ValueMapping.patch("open", "开", List.of(new FieldPatch("value", "1")))),
+                Map.of("value", "open"),
+                Map.of()));
+        assertEquals("6", inherited.get("offset"));
+        assertEquals("HOLDING", inherited.get("area"));
+
+        Map<String, Object> overridden = CommandAssembler.assemble(new CommandAssembler.Request(
+                PayloadMode.VALUE,
+                root,
+                List.of(ValueMapping.patch("open", "开", List.of(new FieldPatch("value", "1")))),
+                Map.of("value", "open"),
+                Map.of("offset", 11, "area", "COIL", "dataType", "BOOLEAN")));
+        assertEquals(11, overridden.get("offset"));
+        assertEquals("HOLDING", overridden.get("area"));
+        assertEquals("INT16", overridden.get("dataType"));
+        assertEquals("1", overridden.get("value"));
+    }
+
+    @Test
     void requestIdGeneratorWritesCommandRequestId() {
         FieldNode root = FieldNode.objectRoot("root", List.of(
                 FieldNode.leaf("seq", "string", FieldSource.PLATFORM, "none", "request_id", null, "序列")));
@@ -338,5 +367,61 @@ class CommandAssemblerTest {
                 "req-open-1"));
 
         assertEquals("req-open-1", payload.get("seq"));
+    }
+
+    @Test
+    void outboundScaleConvertsBusinessToDevice() {
+        FieldNode root = FieldNode.objectRoot("root", List.of(
+                new FieldNode(
+                        "value",
+                        "int",
+                        "none",
+                        FieldSource.CALLER,
+                        null,
+                        null,
+                        List.of(),
+                        null,
+                        List.of(),
+                        "",
+                        null,
+                        null,
+                        null,
+                        "divide",
+                        "10")));
+        Map<String, Object> payload = CommandAssembler.assemble(new CommandAssembler.Request(
+                PayloadMode.STRUCT,
+                root,
+                List.of(),
+                Map.of("value", 23.8),
+                Map.of()));
+        assertEquals(238L, payload.get("value"));
+    }
+
+    @Test
+    void mappedEnumIsNotScaled() {
+        FieldNode root = FieldNode.objectRoot("root", List.of(
+                new FieldNode(
+                        "value",
+                        "int",
+                        "none",
+                        FieldSource.MAPPED,
+                        null,
+                        null,
+                        List.of(),
+                        null,
+                        List.of(),
+                        "",
+                        null,
+                        null,
+                        "value",
+                        "divide",
+                        "10")));
+        Map<String, Object> payload = CommandAssembler.assemble(new CommandAssembler.Request(
+                PayloadMode.VALUE,
+                root,
+                List.of(ValueMapping.patch("cool", "制冷", List.of(new FieldPatch("value", "2")))),
+                Map.of("value", "cool"),
+                Map.of()));
+        assertEquals("2", String.valueOf(payload.get("value")));
     }
 }

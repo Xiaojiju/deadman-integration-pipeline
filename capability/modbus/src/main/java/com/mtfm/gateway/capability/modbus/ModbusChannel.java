@@ -14,7 +14,8 @@ public record ModbusChannel(
         int baudRate,
         int dataBits,
         String parity,
-        int stopBits
+        int stopBits,
+        boolean keepAlive
 ) {
 
     public ModbusChannel {
@@ -71,7 +72,11 @@ public record ModbusChannel(
 
     /** 兼容旧 TCP 三参构造。 */
     public ModbusChannel(String channelId, String host, int port) {
-        this(channelId, ModbusTransport.TCP, host, port, "", 9600, 8, "NONE", 1);
+        this(channelId, host, port, true);
+    }
+
+    public ModbusChannel(String channelId, String host, int port, boolean keepAlive) {
+        this(channelId, ModbusTransport.TCP, host, port, "", 9600, 8, "NONE", 1, keepAlive);
     }
 
     public static ModbusChannel tcp(String channelId, String host, int port) {
@@ -81,22 +86,27 @@ public record ModbusChannel(
     public static ModbusChannel rtu(String channelId, String serialPort, int baudRate, int dataBits,
             String parity, int stopBits) {
         return new ModbusChannel(channelId, ModbusTransport.RTU, "", 502, serialPort, baudRate, dataBits, parity,
-                stopBits);
+                stopBits, true);
     }
 
     public static ModbusChannel from(String channelId, Attributes connection) {
         Attributes values = connection == null ? Attributes.empty() : connection;
         ModbusTransport transport = ModbusTransport.parse(string(values, "transport"));
+        boolean keepAlive = booleanValue(values, "keepAlive", true);
         if (transport == ModbusTransport.RTU) {
-            return rtu(
+            return new ModbusChannel(
                     channelId,
+                    ModbusTransport.RTU,
+                    "",
+                    502,
                     string(values, "serialPort"),
                     intValue(values, "baudRate", 9600),
                     intValue(values, "dataBits", 8),
                     string(values, "parity"),
-                    intValue(values, "stopBits", 1));
+                    intValue(values, "stopBits", 1),
+                    keepAlive);
         }
-        return tcp(channelId, string(values, "host"), intValue(values, "port", 502));
+        return new ModbusChannel(channelId, string(values, "host"), intValue(values, "port", 502), keepAlive);
     }
 
     public boolean rtu() {
@@ -121,6 +131,22 @@ public record ModbusChannel(
             } catch (NumberFormatException ex) {
                 return fallback;
             }
+        }).orElse(fallback);
+    }
+
+    private static boolean booleanValue(Attributes attributes, String key, boolean fallback) {
+        return attributes.get(key).map(value -> {
+            if (value instanceof Boolean bool) {
+                return bool;
+            }
+            String text = String.valueOf(value).trim();
+            if (text.equalsIgnoreCase("true") || text.equals("1")) {
+                return true;
+            }
+            if (text.equalsIgnoreCase("false") || text.equals("0")) {
+                return false;
+            }
+            return fallback;
         }).orElse(fallback);
     }
 }

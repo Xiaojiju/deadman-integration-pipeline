@@ -28,6 +28,15 @@ public final class PayloadDisassembler {
             Map<String, Object> json,
             List<WriteFieldOption> readFields,
             List<ValueOption> fallbackOptions) {
+        return project(json, readFields, fallbackOptions, null, null);
+    }
+
+    public static Map<String, Object> project(
+            Map<String, Object> json,
+            List<WriteFieldOption> readFields,
+            List<ValueOption> fallbackOptions,
+            String functionScaleOp,
+            String functionScaleOperand) {
         if (json == null || json.isEmpty()) {
             return Map.of();
         }
@@ -35,6 +44,7 @@ public final class PayloadDisassembler {
             return Map.copyOf(json);
         }
         Map<String, Object> points = new LinkedHashMap<>();
+        int fieldCount = readFields.size();
         for (WriteFieldOption field : readFields) {
             if (field == null || field.field() == null || field.field().isBlank()) {
                 continue;
@@ -49,7 +59,21 @@ public final class PayloadDisassembler {
             List<ValueOption> options = field.options() != null && !field.options().isEmpty()
                     ? field.options()
                     : fallbackOptions;
-            points.put(key, mapInboundValue(value, options));
+            Object mapped = mapInboundValue(value, options);
+            if (mapped == value) {
+                String op = field.scaleOp();
+                String operand = field.scaleOperand();
+                if (!ScaleTransform.configured(op, operand)
+                        && ScaleTransform.configured(functionScaleOp, functionScaleOperand)
+                        && ("value".equals(field.field()) || fieldCount == 1)) {
+                    op = functionScaleOp;
+                    operand = functionScaleOperand;
+                }
+                if (ScaleTransform.configured(op, operand)) {
+                    mapped = ScaleTransform.inbound(value, op, operand);
+                }
+            }
+            points.put(key, mapped);
         }
         return Map.copyOf(points);
     }

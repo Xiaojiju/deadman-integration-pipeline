@@ -124,8 +124,9 @@ public final class CommandAssembler {
             }
         }
 
+        java.util.Set<String> patchedPaths = java.util.Set.of();
         if (request.payloadMode() == PayloadMode.VALUE) {
-            applyValuePatches(request, flat);
+            patchedPaths = applyValuePatches(request, flat);
         }
 
         for (FieldTreePaths.LeafBinding leaf : leaves) {
@@ -141,7 +142,7 @@ public final class CommandAssembler {
 
         for (FieldTreePaths.LeafBinding leaf : leaves) {
             FieldNode node = leaf.node();
-            if (node.source() != FieldSource.DEVICE) {
+            if (node.source() != FieldSource.DEVICE && !isOverridableConstant(node, leaf.path())) {
                 continue;
             }
             Object device = request.deviceFieldOverrides().get(leaf.path());
@@ -151,6 +152,26 @@ public final class CommandAssembler {
             if (device != null) {
                 FieldTreePaths.setFlat(flat, leaf.path(), device);
             }
+        }
+
+        for (FieldTreePaths.LeafBinding leaf : leaves) {
+            FieldNode node = leaf.node();
+            if (patchedPaths.contains(leaf.path())) {
+                continue;
+            }
+            if (!ScaleTransform.configured(node.scaleOp(), node.scaleOperand())) {
+                continue;
+            }
+            if (node.source() != FieldSource.CALLER && node.source() != FieldSource.MAPPED
+                    && !"value".equals(node.name()) && !"value".equals(leaf.path())) {
+                continue;
+            }
+            Object current = flat.get(leaf.path());
+            if (current == null) {
+                continue;
+            }
+            FieldTreePaths.setFlat(flat, leaf.path(),
+                    ScaleTransform.outbound(current, node.scaleOp(), node.scaleOperand()));
         }
 
         for (FieldTreePaths.LeafBinding leaf : leaves) {
@@ -197,8 +218,9 @@ public final class CommandAssembler {
         return null;
     }
 
-    private static void applyValuePatches(Request request, Map<String, Object> flat) {
+    private static java.util.Set<String> applyValuePatches(Request request, Map<String, Object> flat) {
         LinkedHashMap<String, Boolean> applied = new LinkedHashMap<>();
+        java.util.Set<String> patched = new java.util.LinkedHashSet<>();
         for (ValueMapping mapping : request.valueMappings()) {
             if (mapping.target() == MappingTarget.FILL_ROOT) {
                 continue;
@@ -216,9 +238,13 @@ public final class CommandAssembler {
             }
             for (FieldPatch patch : mapping.patches()) {
                 FieldTreePaths.setFlat(flat, patch.path(), patch.value());
+                if (patch.path() != null && !patch.path().isBlank()) {
+                    patched.add(patch.path());
+                }
             }
             applied.put(callerField, Boolean.TRUE);
         }
+        return patched;
     }
 
     private static Object callerValueForLeaf(Map<String, Object> caller, FieldNode node, String path) {
@@ -240,6 +266,14 @@ public final class CommandAssembler {
 
     private static boolean mappingMatches(ValueMapping mapping, Object raw) {
         return mapping.mappingValue().equals(String.valueOf(raw));
+    }
+
+    /** 契约常量里仅 offset 允许被设备覆盖，area / dataType 始终用产品值。 */
+    private static boolean isOverridableConstant(FieldNode node, String path) {
+        if (node.source() != FieldSource.CONSTANT) {
+            return false;
+        }
+        return "offset".equals(node.name()) || "offset".equals(path);
     }
 
     private static List<FieldTreePaths.LeafBinding> leavesOf(FieldNode root) {

@@ -16,6 +16,9 @@ import type {
   SupportedSchemaView,
   ValueOption,
   WriteFieldOption,
+  ActionGroupView,
+  ActionGroupWriteRequest,
+  ActionGroupExecutionView,
 } from "@/lib/types"
 
 export const MIN_SCHEDULE_MS = 1000
@@ -41,6 +44,8 @@ type ProductFunctionWriteBody = {
   replyTimeoutMs?: number
   scheduleIntervalMs?: number
   scheduleEnabled?: boolean
+  scaleOp?: string
+  scaleOperand?: string
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -276,5 +281,43 @@ export const catalogApi = {
     request(`/catalog/products/${encodeURIComponent(productId)}/functions`, {
       method: "POST",
       body: JSON.stringify(body),
+    }),
+  listClusters: () => request<ActionGroupView[]>("/catalog/clusters"),
+  createCluster: (body: ActionGroupWriteRequest) =>
+    request<ActionGroupView>("/catalog/clusters", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateCluster: (id: string, body: ActionGroupWriteRequest) =>
+    request<ActionGroupView>(`/catalog/clusters/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  deleteCluster: (id: string) =>
+    request<{ id: string; deleted: boolean }>(`/catalog/clusters/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+  executeCluster: (id: string) =>
+    request<ActionGroupExecutionView>(`/catalog/clusters/${encodeURIComponent(id)}/execute`, {
+      method: "POST",
+    }),
+  listScenes: () => request<ActionGroupView[]>("/catalog/scenes"),
+  createScene: (body: ActionGroupWriteRequest) =>
+    request<ActionGroupView>("/catalog/scenes", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateScene: (id: string, body: ActionGroupWriteRequest) =>
+    request<ActionGroupView>(`/catalog/scenes/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  deleteScene: (id: string) =>
+    request<{ id: string; deleted: boolean }>(`/catalog/scenes/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+  executeScene: (id: string) =>
+    request<ActionGroupExecutionView>(`/catalog/scenes/${encodeURIComponent(id)}/execute`, {
+      method: "POST",
     }),
 }

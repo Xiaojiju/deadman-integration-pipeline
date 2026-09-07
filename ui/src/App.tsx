@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
+import { ActionGroupsPanel } from "@/components/action-groups-panel"
 import { CapabilitiesPanel } from "@/components/capabilities-panel"
 import { ChannelsPanel } from "@/components/channels-panel"
 import { DevicesPanel } from "@/components/devices-panel"
@@ -60,7 +61,7 @@ export function App() {
             MTFM Gateway
           </h1>
           <p className="max-w-2xl text-muted-foreground">
-            配置产品、通道、设备与北向双通道，动态加载到运行时，并手动下发南向指令。
+            配置产品、通道、设备、集群与场景，动态加载到运行时，并手动下发南向指令。
           </p>
         </header>
 
@@ -76,10 +77,12 @@ export function App() {
         ) : null}
 
         <Tabs defaultValue="devices">
-          <TabsList>
+          <TabsList className="h-auto flex-wrap">
             <TabsTrigger value="devices">设备</TabsTrigger>
             <TabsTrigger value="products">产品</TabsTrigger>
             <TabsTrigger value="channels">通道</TabsTrigger>
+            <TabsTrigger value="clusters">集群</TabsTrigger>
+            <TabsTrigger value="scenes">场景</TabsTrigger>
             <TabsTrigger value="northbound">北向</TabsTrigger>
             <TabsTrigger value="capabilities">能力</TabsTrigger>
           </TabsList>
@@ -104,6 +107,12 @@ export function App() {
               capabilities={capabilities}
               onChanged={() => void refresh()}
             />
+          </TabsContent>
+          <TabsContent value="clusters" className="mt-4">
+            <ActionGroupsPanel kind="CLUSTER" />
+          </TabsContent>
+          <TabsContent value="scenes" className="mt-4">
+            <ActionGroupsPanel kind="SCENE" />
           </TabsContent>
           <TabsContent value="northbound" className="mt-4">
             <NorthboundPanel />

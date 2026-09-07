@@ -39,6 +39,7 @@ public final class PayloadDefinitionResolver {
         List<WriteFieldOption> fields = isRead
                 ? properties.listReadFields(function.getId())
                 : properties.listWriteFields(function.getId());
+        fields = stampValueScale(fields, function.getScaleOp(), function.getScaleOperand());
         FieldNode root = LegacyFieldAdapter.fromWriteFields(fields);
         List<ValueOption> valueOptions = properties.listWriteValueOptions(function.getId());
         PayloadMode mode = resolveMode(function, valueOptions);
@@ -99,6 +100,39 @@ public final class PayloadDefinitionResolver {
                 deviceFieldOverrides,
                 requestId));
         return FramePacker.pack(definition.fields(), assembled, definition.payloadEncoding());
+    }
+
+    private static List<WriteFieldOption> stampValueScale(
+            List<WriteFieldOption> fields, String scaleOp, String scaleOperand) {
+        if (fields == null || fields.isEmpty()
+                || !com.mtfm.gateway.spi.payload.ScaleTransform.configured(scaleOp, scaleOperand)) {
+            return fields;
+        }
+        List<WriteFieldOption> next = new java.util.ArrayList<>(fields.size());
+        for (WriteFieldOption field : fields) {
+            if (field != null && "value".equals(field.field())
+                    && !com.mtfm.gateway.spi.payload.ScaleTransform.configured(field.scaleOp(), field.scaleOperand())) {
+                next.add(new WriteFieldOption(
+                        field.field(),
+                        field.description(),
+                        field.accessDataType(),
+                        field.transformDataType(),
+                        field.ignoreRequest(),
+                        field.options(),
+                        field.format(),
+                        field.valueGenerator(),
+                        field.source(),
+                        field.constant(),
+                        field.callerField(),
+                        field.byteLength(),
+                        field.byteOrder(),
+                        scaleOp,
+                        scaleOperand));
+            } else {
+                next.add(field);
+            }
+        }
+        return List.copyOf(next);
     }
 
     private static PayloadMode resolveMode(ProductFunctionEntity function, List<ValueOption> valueOptions) {

@@ -29,6 +29,10 @@ public final class TopicRouteResolver {
         if (write) {
             return new ResolvedRoute(effective.resolvePublish(safe.publishTopicSlot()), null);
         }
-        return new ResolvedRoute(null, effective.resolveSubscribe(safe.subscribeTopicSlot()));
+        String publish = null;
+        if (safe.publishTopicSlot() != null && !safe.publishTopicSlot().isBlank()) {
+            publish = effective.resolvePublish(safe.publishTopicSlot());
+        }
+        return new ResolvedRoute(publish, effective.resolveSubscribe(safe.subscribeTopicSlot()));
     }
 }
