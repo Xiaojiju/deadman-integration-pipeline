@@ -194,6 +194,27 @@ public class CatalogActionRepository {
         return listEnabledTriggers(ActionKinds.TIMER);
     }
 
+    /** 设备编码变更后，同步动作组成员与场景监听引用。 */
+    public void retargetDeviceCode(String oldCode, String newCode) {
+        if (oldCode == null || newCode == null || oldCode.equals(newCode)) {
+            return;
+        }
+        List<ActionMemberEntity> memberRows = members.selectList(
+                new QueryWrapper<ActionMemberEntity>().eq("device_code", oldCode));
+        for (ActionMemberEntity row : memberRows) {
+            row.setDeviceCode(newCode);
+            touchMember(row, false);
+            members.updateById(row);
+        }
+        List<SceneTriggerEntity> triggerRows = triggers.selectList(
+                new QueryWrapper<SceneTriggerEntity>().eq("listen_device_code", oldCode));
+        for (SceneTriggerEntity row : triggerRows) {
+            row.setListenDeviceCode(newCode);
+            touchTrigger(row, false);
+            triggers.updateById(row);
+        }
+    }
+
     private static void touch(ActionGroupEntity entity, boolean create) {
         Instant now = Instant.now();
         if (create || entity.getCreatedAt() == null) {

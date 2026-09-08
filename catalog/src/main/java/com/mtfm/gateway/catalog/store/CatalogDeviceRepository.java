@@ -61,7 +61,11 @@ public class CatalogDeviceRepository {
 
     public DeviceEntity update(DeviceEntity entity) {
         CatalogTimestamps.touch(entity::setCreatedAt, entity::setUpdatedAt, false);
-        devices.updateById(entity);
+        try {
+            devices.updateById(entity);
+        } catch (DuplicateKeyException ex) {
+            throw new IllegalArgumentException("设备编码已存在: " + entity.getDeviceCode(), ex);
+        }
         CatalogTimestamps.bump(revision);
         return entity;
     }

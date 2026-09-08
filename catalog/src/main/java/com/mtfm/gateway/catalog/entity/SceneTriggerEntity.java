@@ -1,5 +1,7 @@
 package com.mtfm.gateway.catalog.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
@@ -24,24 +26,31 @@ public class SceneTriggerEntity {
     private String mode;
 
     /** 监听模式：被监听设备编码。 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String listenDeviceCode;
 
     /** 监听模式：被监听功能 ID。 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String listenFunctionId;
 
     /** 监听模式：回包匹配条件 JSON（字段 path → 期望值）。 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String listenMatchJson;
 
     /** 定时模式：{@code ONCE}（单次）或 {@code CRON}（周期）。 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String timerKind;
 
     /** 定时模式（ONCE）：ISO-8601 触发时刻。 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String timerAt;
 
     /** 定时模式（CRON）：Cron 表达式。 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String cronExpr;
 
     /** 定时模式：时区，如 {@code Asia/Shanghai}。 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String timezone;
 
     /** 是否启用此触发器。 */

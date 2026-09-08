@@ -59,6 +59,7 @@ class SceneCronDispatcherTest {
         when(actions.listEnabledTimers()).thenReturn(List.of(trigger));
         when(actions.findGroupsByIds(org.mockito.ArgumentMatchers.any())).thenReturn(Map.of("g1", group));
         when(actions.findTrigger("g1")).thenReturn(Optional.of(trigger));
+        when(actions.findGroup("g1")).thenReturn(Optional.of(group));
         when(executor.execute("g1", ActionKinds.SOURCE_SCENE)).thenReturn(
                 CompletableFuture.completedFuture(new ActionGroupExecutionView(
                         "g1", "once", ActionKinds.SCENE, ActionKinds.SOURCE_SCENE, List.of())));
@@ -70,5 +71,36 @@ class SceneCronDispatcherTest {
         verify(actions, timeout(3000)).saveTrigger(argThat(row -> Boolean.FALSE.equals(row.getEnabled())));
         Thread.sleep(500);
         verify(executor, times(1)).execute("g1", ActionKinds.SOURCE_SCENE);
+    }
+
+    @Test
+    void refreshGroupInvalidatesAlreadyQueuedFire() throws InterruptedException {
+        SceneTriggerEntity trigger = new SceneTriggerEntity();
+        trigger.setId("t1");
+        trigger.setGroupId("g1");
+        trigger.setMode(ActionKinds.TIMER);
+        trigger.setTimerKind(ActionKinds.ONCE);
+        trigger.setTimerAt(Instant.now().plusMillis(250).toString());
+        trigger.setTimezone(ActionKinds.DEFAULT_ZONE);
+        trigger.setEnabled(true);
+
+        ActionGroupEntity group = new ActionGroupEntity();
+        group.setId("g1");
+        group.setKind(ActionKinds.SCENE);
+        group.setEnabled(true);
+
+        when(actions.listEnabledTimers()).thenReturn(List.of(trigger));
+        when(actions.findGroupsByIds(org.mockito.ArgumentMatchers.any())).thenReturn(Map.of("g1", group));
+        when(actions.findTrigger("g1")).thenReturn(Optional.of(trigger));
+        when(actions.findGroup("g1")).thenReturn(Optional.of(group));
+
+        dispatcher = new SceneCronDispatcher(actions, executor);
+        dispatcher.start();
+
+        trigger.setTimerAt(Instant.now().plusSeconds(60).toString());
+        dispatcher.refreshGroup("g1");
+
+        Thread.sleep(800);
+        verify(executor, times(0)).execute("g1", ActionKinds.SOURCE_SCENE);
     }
 }

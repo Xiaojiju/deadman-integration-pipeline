@@ -1,6 +1,6 @@
 # MTFM Gateway Console
 
-基于 Vite + React + shadcn/ui 的网关配置控制台。
+基于 Vite + React + shadcn/ui 的网关配置控制台，供**单独部署**使用。用其它 UI 库对接同一套 `/catalog` 契约时，见 [UI 接入指南](../docs/ui-integration-guide.md)。
 
 ## 开发
 

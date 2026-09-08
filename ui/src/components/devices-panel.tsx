@@ -14,6 +14,7 @@ import { CommandDialogPanel } from "@/components/command-dialog"
 import { DeviceOverrideDialog } from "@/components/device-override-dialog"
 import { ListPagination } from "@/components/list-pagination"
 import { RegisterDeviceDialog } from "@/components/register-device-dialog"
+import { SchemaFieldControl } from "@/components/schema-field-control"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -50,15 +51,26 @@ import {
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { catalogApi } from "@/lib/api"
+import { isIntFieldType, propertiesToRecord, recordToProperties } from "@/lib/schema-form"
 import type {
   CapabilityDescriptor,
   ChannelEntity,
   DeviceEntity,
+  DeviceEndpointView,
   ProductEntity,
   PropertyItem,
+  SchemaField,
 } from "@/lib/types"
 
 const PAGE_SIZE = 20
+
+type EditEndpointDraft = {
+  id: string
+  channelId: string
+  channelLabel: string
+  schema: SchemaField[]
+  values: Record<string, string>
+}
 
 type Props = {
   products: ProductEntity[]
@@ -79,9 +91,12 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
   const [busyCode, setBusyCode] = useState<string | null>(null)
   const [editDevice, setEditDevice] = useState<DeviceEntity | null>(null)
   const [deleteDevice, setDeleteDevice] = useState<DeviceEntity | null>(null)
+  const [editCode, setEditCode] = useState("")
   const [editName, setEditName] = useState("")
   const [editEnabled, setEditEnabled] = useState(true)
   const [editOverridesText, setEditOverridesText] = useState("")
+  const [editEndpoints, setEditEndpoints] = useState<EditEndpointDraft[]>([])
+  const [editEndpointsLoading, setEditEndpointsLoading] = useState(false)
   const [editPending, setEditPending] = useState(false)
 
   const load = useCallback(async (targetPage = page) => {
@@ -105,14 +120,34 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
 
   function openEdit(device: DeviceEntity) {
     setEditDevice(device)
+    setEditCode(device.deviceCode)
     setEditName(device.name ?? "")
     setEditEnabled(device.enabled !== false)
     const overrides = device.functionOverrides ?? {}
     setEditOverridesText(Object.keys(overrides).length ? JSON.stringify(overrides, null, 2) : "")
+    setEditEndpoints([])
+    void loadEditEndpoints(device)
+  }
+
+  async function loadEditEndpoints(device: DeviceEntity) {
+    setEditEndpointsLoading(true)
+    try {
+      const rows = await catalogApi.listDeviceEndpoints(device.deviceCode)
+      setEditEndpoints(rows.map((row) => toEditEndpoint(row, channels, capabilities)))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "加载设备端点失败")
+    } finally {
+      setEditEndpointsLoading(false)
+    }
   }
 
   async function saveDevice() {
     if (!editDevice) {
+      return
+    }
+    const nextCode = editCode.trim()
+    if (!nextCode) {
+      toast.error("请填写设备编码")
       return
     }
     let functionOverrides: Record<string, PropertyItem[]> | undefined
@@ -129,11 +164,16 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
     setEditPending(true)
     try {
       await catalogApi.updateDevice(editDevice.deviceCode, {
+        deviceCode: nextCode,
         name: editName.trim(),
         enabled: editEnabled,
         functionOverrides,
+        endpoints: editEndpoints.map((endpoint) => ({
+          id: endpoint.id,
+          properties: recordToProperties(parseAddressValues(endpoint), endpoint.schema),
+        })),
       })
-      toast.success(`设备 ${editDevice.deviceCode} 已更新`)
+      toast.success(`设备 ${nextCode} 已更新`)
       setEditDevice(null)
       await load(page)
     } catch (error) {
@@ -310,14 +350,23 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
           }
         }}
       >
-        <DialogContent>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>编辑设备 · {editDevice?.deviceCode}</DialogTitle>
             <DialogDescription>
-              可修改名称、启用状态与 functionOverrides（按 functionId → PropertyItem[]）；deviceCode / 产品不可改。
+              可修改名称、设备编码、端点地址（如序列号）与启用状态。产品不可改。
             </DialogDescription>
           </DialogHeader>
           <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="editDeviceCode">设备编码</FieldLabel>
+              <Input
+                id="editDeviceCode"
+                value={editCode}
+                onChange={(e) => setEditCode(e.target.value)}
+                placeholder="door-1"
+              />
+            </Field>
             <Field>
               <FieldLabel htmlFor="deviceName">名称</FieldLabel>
               <Input
@@ -326,6 +375,42 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
                 onChange={(e) => setEditName(e.target.value)}
               />
             </Field>
+            {editEndpointsLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2Icon className="size-4 animate-spin" />
+                加载端点地址…
+              </div>
+            ) : (
+              editEndpoints.map((endpoint, endpointIndex) => (
+                <div key={endpoint.id} className="flex flex-col gap-3">
+                  {editEndpoints.length > 1 ? (
+                    <p className="text-sm text-muted-foreground">{endpoint.channelLabel}</p>
+                  ) : null}
+                  {endpoint.schema.map((field) => (
+                    <Field key={`${endpoint.id}-${field.name}`}>
+                      <FieldLabel htmlFor={`edit-addr-${endpoint.id}-${field.name}`}>
+                        {field.label || field.name}
+                        {field.required ? " *" : ""}
+                      </FieldLabel>
+                      <SchemaFieldControl
+                        field={field}
+                        value={endpoint.values[field.name] ?? ""}
+                        idPrefix={`edit-addr-${endpoint.id}`}
+                        onChange={(next) =>
+                          setEditEndpoints((prev) =>
+                            prev.map((item, index) =>
+                              index === endpointIndex
+                                ? { ...item, values: { ...item.values, [field.name]: next } }
+                                : item
+                            )
+                          )
+                        }
+                      />
+                    </Field>
+                  ))}
+                </div>
+              ))
+            )}
             <Field orientation="horizontal">
               <FieldLabel htmlFor="deviceEnabled">启用</FieldLabel>
               <Switch
@@ -349,7 +434,7 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
             <Button variant="outline" onClick={() => setEditDevice(null)} disabled={editPending}>
               取消
             </Button>
-            <Button onClick={() => void saveDevice()} disabled={editPending}>
+            <Button onClick={() => void saveDevice()} disabled={editPending || editEndpointsLoading}>
               保存
             </Button>
           </DialogFooter>
@@ -429,4 +514,64 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
       />
     </Card>
   )
+}
+
+function toEditEndpoint(
+  row: DeviceEndpointView,
+  channels: ChannelEntity[],
+  capabilities: CapabilityDescriptor[]
+): EditEndpointDraft {
+  const channel = channels.find((item) => item.id === row.channelId || item.code === row.channelId)
+  const schema = addressSchemaOf(channel, capabilities, row.properties)
+  const stored = propertiesToRecord(row.properties)
+  const values: Record<string, string> = {}
+  for (const field of schema) {
+    const current = stored[field.name]
+    values[field.name] =
+      current !== undefined && current !== null
+        ? String(current)
+        : field.defaultValue !== undefined && field.defaultValue !== null
+          ? String(field.defaultValue)
+          : ""
+  }
+  return {
+    id: row.id,
+    channelId: row.channelId,
+    channelLabel: channel
+      ? `${channel.code} · ${channel.capabilityType}`
+      : row.channelId,
+    schema,
+    values,
+  }
+}
+
+function addressSchemaOf(
+  channel: ChannelEntity | undefined,
+  capabilities: CapabilityDescriptor[],
+  properties?: PropertyItem[]
+): SchemaField[] {
+  const schema =
+    capabilities.find((item) => item.capabilityType === channel?.capabilityType)?.addressSchema ?? []
+  if (schema.length > 0) {
+    return schema
+  }
+  return (properties ?? []).map((item) => ({
+    name: item.attribute,
+    type: item.dataType || "string",
+    required: false,
+    description: item.description ?? "",
+    label: item.attribute,
+  }))
+}
+
+function parseAddressValues(endpoint: EditEndpointDraft): Record<string, unknown> {
+  const parsed: Record<string, unknown> = {}
+  for (const field of endpoint.schema) {
+    const raw = endpoint.values[field.name] ?? ""
+    if (!raw && !field.required) {
+      continue
+    }
+    parsed[field.name] = isIntFieldType(field.type) ? Number(raw) : raw
+  }
+  return parsed
 }

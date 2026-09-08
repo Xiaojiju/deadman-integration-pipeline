@@ -2,6 +2,7 @@ import type {
   CapabilityDescriptor,
   ChannelEntity,
   DeviceEntity,
+  DeviceEndpointView,
   DeviceFunctionScheduleView,
   ExecutionResult,
   NorthboundView,
@@ -140,14 +141,23 @@ export const catalogApi = {
     deviceCode: string,
     body: {
       name?: string
+      deviceCode?: string
       functionOverrides?: Record<string, PropertyItem[]>
       enabled?: boolean
+      endpoints?: Array<{
+        id: string
+        properties?: PropertyItem[]
+      }>
     }
   ) =>
     request<DeviceEntity>(`/catalog/devices/${encodeURIComponent(deviceCode)}`, {
       method: "PUT",
       body: JSON.stringify(body),
     }),
+  listDeviceEndpoints: (deviceCode: string) =>
+    request<DeviceEndpointView[]>(
+      `/catalog/devices/${encodeURIComponent(deviceCode)}/endpoints`
+    ),
   importProductFunctions: (productId: string, capabilityType: string) =>
     request(
       `/catalog/products/${encodeURIComponent(productId)}/functions/import?capabilityType=${encodeURIComponent(capabilityType)}`,

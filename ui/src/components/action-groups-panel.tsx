@@ -6,7 +6,7 @@ import {
   ActionArgumentFields,
   collectActionArguments,
 } from "@/components/action-argument-fields"
-import { DateTimePicker } from "@/components/date-time-picker"
+import { SceneScheduleFields } from "@/components/scene-schedule-fields"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -44,6 +44,13 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { catalogApi } from "@/lib/api"
 import { toFieldStringMap } from "@/lib/schema-form"
+import {
+  assertFutureTimerAt,
+  compileCron,
+  describeTrigger,
+  recurrenceFromTrigger,
+  type Recurrence,
+} from "@/lib/scene-schedule"
 import type {
   ActionGroupView,
   ActionMemberView,
@@ -113,6 +120,7 @@ export function ActionGroupsPanel({ kind }: Props) {
   const [enabled, setEnabled] = useState(true)
   const [members, setMembers] = useState<MemberDraft[]>([])
   const [trigger, setTrigger] = useState<SceneTriggerView>(EMPTY_TRIGGER)
+  const [schedule, setSchedule] = useState<Recurrence>({ kind: "once" })
   const [listenMatchText, setListenMatchText] = useState("")
   const [listenFunctions, setListenFunctions] = useState<FunctionFormView[]>([])
   const [pending, setPending] = useState(false)
@@ -146,6 +154,7 @@ export function ActionGroupsPanel({ kind }: Props) {
     setEnabled(true)
     setMembers([])
     setTrigger({ ...EMPTY_TRIGGER })
+    setSchedule({ kind: "once" })
     setListenMatchText("")
     setListenFunctions([])
     setOpen(true)
@@ -172,6 +181,7 @@ export function ActionGroupsPanel({ kind }: Props) {
     setMembers(drafts)
     const nextTrigger = group.trigger ?? { ...EMPTY_TRIGGER }
     setTrigger(nextTrigger)
+    setSchedule(recurrenceFromTrigger(nextTrigger))
     setListenMatchText(
       nextTrigger.listenMatch && Object.keys(nextTrigger.listenMatch).length
         ? JSON.stringify(nextTrigger.listenMatch, null, 2)
@@ -294,14 +304,25 @@ export function ActionGroupsPanel({ kind }: Props) {
         enabled: trigger.enabled !== false,
       }
     }
-    const timerKind = (trigger.timerKind || "ONCE").toUpperCase()
+    if (schedule.kind === "once") {
+      if (!trigger.timerAt?.trim()) {
+        throw new Error("请选择执行时间")
+      }
+      assertFutureTimerAt(trigger.timerAt)
+      return {
+        mode: "TIMER",
+        timerKind: "ONCE",
+        timerAt: trigger.timerAt,
+        timezone: trigger.timezone || "Asia/Shanghai",
+        enabled: true,
+      }
+    }
     return {
       mode: "TIMER",
-      timerKind,
-      timerAt: timerKind === "ONCE" ? trigger.timerAt : undefined,
-      cronExpr: timerKind === "CRON" ? trigger.cronExpr : undefined,
+      timerKind: "CRON",
+      cronExpr: compileCron(schedule),
       timezone: trigger.timezone || "Asia/Shanghai",
-      enabled: trigger.enabled !== false,
+      enabled: true,
     }
   }
 
@@ -427,7 +448,7 @@ export function ActionGroupsPanel({ kind }: Props) {
                       <Badge variant="secondary">{group.code}</Badge>
                       {group.enabled ? <Badge>启用</Badge> : <Badge variant="outline">停用</Badge>}
                       {isScene && group.trigger ? (
-                        <Badge variant="outline">{group.trigger.mode}</Badge>
+                        <Badge variant="outline">{describeTrigger(group.trigger)}</Badge>
                       ) : null}
                     </div>
                     <p className="text-sm text-muted-foreground">
@@ -578,53 +599,14 @@ export function ActionGroupsPanel({ kind }: Props) {
                     </Field>
                   </>
                 ) : (
-                  <>
-                    <Field>
-                      <FieldLabel>定时类型</FieldLabel>
-                      <Select
-                        value={trigger.timerKind || "ONCE"}
-                        onValueChange={(timerKind) => setTrigger((prev) => ({ ...prev, timerKind }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="ONCE">单次</SelectItem>
-                          <SelectItem value="CRON">Cron</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    {(trigger.timerKind || "ONCE") === "ONCE" ? (
-                      <Field>
-                        <FieldLabel>执行时间 *</FieldLabel>
-                        <DateTimePicker
-                          id="scene-timer-at"
-                          value={trigger.timerAt ?? ""}
-                          onChange={(timerAt) => setTrigger((prev) => ({ ...prev, timerAt }))}
-                        />
-                      </Field>
-                    ) : (
-                      <Field>
-                        <FieldLabel>Cron（6 位）*</FieldLabel>
-                        <Input
-                          value={trigger.cronExpr || ""}
-                          onChange={(event) =>
-                            setTrigger((prev) => ({ ...prev, cronExpr: event.target.value }))
-                          }
-                          placeholder="0 0 8 * * *"
-                        />
-                      </Field>
-                    )}
-                    <Field>
-                      <FieldLabel>时区</FieldLabel>
-                      <Input
-                        value={trigger.timezone || "Asia/Shanghai"}
-                        onChange={(event) =>
-                          setTrigger((prev) => ({ ...prev, timezone: event.target.value }))
-                        }
-                      />
-                    </Field>
-                  </>
+                  <SceneScheduleFields
+                    schedule={schedule}
+                    onScheduleChange={setSchedule}
+                    timerAt={trigger.timerAt ?? ""}
+                    onTimerAtChange={(timerAt) => setTrigger((prev) => ({ ...prev, timerAt }))}
+                    timezone={trigger.timezone || "Asia/Shanghai"}
+                    onTimezoneChange={(timezone) => setTrigger((prev) => ({ ...prev, timezone }))}
+                  />
                 )}
               </>
             ) : null}

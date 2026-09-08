@@ -17,7 +17,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -31,7 +31,7 @@ public class SceneCronDispatcher implements AutoCloseable {
     private final CatalogActionRepository actions;
     private final ActionGroupExecutor executor;
     private final DeadlineDaemon daemon = new DeadlineDaemon();
-    private final AtomicLong generation = new AtomicLong();
+    private final ConcurrentHashMap<String, Long> generations = new ConcurrentHashMap<>();
 
     public SceneCronDispatcher(CatalogActionRepository actions, ActionGroupExecutor executor) {
         this.actions = actions;
@@ -45,7 +45,7 @@ public class SceneCronDispatcher implements AutoCloseable {
     }
 
     public synchronized void reload() {
-        long gen = generation.incrementAndGet();
+        generations.replaceAll((groupId, gen) -> (gen == null ? 0L : gen) + 1);
         daemon.clear();
         Instant now = Instant.now();
         List<SceneTriggerEntity> timers;
@@ -58,20 +58,25 @@ public class SceneCronDispatcher implements AutoCloseable {
         Map<String, ActionGroupEntity> groups = actions.findGroupsByIds(
                 timers.stream().map(trigger -> trigger.getGroupId()).collect(Collectors.toList()));
         for (SceneTriggerEntity trigger : timers) {
+            long gen = currentGen(trigger.getGroupId());
+            if (gen == 0L) {
+                gen = bump(trigger.getGroupId());
+            }
             schedule(trigger, groups.get(trigger.getGroupId()), gen, now);
         }
     }
 
     public synchronized void refreshGroup(String groupId) {
-        removeGroup(groupId);
         if (groupId == null || groupId.isBlank()) {
             return;
         }
+        removeGroup(groupId);
+        long gen = bump(groupId);
         ActionGroupEntity group = actions.findGroup(groupId).orElse(null);
         SceneTriggerEntity trigger = actions.findTrigger(groupId).orElse(null);
         if (trigger != null && Boolean.TRUE.equals(trigger.getEnabled())
                 && ActionKinds.TIMER.equalsIgnoreCase(trigger.getMode())) {
-            schedule(trigger, group, generation.get(), Instant.now());
+            schedule(trigger, group, gen, Instant.now());
         }
     }
 
@@ -89,33 +94,33 @@ public class SceneCronDispatcher implements AutoCloseable {
     }
 
     private void onDue(DeadlineDaemon.Task task) {
-        if (task.generation() != generation.get()) {
-            return;
-        }
-        SceneTriggerEntity trigger = actions.findTrigger(task.key()).orElse(null);
-        if (trigger == null
-                || Boolean.FALSE.equals(trigger.getEnabled())
-                || !ActionKinds.TIMER.equalsIgnoreCase(trigger.getMode())) {
-            return;
-        }
-        try {
-            executor.execute(task.key(), ActionKinds.SOURCE_SCENE)
-                    .whenComplete((view, error) -> {
-                        if (error != null) {
-                            LOG.warn("场景定时执行失败 group={}: {}", task.key(), error.getMessage());
-                        }
-                    });
-        } catch (RuntimeException ex) {
-            LOG.warn("场景定时提交失败 group={}: {}", task.key(), ex.getMessage());
-        }
-        if (ActionKinds.ONCE.equalsIgnoreCase(trigger.getTimerKind())) {
-            trigger.setEnabled(false);
-            actions.saveTrigger(trigger);
-            return;
-        }
-        Instant next = nextFire(trigger, Instant.now().plusMillis(500));
-        if (next != null) {
-            daemon.offer(task.key(), task.generation(), next);
+        synchronized (this) {
+            if (task.generation() != currentGen(task.key())) {
+                return;
+            }
+            SceneTriggerEntity trigger = actions.findTrigger(task.key()).orElse(null);
+            ActionGroupEntity group = actions.findGroup(task.key()).orElse(null);
+            if (trigger == null
+                    || Boolean.FALSE.equals(trigger.getEnabled())
+                    || !ActionKinds.TIMER.equalsIgnoreCase(trigger.getMode())) {
+                return;
+            }
+            try {
+                executor.execute(task.key(), ActionKinds.SOURCE_SCENE)
+                        .whenComplete((view, error) -> {
+                            if (error != null) {
+                                LOG.warn("场景定时执行失败 group={}: {}", task.key(), error.getMessage());
+                            }
+                        });
+            } catch (RuntimeException ex) {
+                LOG.warn("场景定时提交失败 group={}: {}", task.key(), ex.getMessage());
+            }
+            if (ActionKinds.ONCE.equalsIgnoreCase(trigger.getTimerKind())) {
+                trigger.setEnabled(false);
+                actions.saveTrigger(trigger);
+                return;
+            }
+            schedule(trigger, group, task.generation(), Instant.now().plusMillis(500));
         }
     }
 
@@ -129,6 +134,15 @@ public class SceneCronDispatcher implements AutoCloseable {
             return;
         }
         daemon.offer(trigger.getGroupId(), gen, next);
+    }
+
+    private long bump(String groupId) {
+        Long next = generations.compute(groupId, (key, current) -> current == null ? 1L : current + 1L);
+        return next == null ? 1L : next;
+    }
+
+    private long currentGen(String groupId) {
+        return generations.getOrDefault(groupId, 0L);
     }
 
     public static Instant nextFire(SceneTriggerEntity trigger, Instant now) {

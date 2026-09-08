@@ -82,7 +82,7 @@ public class CatalogFormService {
         this.views = first(viewsProvider, () -> new CatalogFormViews(store, registrar, driverRegistry));
         this.channels = first(channelsProvider, () -> new CatalogChannelCommands(store, this.support));
         this.products = first(productsProvider, () -> new CatalogProductCommands(store, this.support));
-        this.devices = first(devicesProvider, () -> new CatalogDeviceCommands(store, this.support));
+        this.devices = first(devicesProvider, () -> new CatalogDeviceCommands(store, this.support, null));
         this.commands = first(commandsProvider, () -> new CatalogCommandFactory(store, this.support));
     }
 
@@ -94,7 +94,7 @@ public class CatalogFormService {
         this.views = new CatalogFormViews(store, registrar, null);
         this.channels = new CatalogChannelCommands(store, this.support);
         this.products = new CatalogProductCommands(store, this.support);
-        this.devices = new CatalogDeviceCommands(store, this.support);
+        this.devices = new CatalogDeviceCommands(store, this.support, null);
         this.commands = new CatalogCommandFactory(store, this.support);
     }
 

@@ -1,6 +1,7 @@
 package com.mtfm.gateway.catalog.web;
 
 import com.mtfm.gateway.catalog.apply.CatalogApplyService;
+import com.mtfm.gateway.catalog.apply.SceneListenDispatcher;
 import com.mtfm.gateway.catalog.dto.DeviceCommandRequest;
 import com.mtfm.gateway.catalog.dto.DeviceEndpointView;
 import com.mtfm.gateway.catalog.dto.DeviceEndpointWriteRequest;
@@ -47,10 +48,15 @@ public class CatalogDeviceController {
 
     private final CatalogApplyService applyService;
     private final CatalogFormService forms;
+    private final SceneListenDispatcher listen;
 
-    public CatalogDeviceController(CatalogApplyService applyService, CatalogFormService forms) {
+    public CatalogDeviceController(
+            CatalogApplyService applyService,
+            CatalogFormService forms,
+            SceneListenDispatcher listen) {
         this.applyService = applyService;
         this.forms = forms;
+        this.listen = listen;
     }
 
     @GetMapping("/devices")
@@ -87,7 +93,23 @@ public class CatalogDeviceController {
 
     @PutMapping("/devices/{deviceCode}")
     public DeviceView updateDevice(@PathVariable String deviceCode, @Valid @RequestBody DeviceUpdateRequest request) {
-        return forms.toDeviceView(forms.updateDevice(deviceCode, request));
+        DeviceView before = forms.toDeviceView(forms.requireDevice(deviceCode));
+        String oldCode = before.deviceCode();
+        boolean wasLoaded = Boolean.TRUE.equals(before.loaded());
+        boolean endpointsTouched = request.endpoints() != null && !request.endpoints().isEmpty();
+        DeviceView view = forms.toDeviceView(forms.updateDevice(deviceCode, request));
+        boolean codeChanged = !oldCode.equals(view.deviceCode());
+        if (codeChanged) {
+            listen.rebuild();
+        }
+        if (wasLoaded && (codeChanged || endpointsTouched)) {
+            applyService.unload(oldCode);
+            if (view.enabled() == null || Boolean.TRUE.equals(view.enabled())) {
+                applyService.load(view.deviceCode());
+                view = forms.toDeviceView(forms.requireDevice(view.deviceCode()));
+            }
+        }
+        return view;
     }
 
     @GetMapping("/devices/{deviceCode}/endpoints")

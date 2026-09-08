@@ -1,5 +1,6 @@
 package com.mtfm.gateway.catalog.schema;
 
+import com.mtfm.gateway.catalog.dto.DeviceEndpointPatchRequest;
 import com.mtfm.gateway.catalog.dto.DeviceEndpointWriteRequest;
 import com.mtfm.gateway.catalog.dto.DeviceFunctionScheduleView;
 import com.mtfm.gateway.catalog.dto.DeviceFunctionScheduleWriteRequest;
@@ -11,6 +12,7 @@ import com.mtfm.gateway.catalog.entity.DeviceEndpointEntity;
 import com.mtfm.gateway.catalog.entity.DeviceEntity;
 import com.mtfm.gateway.catalog.entity.DeviceFunctionScheduleEntity;
 import com.mtfm.gateway.catalog.entity.ProductFunctionEntity;
+import com.mtfm.gateway.catalog.store.CatalogActionRepository;
 import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.spi.model.CapabilityDescriptor;
 import com.mtfm.gateway.spi.model.DeviceEndpointBinding;
@@ -30,10 +32,12 @@ final class CatalogDeviceCommands {
 
     private final CatalogStore store;
     private final CatalogFormSupport support;
+    private final CatalogActionRepository actions;
 
-    CatalogDeviceCommands(CatalogStore store, CatalogFormSupport support) {
+    CatalogDeviceCommands(CatalogStore store, CatalogFormSupport support, CatalogActionRepository actions) {
         this.store = store;
         this.support = support;
+        this.actions = actions;
     }
 
     DeviceEntity createDevice(DeviceWriteRequest request) {
@@ -56,6 +60,21 @@ final class CatalogDeviceCommands {
 
     DeviceEntity updateDevice(String deviceCode, DeviceUpdateRequest request) {
         DeviceEntity entity = support.requireDevice(deviceCode);
+        String oldCode = entity.getDeviceCode();
+        if (request.deviceCode() != null) {
+            String nextCode = request.deviceCode().trim();
+            if (nextCode.isBlank()) {
+                throw new IllegalArgumentException("设备编码不能为空");
+            }
+            if (!nextCode.equals(oldCode)) {
+                store.findDeviceByCode(nextCode).ifPresent(other -> {
+                    if (!other.getId().equals(entity.getId())) {
+                        throw new IllegalArgumentException("设备编码已存在: " + nextCode);
+                    }
+                });
+                entity.setDeviceCode(nextCode);
+            }
+        }
         if (request.name() != null) {
             entity.setName(request.name());
         }
@@ -67,7 +86,31 @@ final class CatalogDeviceCommands {
         if (request.enabled() != null) {
             entity.setEnabled(request.enabled());
         }
-        return store.updateDevice(entity);
+        DeviceEntity saved = store.updateDevice(entity);
+        if (!saved.getDeviceCode().equals(oldCode) && actions != null) {
+            actions.retargetDeviceCode(oldCode, saved.getDeviceCode());
+        }
+        applyEndpointPatches(saved, request.endpoints());
+        return saved;
+    }
+
+    private void applyEndpointPatches(DeviceEntity device, List<DeviceEndpointPatchRequest> patches) {
+        if (patches == null || patches.isEmpty()) {
+            return;
+        }
+        for (DeviceEndpointPatchRequest patch : patches) {
+            if (patch == null || patch.id() == null || patch.id().isBlank()) {
+                throw new IllegalArgumentException("端点 id 不能为空");
+            }
+            DeviceEndpointEntity endpoint = store.findEndpoint(patch.id())
+                    .orElseThrow(() -> new IllegalArgumentException("端点不存在: " + patch.id()));
+            if (!device.getId().equals(endpoint.getDeviceId())) {
+                throw new IllegalArgumentException("端点不属于该设备: " + patch.id());
+            }
+            if (patch.properties() != null) {
+                updateEndpoint(patch.id(), new DeviceEndpointWriteRequest(endpoint.getChannelId(), patch.properties()));
+            }
+        }
     }
 
     DeviceEndpointEntity updateEndpoint(String endpointId, DeviceEndpointWriteRequest request) {

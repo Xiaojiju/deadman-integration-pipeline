@@ -194,6 +194,14 @@ export type DeviceEntity = {
   loaded?: boolean
 }
 
+export type DeviceEndpointView = {
+  id: string
+  deviceId: string
+  channelId: string
+  properties?: PropertyItem[]
+  createdAt?: string
+}
+
 export type FunctionFormView = {
   functionId: string
   description?: string

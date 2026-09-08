@@ -180,6 +180,7 @@ public class CatalogActionService {
             entity.setListenFunctionId(request.listenFunctionId().trim());
             Map<String, Object> match = request.listenMatch() == null ? Map.of() : request.listenMatch();
             entity.setListenMatchJson(match.isEmpty() ? null : JsonMaps.write(match));
+            clearTimerFields(entity);
             return entity;
         }
         String timerKind = request.timerKind() == null ? "" : request.timerKind().trim().toUpperCase();
@@ -187,16 +188,19 @@ public class CatalogActionService {
             throw new IllegalArgumentException("TIMER 须指定 timerKind=ONCE 或 CRON");
         }
         entity.setTimerKind(timerKind);
-        entity.setTimezone(request.timezone() == null || request.timezone().isBlank()
-                ? ActionKinds.DEFAULT_ZONE
-                : request.timezone().trim());
-        ZoneId zone = SceneCronDispatcher.zoneOf(entity.getTimezone());
+        entity.setTimezone(requireZone(request.timezone()));
+        ZoneId zone = ZoneId.of(entity.getTimezone());
+        clearListenFields(entity);
         if (ActionKinds.ONCE.equals(timerKind)) {
             Instant at = SceneCronDispatcher.parseInstant(request.timerAt(), zone);
             if (at == null) {
                 throw new IllegalArgumentException("ONCE 须指定合法 timerAt");
             }
+            if (!at.isAfter(Instant.now())) {
+                throw new IllegalArgumentException("ONCE 的 timerAt 须晚于现在");
+            }
             entity.setTimerAt(request.timerAt().trim());
+            entity.setCronExpr(null);
         } else {
             if (request.cronExpr() == null || request.cronExpr().isBlank()) {
                 throw new IllegalArgumentException("CRON 须指定 cronExpr");
@@ -207,6 +211,7 @@ public class CatalogActionService {
                 throw new IllegalArgumentException("非法 cronExpr: " + request.cronExpr(), ex);
             }
             entity.setCronExpr(request.cronExpr().trim());
+            entity.setTimerAt(null);
         }
         return entity;
     }
@@ -274,5 +279,28 @@ public class CatalogActionService {
 
     private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static String requireZone(String timezone) {
+        String zone = timezone == null || timezone.isBlank() ? ActionKinds.DEFAULT_ZONE : timezone.trim();
+        try {
+            ZoneId.of(zone);
+        } catch (RuntimeException ex) {
+            throw new IllegalArgumentException("非法时区: " + zone);
+        }
+        return zone;
+    }
+
+    private static void clearListenFields(SceneTriggerEntity entity) {
+        entity.setListenDeviceCode(null);
+        entity.setListenFunctionId(null);
+        entity.setListenMatchJson(null);
+    }
+
+    private static void clearTimerFields(SceneTriggerEntity entity) {
+        entity.setTimerKind(null);
+        entity.setTimerAt(null);
+        entity.setCronExpr(null);
+        entity.setTimezone(null);
     }
 }

@@ -82,7 +82,7 @@ public class SceneListenDispatcher {
         index.entrySet().removeIf(entry -> entry.getValue().isEmpty());
     }
 
-    public void onCommandSuccess(String deviceCode, String functionId, Attributes arguments, String source) {
+    public synchronized void onCommandSuccess(String deviceCode, String functionId, Attributes arguments, String source) {
         if (ActionKinds.skipListen(source) || deviceCode == null || functionId == null) {
             return;
         }
