@@ -4,7 +4,6 @@ import com.mtfm.gateway.catalog.dto.ProductFunctionWriteRequest;
 import com.mtfm.gateway.catalog.dto.ProductWriteRequest;
 import com.mtfm.gateway.catalog.entity.ProductEntity;
 import com.mtfm.gateway.catalog.entity.ProductFunctionEntity;
-import com.mtfm.gateway.catalog.json.JsonMaps;
 import com.mtfm.gateway.catalog.payload.PayloadDefinitionResolver;
 import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.spi.model.AccessPermission;
@@ -16,7 +15,6 @@ import com.mtfm.gateway.spi.payload.ScaleTransform;
 import com.mtfm.gateway.spi.property.PropertyItem;
 import com.mtfm.gateway.spi.property.PropertySchemas;
 import com.mtfm.gateway.spi.property.ValueAccessType;
-import com.mtfm.gateway.spi.property.ValueOption;
 import com.mtfm.gateway.spi.property.WriteFieldOption;
 
 import org.springframework.stereotype.Component;
@@ -101,67 +99,11 @@ final class CatalogProductCommands {
                 && (request.accessType() == null || request.accessType().isBlank())) {
             throw new IllegalArgumentException("自定义功能须指定 accessType（READ/WRITE）");
         }
-        boolean openLockedEmpty = CatalogOpenFunctionBinding.isOpenLockedEmptyTemplate(descriptor, template);
-        if (openLockedEmpty) {
-            CatalogOpenFunctionBinding.rejectOpenLockedStructureMutation(request);
-        }
-        List<PropertyItem> items = descriptor.fixedFunctions()
-                ? CatalogOpenFunctionBinding.resolveFunctionProperties(request, template)
-                : List.of();
-        if (descriptor.fixedFunctions() && template.isPresent()) {
-            items = CatalogFixedFunctionBinding.constrainFixedProperties(items, template.get());
-        }
-        if (openLockedEmpty) {
-            items = List.of();
-        }
-        String accessType = openLockedEmpty
-                ? template.map(t -> t.accessType()).orElse("WRITE")
-                : request.accessType() != null
-                        ? request.accessType()
-                        : template.map(t -> t.accessType()).orElse("WRITE");
-        CatalogFunctionBinding.FunctionOptionPlan plan = CatalogFunctionBinding.bindRequest(
-                descriptor, template, request, accessType, openLockedEmpty);
-        ValueAccessType writeAccess = plan.writeAccess();
-        List<WriteFieldOption> writeFields = plan.writeFields();
-        List<WriteFieldOption> readFields = plan.readFields();
-        List<ValueOption> writeValueOptions = plan.writeValueOptions();
-        List<ValueOption> readValueOptions = plan.readValueOptions();
-
         ProductFunctionEntity entity = new ProductFunctionEntity();
         entity.setProductId(productId);
         entity.setFunctionId(request.functionId());
-        entity.setAccessType(accessType);
-        entity.setAccessPermission(request.accessPermission() != null
-                ? request.accessPermission()
-                : template.map(ft -> ft.accessPermission())
-                        .orElseGet(() -> "READ".equalsIgnoreCase(entity.getAccessType())
-                                ? AccessPermission.READ.code()
-                                : AccessPermission.WRITE.code()));
         entity.setCapabilityType(request.capabilityType());
-        entity.setOptionSchema(JsonMaps.EMPTY_OBJECT);
-        entity.setSortIndex(request.sortIndex());
-        entity.setWriteAccessType(writeAccess.name());
-        entity.setDescription(request.description() != null
-                ? request.description()
-                : template.map(t -> t.description()).orElse(null));
-        PayloadDefinitionResolver.syncFromLegacyFields(entity, writeFields, readFields, writeValueOptions);
-        if (PayloadDefinitionResolver.hasDirectPayload(request)) {
-            PayloadDefinitionResolver.applyPayloadFromRequest(entity, request);
-        }
-        if (request.publishTopicSlot() != null) {
-            entity.setPublishTopicSlot(request.publishTopicSlot());
-        }
-        if (request.subscribeTopicSlot() != null) {
-            entity.setSubscribeTopicSlot(request.subscribeTopicSlot());
-        }
-        applyReplyAndSchedule(entity, request);
-        entity.setPayloadEncoding(PayloadEncoding.from(request.payloadEncoding()).wire());
-        ProductFunctionEntity saved = store.saveFunction(entity);
-        store.properties().replaceFunctionProperties(saved.getId(), items);
-        store.properties().replaceWriteOptions(saved.getId(), writeAccess, writeValueOptions, writeFields);
-        store.properties().replaceReadFields(saved.getId(), readFields);
-        store.properties().replaceReadValueOptions(saved.getId(), readValueOptions);
-        return saved;
+        return persistFunction(entity, request, descriptor, template, true);
     }
 
     ProductFunctionEntity updateFunction(String productId, String functionId,
@@ -173,72 +115,80 @@ final class CatalogProductCommands {
         }
         CapabilityDescriptor descriptor = support.requireCapability(entity.getCapabilityType());
         Optional<FunctionTemplate> template = descriptor.functionTemplate(functionId);
+        return persistFunction(entity, request, descriptor, template, false);
+    }
+
+    /**
+     * 创建全量落库；更新先把未提交字段补成库值再走同一套绑定。
+     */
+    private ProductFunctionEntity persistFunction(
+            ProductFunctionEntity entity,
+            ProductFunctionWriteRequest request,
+            CapabilityDescriptor descriptor,
+            Optional<FunctionTemplate> template,
+            boolean creating) {
         boolean openLockedEmpty = CatalogOpenFunctionBinding.isOpenLockedEmptyTemplate(descriptor, template);
         if (openLockedEmpty) {
             CatalogOpenFunctionBinding.rejectOpenLockedStructureMutation(request);
         }
-        if (request.properties() != null) {
-            List<PropertyItem> items = openLockedEmpty
-                    ? List.of()
-                    : (descriptor.fixedFunctions()
-                            ? request.properties()
-                            : List.of());
-            if (descriptor.fixedFunctions() && template.isPresent()) {
-                items = CatalogFixedFunctionBinding.constrainFixedProperties(items, template.get());
-            }
-            entity.setOptionSchema(JsonMaps.EMPTY_OBJECT);
-            store.properties().replaceFunctionProperties(entity.getId(), items);
-        }
         String previousAccess = entity.getAccessType();
-        String effectiveAccess = request.accessType() != null && !request.accessType().isBlank()
-                ? request.accessType()
-                : previousAccess;
-        boolean accessChanged = request.accessType() != null && !request.accessType().isBlank()
+        boolean accessChanged = !creating
+                && request.accessType() != null
+                && !request.accessType().isBlank()
                 && !request.accessType().equalsIgnoreCase(previousAccess);
-        if (request.accessType() != null && !request.accessType().isBlank()) {
-            if (descriptor.fixedFunctions() && template.isPresent()
-                    && !template.get().accessType().equalsIgnoreCase(request.accessType())) {
-                throw new IllegalArgumentException("FIXED 功能不允许修改 accessType");
-            }
-            if (openLockedEmpty && template.isPresent()
-                    && !template.get().accessType().equalsIgnoreCase(request.accessType())) {
-                throw new IllegalArgumentException("能力预置无参功能不允许修改 accessType");
-            }
-            if (accessChanged && !descriptor.fixedFunctions() && !openLockedEmpty) {
-                boolean hasBinding = request.writeFields() != null || request.readFields() != null
-                        || request.writeValueOptions() != null;
-                if (!hasBinding) {
-                    throw new IllegalArgumentException("修改 accessType 时必须同时提交 writeFields 或 readFields");
-                }
-            }
-            entity.setAccessType(effectiveAccess);
+        if (accessChanged) {
+            rejectIllegalAccessTypeChange(descriptor, template, openLockedEmpty, request);
         }
-        if (request.accessPermission() != null) {
-            entity.setAccessPermission(request.accessPermission());
+        String accessType = resolveAccessType(creating, openLockedEmpty, request, template, previousAccess);
+        entity.setAccessType(accessType);
+
+        List<PropertyItem> propertyItems = null;
+        if (creating || request.properties() != null) {
+            propertyItems = resolvePersistedProperties(descriptor, template, request, openLockedEmpty);
         }
-        if (request.sortIndex() != null) {
-            entity.setSortIndex(request.sortIndex());
-        }
-        if (request.description() != null) {
-            entity.setDescription(request.description());
-        }
-        if (request.writeAccessType() != null
+
+        boolean rebind = creating
+                || accessChanged
+                || request.writeAccessType() != null
                 || request.writeValueOptions() != null
                 || request.writeFields() != null
-                || accessChanged) {
-            CatalogFunctionBinding.FunctionOptionPlan plan = CatalogFunctionBinding.bindRequest(
-                    descriptor, template, request, effectiveAccess, openLockedEmpty);
+                || request.readFields() != null
+                || request.readValueOptions() != null;
+        CatalogFunctionBinding.FunctionOptionPlan plan = null;
+        if (rebind) {
+            ProductFunctionWriteRequest bindRequest = creating
+                    ? request
+                    : overlayExistingBindings(request, entity);
+            plan = CatalogFunctionBinding.bindRequest(
+                    descriptor, template, bindRequest, accessType, openLockedEmpty);
             entity.setWriteAccessType(plan.writeAccess().name());
-            store.properties().replaceWriteOptions(
-                    entity.getId(), plan.writeAccess(), plan.writeValueOptions(), plan.writeFields());
-            if (descriptor.fixedFunctions() || openLockedEmpty || descriptor.contractedParameters() || accessChanged) {
-                store.properties().replaceReadFields(entity.getId(), plan.readFields());
-            }
         }
-        if (request.readFields() != null && !descriptor.fixedFunctions() && !openLockedEmpty
-                && !descriptor.contractedParameters()) {
-            store.properties().replaceReadFields(entity.getId(),
-                    CatalogOpenFunctionBinding.nullSafeFields(request.readFields()));
+
+        if (creating) {
+            entity.setAccessPermission(request.accessPermission() != null
+                    ? request.accessPermission()
+                    : template.map(ft -> ft.accessPermission())
+                            .orElseGet(() -> "READ".equalsIgnoreCase(accessType)
+                                    ? AccessPermission.READ.code()
+                                    : AccessPermission.WRITE.code()));
+            entity.setSortIndex(request.sortIndex());
+            entity.setDescription(request.description() != null
+                    ? request.description()
+                    : template.map(ft -> ft.description()).orElse(null));
+            entity.setPayloadEncoding(PayloadEncoding.from(request.payloadEncoding()).wire());
+        } else {
+            if (request.accessPermission() != null) {
+                entity.setAccessPermission(request.accessPermission());
+            }
+            if (request.sortIndex() != null) {
+                entity.setSortIndex(request.sortIndex());
+            }
+            if (request.description() != null) {
+                entity.setDescription(request.description());
+            }
+            if (request.payloadEncoding() != null && !request.payloadEncoding().isBlank()) {
+                entity.setPayloadEncoding(PayloadEncoding.from(request.payloadEncoding()).wire());
+            }
         }
         if (request.publishTopicSlot() != null) {
             entity.setPublishTopicSlot(request.publishTopicSlot());
@@ -247,34 +197,116 @@ final class CatalogProductCommands {
             entity.setSubscribeTopicSlot(request.subscribeTopicSlot());
         }
         applyReplyAndSchedule(entity, request);
-        if (request.payloadEncoding() != null && !request.payloadEncoding().isBlank()) {
-            entity.setPayloadEncoding(PayloadEncoding.from(request.payloadEncoding()).wire());
+        if (PayloadDefinitionResolver.hasDirectPayload(request)) {
+            PayloadDefinitionResolver.applyPayloadFromRequest(entity, request);
+        } else if (plan != null) {
+            PayloadDefinitionResolver.syncFromLegacyFields(
+                    entity, plan.writeFields(), plan.readFields(), plan.writeValueOptions());
         }
-        if (request.writeFields() != null || request.readFields() != null || request.writeValueOptions() != null
-                || PayloadDefinitionResolver.hasDirectPayload(request)) {
-            if (!PayloadDefinitionResolver.hasDirectPayload(request)) {
-                PayloadDefinitionResolver.syncFromLegacyFields(
-                        entity,
-                        store.properties().listWriteFields(entity.getId()),
-                        store.properties().listReadFields(entity.getId()),
-                        store.properties().listWriteValueOptions(entity.getId()));
-            } else {
-                PayloadDefinitionResolver.applyPayloadFromRequest(entity, request);
+
+        ProductFunctionEntity saved = creating ? store.saveFunction(entity) : store.updateFunction(entity);
+        if (propertyItems != null) {
+            store.properties().replaceFunctionProperties(saved.getId(), propertyItems);
+        }
+        if (plan != null) {
+            store.properties().replaceWriteOptions(
+                    saved.getId(), plan.writeAccess(), plan.writeValueOptions(), plan.writeFields());
+            store.properties().replaceReadFields(saved.getId(), plan.readFields());
+            store.properties().replaceReadValueOptions(saved.getId(), plan.readValueOptions());
+        }
+        return saved;
+    }
+
+    private static void rejectIllegalAccessTypeChange(
+            CapabilityDescriptor descriptor,
+            Optional<FunctionTemplate> template,
+            boolean openLockedEmpty,
+            ProductFunctionWriteRequest request) {
+        if (descriptor.fixedFunctions() && template.isPresent()
+                && !template.get().accessType().equalsIgnoreCase(request.accessType())) {
+            throw new IllegalArgumentException("FIXED 功能不允许修改 accessType");
+        }
+        if (openLockedEmpty && template.isPresent()
+                && !template.get().accessType().equalsIgnoreCase(request.accessType())) {
+            throw new IllegalArgumentException("能力预置无参功能不允许修改 accessType");
+        }
+        if (!descriptor.fixedFunctions() && !openLockedEmpty) {
+            boolean hasBinding = request.writeFields() != null || request.readFields() != null
+                    || request.writeValueOptions() != null;
+            if (!hasBinding) {
+                throw new IllegalArgumentException("修改 accessType 时必须同时提交 writeFields 或 readFields");
             }
-            store.updateFunction(entity);
         }
-        if (request.readValueOptions() != null) {
-            List<ValueOption> readOpts = request.readValueOptions();
-            if (openLockedEmpty) {
-                readOpts = List.of();
-            } else if (descriptor.fixedFunctions() && template.isPresent()) {
-                readOpts = readOpts.isEmpty()
-                        ? List.of()
-                        : CatalogFixedFunctionBinding.constrainFixedValueOptions(readOpts, template.get());
-            }
-            store.properties().replaceReadValueOptions(entity.getId(), readOpts);
+    }
+
+    private static String resolveAccessType(
+            boolean creating,
+            boolean openLockedEmpty,
+            ProductFunctionWriteRequest request,
+            Optional<FunctionTemplate> template,
+            String previousAccess) {
+        if (openLockedEmpty) {
+            return template.map(ft -> ft.accessType()).orElse("WRITE");
         }
-        return store.updateFunction(entity);
+        if (request.accessType() != null && !request.accessType().isBlank()) {
+            return request.accessType();
+        }
+        if (!creating && previousAccess != null && !previousAccess.isBlank()) {
+            return previousAccess;
+        }
+        return template.map(ft -> ft.accessType()).orElse("WRITE");
+    }
+
+    private static List<PropertyItem> resolvePersistedProperties(
+            CapabilityDescriptor descriptor,
+            Optional<FunctionTemplate> template,
+            ProductFunctionWriteRequest request,
+            boolean openLockedEmpty) {
+        if (openLockedEmpty || !descriptor.fixedFunctions()) {
+            return List.of();
+        }
+        List<PropertyItem> items = CatalogOpenFunctionBinding.resolveFunctionProperties(request, template);
+        if (template.isPresent()) {
+            items = CatalogFixedFunctionBinding.constrainFixedProperties(items, template.get());
+        }
+        return items;
+    }
+
+    private ProductFunctionWriteRequest overlayExistingBindings(
+            ProductFunctionWriteRequest request, ProductFunctionEntity entity) {
+        return new ProductFunctionWriteRequest(
+                request.functionId(),
+                request.accessType(),
+                request.accessPermission(),
+                request.capabilityType(),
+                request.writeAccessType() != null ? request.writeAccessType() : entity.getWriteAccessType(),
+                request.properties(),
+                request.writeValueOptions() != null
+                        ? request.writeValueOptions()
+                        : store.properties().listWriteValueOptions(entity.getId()),
+                request.writeFields() != null
+                        ? request.writeFields()
+                        : store.properties().listWriteFields(entity.getId()),
+                request.readFields() != null
+                        ? request.readFields()
+                        : store.properties().listReadFields(entity.getId()),
+                request.readValueOptions() != null
+                        ? request.readValueOptions()
+                        : store.properties().listReadValueOptions(entity.getId()),
+                request.sortIndex(),
+                request.description(),
+                request.publishTopicSlot(),
+                request.subscribeTopicSlot(),
+                request.payloadMode() != null ? request.payloadMode() : entity.getPayloadMode(),
+                request.payloadEncoding(),
+                request.replyTopicSlot(),
+                request.correlationPath(),
+                request.correlationCommandPath(),
+                request.replyTimeoutMs(),
+                request.scheduleIntervalMs(),
+                request.scheduleEnabled(),
+                request.scaleOp(),
+                request.scaleOperand());
     }
 
     private ProductFunctionEntity createFunctionFromTemplate(

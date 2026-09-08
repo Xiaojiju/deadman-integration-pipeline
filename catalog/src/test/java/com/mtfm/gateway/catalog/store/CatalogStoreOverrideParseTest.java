@@ -2,32 +2,15 @@ package com.mtfm.gateway.catalog.store;
 
 import com.mtfm.gateway.spi.model.Attributes;
 import com.mtfm.gateway.spi.model.DeviceEndpointBinding;
-import com.mtfm.gateway.spi.property.PropertyItem;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CatalogStoreOverrideParseTest {
-
-    @Test
-    void parsesLegacyOptionOverridesByFunctionId() {
-        Map<String, Object> legacy = Map.of(
-                "remoteControlDoor", Map.of("command", "open", "target", "1"));
-        Map<String, List<PropertyItem>> parsed = CatalogEavLoader.parseLegacyOverrides(legacy);
-        assertTrue(parsed.containsKey("remoteControlDoor"));
-        assertEquals(2, parsed.get("remoteControlDoor").size());
-    }
-
-    @Test
-    void flatOverrideDoesNotBelongToAnyFunction() {
-        Map<String, List<PropertyItem>> parsed = CatalogEavLoader.parseLegacyOverrides(Map.of("command", "open"));
-        assertTrue(parsed.isEmpty());
-    }
 
     @Test
     void uniqueCapabilityTypeRejectsMixedEndpoints() {

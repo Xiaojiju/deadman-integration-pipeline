@@ -18,6 +18,7 @@ import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 /**
  * 场景日历调度。与功能级 interval 轮询分离。
@@ -55,7 +56,7 @@ public class SceneCronDispatcher implements AutoCloseable {
             return;
         }
         Map<String, ActionGroupEntity> groups = actions.findGroupsByIds(
-                timers.stream().map(SceneTriggerEntity::getGroupId).toList());
+                timers.stream().map(trigger -> trigger.getGroupId()).collect(Collectors.toList()));
         for (SceneTriggerEntity trigger : timers) {
             schedule(trigger, groups.get(trigger.getGroupId()), gen, now);
         }

@@ -24,7 +24,8 @@ import java.util.Set;
 /**
  * 设备绑定 SPI 投影。只读 EAV 通道/端点属性，不负责 CRUD。
  *
- * <p>使用示例：{@code catalog.findEndpoints("door-1")}
+ * <p>
+ * 使用示例：{@code catalog.findEndpoints("door-1")}
  */
 @Service
 public class CatalogBindingCatalog implements DeviceBindingCatalog {
@@ -67,7 +68,7 @@ public class CatalogBindingCatalog implements DeviceBindingCatalog {
             return List.of();
         }
         List<String> channelIds = rows.stream()
-                .map(DeviceEndpointEntity::getChannelId)
+                .map(row -> row.getChannelId())
                 .filter(id -> id != null && !id.isBlank())
                 .distinct()
                 .toList();

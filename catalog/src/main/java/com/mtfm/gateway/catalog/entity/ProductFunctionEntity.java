@@ -4,12 +4,9 @@ import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import com.mtfm.gateway.catalog.mybatis.JsonColumnTypeHandler;
 
 /**
- * 产品功能实体：挂在产品下的逻辑功能定义。
- *
- * <p>{@code optionSchema} 是兼容列；运行时只认 EAV。
+ * 产品功能实体：挂在产品下的逻辑功能定义。默认参数在 EAV，不进本表。
  *
  * <p>示例：{@code functionId="fn.read", accessType="READ"}
  */
@@ -40,13 +37,6 @@ public class ProductFunctionEntity {
      * <p>用于拉取能力侧 FunctionTemplate，做表单预填与校验。
      */
     private String capabilityType;
-
-    /**
-     * 功能参数 schema / 默认值，JSON 字符串。
-     * <p>例：{@code {"area":"HOLDING","offset":0,"quantity":1}}。
-     */
-    @TableField(typeHandler = JsonColumnTypeHandler.class)
-    private String optionSchema;
 
     /** 同产品内排序，数值越小越靠前。 */
     private Integer sortIndex;
@@ -133,14 +123,6 @@ public class ProductFunctionEntity {
 
     public void setCapabilityType(String capabilityType) {
         this.capabilityType = capabilityType;
-    }
-
-    public String getOptionSchema() {
-        return optionSchema;
-    }
-
-    public void setOptionSchema(String optionSchema) {
-        this.optionSchema = optionSchema;
     }
 
     public Integer getSortIndex() {

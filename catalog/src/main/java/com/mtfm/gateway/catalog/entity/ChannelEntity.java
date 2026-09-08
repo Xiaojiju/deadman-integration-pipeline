@@ -1,19 +1,16 @@
 package com.mtfm.gateway.catalog.entity;
 
-import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import com.mtfm.gateway.catalog.mybatis.JsonColumnTypeHandler;
 
 import java.time.Instant;
 
 /**
  * 共享通道实体：多设备复用同一物理/会话连接。
  *
- * <p>{@code connection} 存连接参数 JSON（host/port/username 等）；
- * 子设备寻址（slaveId、topic）在 {@link DeviceEndpointEntity#address}，不进本表。
+ * <p>连接参数在 EAV {@code gw_channel_property}；子设备寻址在端点 EAV。
  *
- * <p>示例：{@code code="gw-modbus-1", capabilityType="MODBUS", connection='{"host":"192.168.1.10","port":502}'}
+ * <p>示例：{@code code="gw-modbus-1", capabilityType="MODBUS"}
  */
 @TableName(value = "gw_channel", autoResultMap = true)
 public class ChannelEntity {
@@ -30,14 +27,6 @@ public class ChannelEntity {
      * <p>须与能力注册中心 {@code CapabilityDescriptor.capabilityType} 一致。
      */
     private String capabilityType;
-
-    /**
-     * 连接参数 JSON，字段由能力 {@code connectionSchema} 定义。
-     * <p>例 Modbus：{@code {"host":"192.168.1.10","port":502}}；
-     * MQTT：{@code {"host":"broker.local","port":1883,"username":"u"}}。
-     */
-    @TableField(typeHandler = JsonColumnTypeHandler.class)
-    private String connection;
 
     /** 是否启用；禁用后不再参与 load。默认 {@code true}。 */
     private Boolean enabled;
@@ -70,14 +59,6 @@ public class ChannelEntity {
 
     public void setCapabilityType(String capabilityType) {
         this.capabilityType = capabilityType;
-    }
-
-    public String getConnection() {
-        return connection;
-    }
-
-    public void setConnection(String connection) {
-        this.connection = connection;
     }
 
     public Boolean getEnabled() {

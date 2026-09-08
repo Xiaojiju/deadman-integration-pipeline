@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * 指令 SUCCESS 后匹配 LISTEN 场景。不重试；cluster/scene/scheduler 来源不触发。
@@ -52,7 +53,7 @@ public class SceneListenDispatcher {
             return;
         }
         Map<String, ActionGroupEntity> groups = actions.findGroupsByIds(
-                triggers.stream().map(SceneTriggerEntity::getGroupId).toList());
+                triggers.stream().map(trigger -> trigger.getGroupId()).collect(Collectors.toList()));
         for (SceneTriggerEntity trigger : triggers) {
             indexTrigger(trigger, groups.get(trigger.getGroupId()));
         }

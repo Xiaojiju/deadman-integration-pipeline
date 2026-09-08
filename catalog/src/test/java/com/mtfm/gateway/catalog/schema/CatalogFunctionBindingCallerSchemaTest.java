@@ -9,6 +9,7 @@ import com.mtfm.gateway.spi.property.WriteFieldOption;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -36,8 +37,10 @@ class CatalogFunctionBindingCallerSchemaTest {
                         .source("platform")
                         .build()),
                 true);
-        assertEquals(List.of("action", "password"), schema.stream().map(SchemaField::name).toList());
-        SchemaField password = schema.stream().filter(field -> "password".equals(field.name())).findFirst().orElseThrow();
+        assertEquals(List.of("action", "password"),
+                schema.stream().map(field -> field.name()).collect(Collectors.toList()));
+        SchemaField password = schema.stream().filter(field -> "password".equals(field.name())).findFirst()
+                .orElseThrow();
         assertTrue(password.required());
         assertEquals("密码", password.description());
     }

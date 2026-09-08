@@ -2,7 +2,6 @@ package com.mtfm.gateway.catalog.schema;
 
 import com.mtfm.gateway.catalog.dto.ChannelWriteRequest;
 import com.mtfm.gateway.catalog.entity.ChannelEntity;
-import com.mtfm.gateway.catalog.json.JsonMaps;
 import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.spi.model.CapabilityDescriptor;
 import com.mtfm.gateway.spi.property.PropertyItem;
@@ -36,7 +35,6 @@ final class CatalogChannelCommands {
         ChannelEntity entity = new ChannelEntity();
         entity.setCode(request.code());
         entity.setCapabilityType(request.capabilityType());
-        entity.setConnection(JsonMaps.EMPTY_OBJECT);
         entity.setEnabled(request.enabled());
         ChannelEntity saved = store.saveChannel(entity);
         store.properties().replaceChannelProperties(saved.getId(), items);
@@ -55,7 +53,6 @@ final class CatalogChannelCommands {
             CatalogConnectionSupport.validateConnection(descriptor, items);
             items = CatalogConnectionSupport.sealSecrets(
                     items, descriptor.connectionSchema(), store.secretCodec());
-            entity.setConnection(JsonMaps.EMPTY_OBJECT);
             store.properties().replaceChannelProperties(entity.getId(), items);
         }
         if (request.enabled() != null) {

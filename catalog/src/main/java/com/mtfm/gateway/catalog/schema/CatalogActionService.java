@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 public class CatalogActionService {
@@ -48,7 +49,7 @@ public class CatalogActionService {
 
     public List<ActionGroupView> list(String kind) {
         List<ActionGroupEntity> groups = actions.listGroups(kind);
-        List<String> ids = groups.stream().map(ActionGroupEntity::getId).toList();
+        List<String> ids = groups.stream().map(group -> group.getId()).collect(Collectors.toList());
         Map<String, List<ActionMemberEntity>> members = actions.listMembersByGroupIds(ids);
         Map<String, SceneTriggerEntity> triggers = actions.findTriggersByGroupIds(ids);
         return groups.stream().map(group -> toView(group, members.getOrDefault(group.getId(), List.of()),

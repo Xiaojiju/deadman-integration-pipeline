@@ -1,8 +1,6 @@
 package com.mtfm.gateway.spi.model;
 
-import com.mtfm.gateway.spi.option.Option;
 import com.mtfm.gateway.spi.payload.PayloadEncoding;
-import com.mtfm.gateway.spi.property.PropertyItem;
 import com.mtfm.gateway.spi.property.ValueAccessType;
 import com.mtfm.gateway.spi.property.ValueOption;
 import com.mtfm.gateway.spi.property.WriteFieldOption;
@@ -15,8 +13,6 @@ import java.util.List;
  * @param functionId        功能 ID
  * @param accessType        访问类型（READ / WRITE）
  * @param accessPermission  读写权限码，与 {@link AccessPermission} 对齐
- * @param optionSchema      产品侧 option 树（兼容旧投影）
- * @param properties        EAV 属性列表（优先于 optionSchema）
  * @param writeAccessType   VALUE / STRUCT
  * @param writeValueOptions VALUE 模式写选项
  * @param writeFields       STRUCT 模式写字段
@@ -31,8 +27,6 @@ public record FunctionDef(
         String functionId,
         String accessType,
         int accessPermission,
-        Option optionSchema,
-        List<PropertyItem> properties,
         ValueAccessType writeAccessType,
         List<ValueOption> writeValueOptions,
         List<WriteFieldOption> writeFields,
@@ -51,7 +45,6 @@ public record FunctionDef(
         if (accessType == null || accessType.isBlank()) {
             accessType = "WRITE";
         }
-        properties = properties == null ? List.of() : List.copyOf(properties);
         writeAccessType = writeAccessType == null ? ValueAccessType.VALUE : writeAccessType;
         writeValueOptions = writeValueOptions == null ? List.of() : List.copyOf(writeValueOptions);
         writeFields = writeFields == null ? List.of() : List.copyOf(writeFields);
@@ -159,8 +152,6 @@ public record FunctionDef(
         private final String functionId;
         private String accessType = "WRITE";
         private int accessPermission = AccessPermission.WRITE.code();
-        private Option optionSchema;
-        private List<PropertyItem> properties = List.of();
         private ValueAccessType writeAccessType = ValueAccessType.VALUE;
         private List<ValueOption> writeValueOptions = List.of();
         private List<WriteFieldOption> writeFields = List.of();
@@ -182,16 +173,6 @@ public record FunctionDef(
 
         public Builder accessPermission(int accessPermission) {
             this.accessPermission = accessPermission;
-            return this;
-        }
-
-        public Builder optionSchema(Option optionSchema) {
-            this.optionSchema = optionSchema;
-            return this;
-        }
-
-        public Builder properties(List<PropertyItem> properties) {
-            this.properties = properties;
             return this;
         }
 
@@ -245,8 +226,6 @@ public record FunctionDef(
                     functionId,
                     accessType,
                     accessPermission,
-                    optionSchema,
-                    properties,
                     writeAccessType,
                     writeValueOptions,
                     writeFields,

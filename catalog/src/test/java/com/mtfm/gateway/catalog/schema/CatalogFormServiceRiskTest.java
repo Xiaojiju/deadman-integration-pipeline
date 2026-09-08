@@ -290,7 +290,7 @@ class CatalogFormServiceRiskTest {
 
         ArgumentCaptor<ChannelEntity> saved = ArgumentCaptor.forClass(ChannelEntity.class);
         verify(store).saveChannel(saved.capture());
-        assertEquals("{}", saved.getValue().getConnection());
+        assertEquals("mqtt-1", saved.getValue().getCode());
         ArgumentCaptor<List<PropertyItem>> items = ArgumentCaptor.captor();
         verify(properties).replaceChannelProperties(any(), items.capture());
         assertEquals("enc:s3cret", items.getValue().stream()

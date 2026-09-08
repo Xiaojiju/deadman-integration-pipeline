@@ -13,7 +13,6 @@ import com.mtfm.gateway.spi.model.SchemaField;
 import com.mtfm.gateway.spi.model.SchemaValidator;
 import com.mtfm.gateway.spi.payload.TopicCatalog;
 import com.mtfm.gateway.spi.property.PropertyItem;
-import com.mtfm.gateway.spi.property.PropertySchemas;
 import com.mtfm.gateway.spi.property.WriteFieldOption;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -106,7 +105,8 @@ final class CatalogFormSupport {
         CapabilityDescriptor descriptor = found.get();
         List<SchemaField> schema;
         if (descriptor.contractedParameters()) {
-            schema = CatalogContractFunctionBinding.requireContractTemplate(descriptor, function.getAccessType()).parameters();
+            schema = CatalogContractFunctionBinding.requireContractTemplate(descriptor, function.getAccessType())
+                    .parameters();
         } else {
             schema = descriptor.functionTemplate(function.getFunctionId())
                     .map(ft -> ft.parameters())

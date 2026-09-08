@@ -13,8 +13,8 @@ import java.util.Map;
  *
  * <p>使用示例：
  * <pre>{@code
- * List<PropertyItem> items = PropertyCodec.fromJson(channel.getConnection());
- * Map<String, Object> values = PropertyCodec.toMap(items);
+ * List<PropertyItem> items = PropertyCodec.fromMap(values);
+ * Map<String, Object> runtime = PropertyCodec.toMap(items);
  * PropertyCodec.applyItem(row, items.get(0));
  * }</pre>
  */

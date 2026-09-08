@@ -16,10 +16,12 @@ import java.util.concurrent.CompletableFuture;
 /**
  * 装配并提交单设备指令。动作组执行器只依赖本类，避免与 {@link CatalogApplyService} 构造环。
  *
- * <p>对 {@link SceneListenDispatcher} 用 {@link ObjectProvider} 延迟回调，避免
+ * <p>
+ * 对 {@link SceneListenDispatcher} 用 {@link ObjectProvider} 延迟回调，避免
  * Invoker → Listen → Executor → Invoker 环。
  *
- * <p>使用示例：{@code invoker.invoke("door-1", new DeviceCommandRequest("fn.open", Map.of(), null, null))}
+ * <p>
+ * 使用示例：{@code invoker.invoke("door-1", new DeviceCommandRequest("fn.open", Map.of(), null, null))}
  */
 @Service
 public class CatalogCommandInvoker {
@@ -29,7 +31,6 @@ public class CatalogCommandInvoker {
     private final DriverRegistry registry;
     private final ObjectProvider<SceneListenDispatcher> sceneListen;
 
-    @Autowired
     public CatalogCommandInvoker(
             CatalogFormService forms,
             ObjectProvider<PipelineCommandPort> commandPort,

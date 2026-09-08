@@ -11,7 +11,6 @@ import com.mtfm.gateway.catalog.entity.DeviceEndpointEntity;
 import com.mtfm.gateway.catalog.entity.DeviceEntity;
 import com.mtfm.gateway.catalog.entity.DeviceFunctionScheduleEntity;
 import com.mtfm.gateway.catalog.entity.ProductFunctionEntity;
-import com.mtfm.gateway.catalog.json.JsonMaps;
 import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.spi.model.CapabilityDescriptor;
 import com.mtfm.gateway.spi.model.DeviceEndpointBinding;
@@ -49,7 +48,6 @@ final class CatalogDeviceCommands {
         entity.setDeviceCode(request.deviceCode());
         entity.setProductId(request.productId());
         entity.setName(request.name());
-        entity.setOptionOverrides(JsonMaps.EMPTY_OBJECT);
         entity.setEnabled(request.enabled());
         DeviceEntity saved = store.saveDevice(entity);
         store.properties().replaceAllDeviceOverrides(saved.getId(), overrides);
@@ -64,7 +62,6 @@ final class CatalogDeviceCommands {
         if (request.functionOverrides() != null) {
             Map<String, List<PropertyItem>> overrides = CatalogFormSupport.resolveFunctionOverrides(
                     request.functionOverrides());
-            entity.setOptionOverrides(JsonMaps.EMPTY_OBJECT);
             store.properties().replaceAllDeviceOverrides(entity.getId(), overrides);
         }
         if (request.enabled() != null) {
@@ -90,7 +87,6 @@ final class CatalogDeviceCommands {
                 List<PropertyItem> items = CatalogFormSupport.resolveProperties(request.properties());
                 CapabilityDescriptor descriptor = support.requireCapability(channel.getCapabilityType());
                 CatalogConnectionSupport.validateAddress(descriptor, items);
-                entity.setAddress(JsonMaps.EMPTY_OBJECT);
                 store.properties().replaceEndpointProperties(entity.getId(), items);
             }
         }
@@ -122,7 +118,6 @@ final class CatalogDeviceCommands {
         DeviceEndpointEntity entity = new DeviceEndpointEntity();
         entity.setDeviceId(device.getId());
         entity.setChannelId(channel.getId());
-        entity.setAddress(JsonMaps.EMPTY_OBJECT);
         DeviceEndpointEntity saved = store.saveEndpoint(entity);
         store.properties().replaceEndpointProperties(saved.getId(), items);
         return saved;

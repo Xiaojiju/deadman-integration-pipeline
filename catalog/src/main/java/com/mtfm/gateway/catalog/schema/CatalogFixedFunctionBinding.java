@@ -176,7 +176,7 @@ final class CatalogFixedFunctionBinding {
             return allowed;
         }
         Set<String> allowedValues = allowed.stream()
-                .map(ValueOption::optionValue)
+                .map(option -> option.optionValue())
                 .collect(Collectors.toSet());
         List<ValueOption> result = new ArrayList<>();
         for (ValueOption option : requested) {
@@ -187,7 +187,7 @@ final class CatalogFixedFunctionBinding {
             result.add(option);
         }
         Set<String> submitted = result.stream()
-                .map(ValueOption::optionValue)
+                .map(option -> option.optionValue())
                 .collect(Collectors.toSet());
         for (ValueOption option : allowed) {
             if (!submitted.contains(option.optionValue())) {

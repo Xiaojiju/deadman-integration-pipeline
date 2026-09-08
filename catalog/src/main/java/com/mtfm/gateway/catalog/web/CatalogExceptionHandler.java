@@ -1,6 +1,5 @@
 package com.mtfm.gateway.catalog.web;
 
-import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -30,7 +29,7 @@ public class CatalogExceptionHandler {
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<Map<String, String>> invalidConstraint(ConstraintViolationException ex) {
         String message = ex.getConstraintViolations().stream()
-                .map(ConstraintViolation::getMessage)
+                .map(violation -> violation.getMessage())
                 .filter(text -> text != null && !text.isBlank())
                 .findFirst()
                 .orElse("参数无效");
