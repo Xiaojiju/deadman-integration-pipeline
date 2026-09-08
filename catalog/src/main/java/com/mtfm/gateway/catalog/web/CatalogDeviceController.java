@@ -36,14 +36,14 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * 设备配置与运行时 REST 接口，前缀 {@code /catalog}。
+ * 设备配置与运行时 REST 接口，前缀 {@code /catalog/devices}。
  *
  * <p>示例：{@code GET /catalog/devices/pump-01} 查询设备；
  * {@code POST /catalog/devices/pump-01/commands} 下发指令。
  */
 @Validated
 @RestController
-@RequestMapping("/catalog")
+@RequestMapping("/catalog/devices")
 public class CatalogDeviceController {
 
     private final CatalogApplyService applyService;
@@ -59,39 +59,39 @@ public class CatalogDeviceController {
         this.listen = listen;
     }
 
-    @GetMapping("/devices")
+    @GetMapping
     public PageResult<DeviceView> listDevices(
             @RequestParam(defaultValue = "1") @Min(value = 1, message = "page 从 1 开始") int page,
             @RequestParam(defaultValue = "20") @Min(value = 1, message = "size 至少为 1") @Max(value = 100, message = "size 不能超过 100") int size) {
         return forms.pageDeviceViews(page, size);
     }
 
-    @GetMapping("/devices/{deviceCode}")
+    @GetMapping("/{deviceCode}")
     public DeviceView getDevice(@PathVariable String deviceCode) {
         return forms.toDeviceView(forms.requireDevice(deviceCode));
     }
 
-    @GetMapping("/devices/{deviceCode}/functions")
+    @GetMapping("/{deviceCode}/functions")
     public List<FunctionFormView> deviceFunctions(@PathVariable String deviceCode) {
         return forms.deviceFunctions(deviceCode);
     }
 
-    @GetMapping("/devices/{deviceCode}/functions/{functionId}")
+    @GetMapping("/{deviceCode}/functions/{functionId}")
     public FunctionFormView deviceFunction(@PathVariable String deviceCode, @PathVariable String functionId) {
         return forms.deviceFunction(deviceCode, functionId);
     }
 
-    @PostMapping("/devices")
+    @PostMapping
     public DeviceView createDevice(@Valid @RequestBody DeviceWriteRequest request) {
         return forms.toDeviceView(forms.createDevice(request));
     }
 
-    @PostMapping("/devices/register")
+    @PostMapping("/register")
     public DeviceView registerDevice(@Valid @RequestBody DeviceRegisterRequest request) {
         return forms.toDeviceView(applyService.register(request));
     }
 
-    @PutMapping("/devices/{deviceCode}")
+    @PutMapping("/{deviceCode}")
     public DeviceView updateDevice(@PathVariable String deviceCode, @Valid @RequestBody DeviceUpdateRequest request) {
         DeviceView before = forms.toDeviceView(forms.requireDevice(deviceCode));
         String oldCode = before.deviceCode();
@@ -112,60 +112,60 @@ public class CatalogDeviceController {
         return view;
     }
 
-    @GetMapping("/devices/{deviceCode}/endpoints")
+    @GetMapping("/{deviceCode}/endpoints")
     public List<DeviceEndpointView> listEndpoints(@PathVariable String deviceCode) {
         return forms.deviceEndpoints(deviceCode);
     }
 
-    @PostMapping("/devices/{deviceCode}/endpoints")
+    @PostMapping("/{deviceCode}/endpoints")
     public DeviceEndpointView createEndpoint(@PathVariable String deviceCode,
             @Valid @RequestBody DeviceEndpointWriteRequest request) {
         return forms.toEndpointView(forms.createEndpoint(deviceCode, request));
     }
 
-    @PutMapping("/devices/{deviceCode}/endpoints/{endpointId}")
+    @PutMapping("/{deviceCode}/endpoints/{endpointId}")
     public DeviceEndpointView updateEndpoint(@PathVariable String deviceCode, @PathVariable String endpointId,
             @Valid @RequestBody DeviceEndpointWriteRequest request) {
         forms.requireDevice(deviceCode);
         return forms.toEndpointView(forms.updateEndpoint(endpointId, request));
     }
 
-    @DeleteMapping("/devices/{deviceCode}/endpoints/{endpointId}")
+    @DeleteMapping("/{deviceCode}/endpoints/{endpointId}")
     public Map<String, Object> deleteEndpoint(@PathVariable String deviceCode, @PathVariable String endpointId) {
         forms.requireDevice(deviceCode);
         boolean deleted = forms.deleteEndpoint(endpointId);
         return Map.of("endpointId", endpointId, "deleted", deleted);
     }
 
-    @PostMapping("/devices/{deviceCode}/load")
+    @PostMapping("/{deviceCode}/load")
     public void load(@PathVariable String deviceCode) {
         applyService.load(deviceCode);
     }
 
-    @PostMapping("/devices/{deviceCode}/unload")
+    @PostMapping("/{deviceCode}/unload")
     public void unload(@PathVariable String deviceCode) {
         applyService.unload(deviceCode);
     }
 
-    @DeleteMapping("/devices/{deviceCode}")
+    @DeleteMapping("/{deviceCode}")
     public Map<String, Object> deleteDevice(@PathVariable String deviceCode) {
         boolean deleted = applyService.remove(deviceCode);
         return Map.of("deviceCode", deviceCode, "deleted", deleted);
     }
 
-    @PostMapping("/devices/{deviceCode}/commands")
+    @PostMapping("/{deviceCode}/commands")
     public CompletableFuture<ExecutionResult> invoke(@PathVariable String deviceCode,
             @Valid @RequestBody DeviceCommandRequest request) {
         return applyService.invoke(deviceCode, request);
     }
 
-    @GetMapping("/devices/{deviceCode}/functions/{functionId}/field-overrides")
+    @GetMapping("/{deviceCode}/functions/{functionId}/field-overrides")
     public Map<String, Object> deviceFieldOverrides(
             @PathVariable String deviceCode, @PathVariable String functionId) {
         return forms.deviceFieldOverrides(deviceCode, functionId);
     }
 
-    @PutMapping("/devices/{deviceCode}/functions/{functionId}/field-overrides")
+    @PutMapping("/{deviceCode}/functions/{functionId}/field-overrides")
     public Map<String, Object> replaceDeviceFieldOverrides(
             @PathVariable String deviceCode,
             @PathVariable String functionId,
@@ -175,13 +175,13 @@ public class CatalogDeviceController {
         return forms.deviceFieldOverrides(deviceCode, functionId);
     }
 
-    @GetMapping("/devices/{deviceCode}/functions/{functionId}/topic-overrides")
+    @GetMapping("/{deviceCode}/functions/{functionId}/topic-overrides")
     public Map<String, String> deviceTopicOverrides(
             @PathVariable String deviceCode, @PathVariable String functionId) {
         return forms.deviceTopicOverrides(deviceCode, functionId);
     }
 
-    @PutMapping("/devices/{deviceCode}/functions/{functionId}/topic-overrides")
+    @PutMapping("/{deviceCode}/functions/{functionId}/topic-overrides")
     public Map<String, String> replaceDeviceTopicOverrides(
             @PathVariable String deviceCode,
             @PathVariable String functionId,
@@ -191,13 +191,13 @@ public class CatalogDeviceController {
         return forms.deviceTopicOverrides(deviceCode, functionId);
     }
 
-    @GetMapping("/devices/{deviceCode}/functions/{functionId}/schedule")
+    @GetMapping("/{deviceCode}/functions/{functionId}/schedule")
     public DeviceFunctionScheduleView deviceSchedule(
             @PathVariable String deviceCode, @PathVariable String functionId) {
         return forms.deviceSchedule(deviceCode, functionId);
     }
 
-    @PutMapping("/devices/{deviceCode}/functions/{functionId}/schedule")
+    @PutMapping("/{deviceCode}/functions/{functionId}/schedule")
     public DeviceFunctionScheduleView replaceDeviceSchedule(
             @PathVariable String deviceCode,
             @PathVariable String functionId,

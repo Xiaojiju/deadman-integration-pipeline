@@ -11,13 +11,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 北向双通道（MQTT/HTTP）配置 REST 接口，前缀 {@code /catalog}。
+ * 北向双通道（MQTT/HTTP）配置 REST 接口，前缀 {@code /catalog/northbound}。
  *
  * <p>示例：{@code GET /catalog/northbound} 读取配置；
  * {@code PUT /catalog/northbound} 更新 MQTT/HTTP 参数。
  */
 @RestController
-@RequestMapping("/catalog")
+@RequestMapping("/catalog/northbound")
 public class CatalogNorthboundController {
 
     private final CatalogNorthbound northbound;
@@ -26,12 +26,12 @@ public class CatalogNorthboundController {
         this.northbound = northbound;
     }
 
-    @GetMapping("/northbound")
+    @GetMapping
     public NorthboundView getNorthbound() {
         return northbound.view();
     }
 
-    @PutMapping("/northbound")
+    @PutMapping
     public NorthboundView updateNorthbound(@Valid @RequestBody NorthboundWriteRequest request) {
         return northbound.update(request);
     }

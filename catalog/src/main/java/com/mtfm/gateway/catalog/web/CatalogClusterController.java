@@ -22,88 +22,55 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * 集群与场景动作组 REST 接口，前缀 {@code /catalog}。
+ * 集群动作组 REST 接口，前缀 {@code /catalog/clusters}。
  *
  * <p>示例：{@code GET /catalog/clusters} 列出集群；
- * {@code POST /catalog/scenes/{id}/execute} 手动触发场景。
+ * {@code POST /catalog/clusters/{id}/execute} 手动触发集群。
  */
 @Validated
 @RestController
-@RequestMapping("/catalog")
-public class CatalogActionController {
+@RequestMapping("/catalog/clusters")
+public class CatalogClusterController {
 
     private final CatalogApplyService applyService;
     private final CatalogActionService actions;
 
-    public CatalogActionController(CatalogApplyService applyService, CatalogActionService actions) {
+    public CatalogClusterController(CatalogApplyService applyService, CatalogActionService actions) {
         this.applyService = applyService;
         this.actions = actions;
     }
 
-    @GetMapping("/clusters")
+    @GetMapping
     public List<ActionGroupView> listClusters() {
         return actions.list("CLUSTER");
     }
 
-    @PostMapping("/clusters")
+    @PostMapping
     public ActionGroupView createCluster(@Validated(CreateOp.class) @RequestBody ActionGroupWriteRequest request) {
         return actions.create("CLUSTER", request);
     }
 
-    @GetMapping("/clusters/{id}")
+    @GetMapping("/{id}")
     public ActionGroupView getCluster(@PathVariable String id) {
         return requireKind(id, "CLUSTER", "不是集群: ");
     }
 
-    @PutMapping("/clusters/{id}")
+    @PutMapping("/{id}")
     public ActionGroupView updateCluster(@PathVariable String id,
             @Validated(UpdateOp.class) @RequestBody ActionGroupWriteRequest request) {
         return actions.update(requireKind(id, "CLUSTER", "不是集群: ").id(), request);
     }
 
-    @DeleteMapping("/clusters/{id}")
+    @DeleteMapping("/{id}")
     public Map<String, Object> deleteCluster(@PathVariable String id) {
         ActionGroupView existing = requireKind(id, "CLUSTER", "不是集群: ");
         boolean deleted = actions.delete(existing.id());
         return Map.of("id", existing.id(), "deleted", deleted);
     }
 
-    @PostMapping("/clusters/{id}/execute")
+    @PostMapping("/{id}/execute")
     public CompletableFuture<ActionGroupExecutionView> executeCluster(@PathVariable String id) {
         return applyService.executeActionGroup(requireKind(id, "CLUSTER", "不是集群: ").id(), "cluster");
-    }
-
-    @GetMapping("/scenes")
-    public List<ActionGroupView> listScenes() {
-        return actions.list("SCENE");
-    }
-
-    @PostMapping("/scenes")
-    public ActionGroupView createScene(@Validated(CreateOp.class) @RequestBody ActionGroupWriteRequest request) {
-        return actions.create("SCENE", request);
-    }
-
-    @GetMapping("/scenes/{id}")
-    public ActionGroupView getScene(@PathVariable String id) {
-        return requireKind(id, "SCENE", "不是场景: ");
-    }
-
-    @PutMapping("/scenes/{id}")
-    public ActionGroupView updateScene(@PathVariable String id,
-            @Validated(UpdateOp.class) @RequestBody ActionGroupWriteRequest request) {
-        return actions.update(requireKind(id, "SCENE", "不是场景: ").id(), request);
-    }
-
-    @DeleteMapping("/scenes/{id}")
-    public Map<String, Object> deleteScene(@PathVariable String id) {
-        ActionGroupView existing = requireKind(id, "SCENE", "不是场景: ");
-        boolean deleted = actions.delete(existing.id());
-        return Map.of("id", existing.id(), "deleted", deleted);
-    }
-
-    @PostMapping("/scenes/{id}/execute")
-    public CompletableFuture<ActionGroupExecutionView> executeScene(@PathVariable String id) {
-        return applyService.executeActionGroup(requireKind(id, "SCENE", "不是场景: ").id(), "scene");
     }
 
     private ActionGroupView requireKind(String id, String kind, String errorPrefix) {
