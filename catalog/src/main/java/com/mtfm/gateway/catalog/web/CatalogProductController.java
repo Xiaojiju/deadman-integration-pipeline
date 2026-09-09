@@ -5,6 +5,7 @@ import com.mtfm.gateway.catalog.dto.FunctionFormView;
 import com.mtfm.gateway.catalog.dto.PageResult;
 import com.mtfm.gateway.catalog.dto.ProductFunctionView;
 import com.mtfm.gateway.catalog.dto.ProductFunctionWriteRequest;
+import com.mtfm.gateway.catalog.dto.ProductListQuery;
 import com.mtfm.gateway.catalog.dto.ProductView;
 import com.mtfm.gateway.catalog.dto.ProductWriteRequest;
 import com.mtfm.gateway.catalog.dto.validation.CreateOp;
@@ -49,8 +50,11 @@ public class CatalogProductController {
     @GetMapping
     public PageResult<ProductView> listProducts(
             @RequestParam(defaultValue = "1") @Min(value = 1, message = "page 从 1 开始") int page,
-            @RequestParam(defaultValue = "20") @Min(value = 1, message = "size 至少为 1") @Max(value = 100, message = "size 不能超过 100") int size) {
-        return forms.pageProductViews(page, size);
+            @RequestParam(defaultValue = "20") @Min(value = 1, message = "size 至少为 1") @Max(value = 100, message = "size 不能超过 100") int size,
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) String code,
+            @RequestParam(required = false) String productTypeId) {
+        return forms.pageProductViews(page, size, new ProductListQuery(name, code, productTypeId));
     }
 
     @GetMapping("/{productId}")

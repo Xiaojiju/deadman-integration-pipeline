@@ -1,11 +1,15 @@
 package com.mtfm.gateway.catalog.web;
 
+import com.mtfm.gateway.catalog.dto.ChannelProbeRequestBody;
+import com.mtfm.gateway.catalog.dto.ChannelProbeView;
 import com.mtfm.gateway.catalog.dto.ChannelView;
 import com.mtfm.gateway.catalog.dto.ChannelWriteRequest;
 import com.mtfm.gateway.catalog.dto.PageResult;
 import com.mtfm.gateway.catalog.dto.validation.CreateOp;
 import com.mtfm.gateway.catalog.dto.validation.UpdateOp;
+import com.mtfm.gateway.catalog.schema.CatalogChannelProbeService;
 import com.mtfm.gateway.catalog.schema.CatalogFormService;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import org.springframework.validation.annotation.Validated;
@@ -33,9 +37,11 @@ import java.util.Map;
 public class CatalogChannelController {
 
     private final CatalogFormService forms;
+    private final CatalogChannelProbeService probes;
 
-    public CatalogChannelController(CatalogFormService forms) {
+    public CatalogChannelController(CatalogFormService forms, CatalogChannelProbeService probes) {
         this.forms = forms;
+        this.probes = probes;
     }
 
     @GetMapping
@@ -65,5 +71,12 @@ public class CatalogChannelController {
     public Map<String, Object> deleteChannel(@PathVariable String channelId) {
         boolean deleted = forms.deleteChannel(channelId);
         return Map.of("channelId", channelId, "deleted", deleted);
+    }
+
+    @PostMapping("/{channelId}/probe")
+    public ChannelProbeView probeChannel(
+            @PathVariable String channelId,
+            @Valid @RequestBody ChannelProbeRequestBody request) {
+        return probes.probe(channelId, request);
     }
 }

@@ -2,6 +2,8 @@ package com.mtfm.gateway.catalog.apply;
 
 import com.mtfm.gateway.catalog.dto.ActionGroupExecutionView;
 import com.mtfm.gateway.catalog.dto.DeviceCommandRequest;
+import com.mtfm.gateway.catalog.dto.DeviceLoadBatchView;
+import com.mtfm.gateway.catalog.dto.DeviceLoadItemView;
 import com.mtfm.gateway.catalog.dto.DeviceRegisterRequest;
 import com.mtfm.gateway.catalog.entity.DeviceEntity;
 import com.mtfm.gateway.catalog.schema.CatalogFormService;
@@ -17,6 +19,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -254,5 +257,54 @@ public class CatalogApplyService {
                 LOG.warn("reloadAll 跳过设备 {}: {}", device.getDeviceCode(), ex.getMessage());
             }
         }
+    }
+
+    /**
+     * 批量 load。{@code deviceCodes} 为空则加载全部已启用且尚未 load 的设备。
+     */
+    public DeviceLoadBatchView loadBatch(List<String> deviceCodes) {
+        List<DeviceEntity> targets = resolveLoadTargets(deviceCodes);
+        List<DeviceLoadItemView> items = new ArrayList<>();
+        int loaded = 0;
+        int skipped = 0;
+        int failed = 0;
+        for (DeviceEntity device : targets) {
+            String code = device.getDeviceCode();
+            if (Boolean.FALSE.equals(device.getEnabled())) {
+                skipped++;
+                items.add(new DeviceLoadItemView(code, "skipped", "设备已停用"));
+                continue;
+            }
+            if (isLoaded(code)) {
+                skipped++;
+                items.add(new DeviceLoadItemView(code, "skipped", "已加载"));
+                continue;
+            }
+            try {
+                load(code);
+                loaded++;
+                items.add(new DeviceLoadItemView(code, "loaded", null));
+            } catch (RuntimeException ex) {
+                failed++;
+                items.add(new DeviceLoadItemView(code, "failed", ex.getMessage()));
+                LOG.warn("批量 load 跳过设备 {}: {}", code, ex.getMessage());
+            }
+        }
+        return new DeviceLoadBatchView(targets.size(), loaded, skipped, failed, List.copyOf(items));
+    }
+
+    private List<DeviceEntity> resolveLoadTargets(List<String> deviceCodes) {
+        if (deviceCodes == null || deviceCodes.isEmpty()) {
+            return store.listEnabledDevices();
+        }
+        List<DeviceEntity> found = new ArrayList<>();
+        for (String code : deviceCodes) {
+            if (code == null || code.isBlank()) {
+                continue;
+            }
+            found.add(store.resolveDevice(code.trim())
+                    .orElseThrow(() -> new IllegalArgumentException("设备不存在: " + code)));
+        }
+        return found;
     }
 }

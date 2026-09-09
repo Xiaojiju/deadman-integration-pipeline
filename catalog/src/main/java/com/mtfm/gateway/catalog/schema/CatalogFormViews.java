@@ -5,6 +5,7 @@ import com.mtfm.gateway.catalog.dto.DeviceEndpointView;
 import com.mtfm.gateway.catalog.dto.DeviceView;
 import com.mtfm.gateway.catalog.dto.FunctionFormView;
 import com.mtfm.gateway.catalog.dto.ProductFunctionView;
+import com.mtfm.gateway.catalog.dto.ProductTypeView;
 import com.mtfm.gateway.catalog.dto.ProductView;
 import com.mtfm.gateway.catalog.dto.SupportedFunctionView;
 import com.mtfm.gateway.catalog.entity.ChannelEntity;
@@ -12,6 +13,7 @@ import com.mtfm.gateway.catalog.entity.DeviceEndpointEntity;
 import com.mtfm.gateway.catalog.entity.DeviceEntity;
 import com.mtfm.gateway.catalog.entity.ProductEntity;
 import com.mtfm.gateway.catalog.entity.ProductFunctionEntity;
+import com.mtfm.gateway.catalog.entity.ProductTypeEntity;
 import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.catalog.store.FunctionOptionBundle;
 import com.mtfm.gateway.spi.capability.CapabilityRegistrar;
@@ -195,12 +197,28 @@ final class CatalogFormViews {
                 entity.getUpdatedAt());
     }
 
+    ProductTypeView toProductTypeView(ProductTypeEntity entity) {
+        return new ProductTypeView(
+                entity.getId(),
+                entity.getCode(),
+                entity.getName(),
+                entity.getDescription(),
+                entity.getCreatedAt(),
+                entity.getUpdatedAt());
+    }
+
     ProductView toProductView(ProductEntity entity) {
+        ProductTypeEntity type = entity.getProductTypeId() == null
+                ? null
+                : store.findProductType(entity.getProductTypeId()).orElse(null);
         return new ProductView(
                 entity.getId(),
                 entity.getCode(),
                 entity.getName(),
                 entity.getDescription(),
+                entity.getProductTypeId(),
+                type == null ? null : type.getCode(),
+                type == null ? null : type.getName(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt());
     }
@@ -218,6 +236,8 @@ final class CatalogFormViews {
                 entity.getName(),
                 overrides == null ? Map.of() : overrides,
                 entity.getEnabled(),
+                entity.getOnline(),
+                entity.getOnlineUpdatedAt(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt(),
                 loaded);

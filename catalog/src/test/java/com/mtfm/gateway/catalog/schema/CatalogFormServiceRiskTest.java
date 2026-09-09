@@ -9,6 +9,7 @@ import com.mtfm.gateway.catalog.dto.SupportedFunctionView;
 import com.mtfm.gateway.catalog.entity.ChannelEntity;
 import com.mtfm.gateway.catalog.entity.ProductEntity;
 import com.mtfm.gateway.catalog.entity.ProductFunctionEntity;
+import com.mtfm.gateway.catalog.entity.ProductTypeEntity;
 import com.mtfm.gateway.catalog.store.CatalogPropertyRepository;
 import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.catalog.store.FunctionOptionBundle;
@@ -58,9 +59,13 @@ class CatalogFormServiceRiskTest {
     @Test
     void createProductLooksUpCodeInsteadOfListingAll() {
         when(store.findProductByCode("door")).thenReturn(Optional.empty());
+        ProductTypeEntity type = new ProductTypeEntity();
+        type.setId("ACCESS_CONTROL");
+        type.setCode("ACCESS_CONTROL");
+        when(store.findProductType("ACCESS_CONTROL")).thenReturn(Optional.of(type));
         when(store.saveProduct(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        forms.createProduct(new ProductWriteRequest("door", "门禁", null, null));
+        forms.createProduct(new ProductWriteRequest("door", "门禁", null, "ACCESS_CONTROL", null));
 
         verify(store).findProductByCode("door");
         verify(store, never()).listProducts();

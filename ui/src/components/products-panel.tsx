@@ -85,6 +85,7 @@ import type {
   CapabilityDescriptor,
   ProductEntity,
   ProductFunctionEntity,
+  ProductTypeView,
   PropertyItem,
   SchemaField,
   ValueOption,
@@ -132,6 +133,11 @@ export function ProductsPanel({
   const [code, setCode] = useState("")
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
+  const [productTypeId, setProductTypeId] = useState("")
+  const [productTypes, setProductTypes] = useState<ProductTypeView[]>([])
+  const [filterCode, setFilterCode] = useState("")
+  const [filterName, setFilterName] = useState("")
+  const [filterTypeId, setFilterTypeId] = useState("all")
   const [seedCapabilityType, setSeedCapabilityType] = useState("")
 
   const [viewProduct, setViewProduct] = useState<ProductEntity | null>(null)
@@ -240,23 +246,31 @@ export function ProductsPanel({
     async (targetPage = page) => {
       setLoading(true)
       try {
-        const result = await catalogApi.listProducts(targetPage, PAGE_SIZE)
+        const [result, types] = await Promise.all([
+          catalogApi.listProducts(targetPage, PAGE_SIZE, {
+            name: filterName.trim() || undefined,
+            code: filterCode.trim() || undefined,
+            productTypeId: filterTypeId === "all" ? undefined : filterTypeId,
+          }),
+          catalogApi.listProductTypes(),
+        ])
         setProducts(result.items)
         setPage(result.page)
         setTotal(result.total)
         setTotalPages(result.totalPages)
+        setProductTypes(types)
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "加载产品失败")
       } finally {
         setLoading(false)
       }
     },
-    [page]
+    [page, filterName, filterCode, filterTypeId]
   )
 
   useEffect(() => {
     void load(page)
-  }, [page]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [page, filterName, filterCode, filterTypeId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function reloadFunctions(product: ProductEntity) {
     const list = await catalogApi.listProductFunctions(product.id)
@@ -268,6 +282,7 @@ export function ProductsPanel({
     setCode("")
     setName("")
     setDescription("")
+    setProductTypeId(productTypes[0]?.id ?? "")
     setSeedCapabilityType("")
     setProductDialogOpen(true)
   }
@@ -284,6 +299,10 @@ export function ProductsPanel({
   async function saveProduct() {
     if (!editingProduct && (!code.trim() || !name.trim())) {
       toast.error("请填写产品编码与名称")
+      return
+    }
+    if (!editingProduct && !productTypeId) {
+      toast.error("请选择产品类型")
       return
     }
     if (editingProduct && !name.trim()) {
@@ -303,6 +322,7 @@ export function ProductsPanel({
           code: code.trim(),
           name: name.trim(),
           description: description.trim() || undefined,
+          productTypeId,
           seedCapabilityType: seedCapabilityType || undefined,
         })
         toast.success(`产品 ${code} 已创建`)
@@ -750,32 +770,79 @@ export function ProductsPanel({
             <Loader2Icon className="size-4 animate-spin" />
             加载中…
           </div>
-        ) : products.length === 0 ? (
-          <Empty className="border border-dashed">
-            <EmptyHeader>
-              <EmptyTitle>暂无产品</EmptyTitle>
-              <EmptyDescription>
-                创建产品后，再为其创建或导入功能。
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>编码</TableHead>
                 <TableHead>名称</TableHead>
+                <TableHead>类型</TableHead>
                 <TableHead>说明</TableHead>
                 <TableHead className="w-52">操作</TableHead>
               </TableRow>
+              <TableRow>
+                <TableHead>
+                  <Input
+                    value={filterCode}
+                    placeholder="筛选编码"
+                    onChange={(event) => {
+                      setPage(1)
+                      setFilterCode(event.target.value)
+                    }}
+                  />
+                </TableHead>
+                <TableHead>
+                  <Input
+                    value={filterName}
+                    placeholder="筛选名称"
+                    onChange={(event) => {
+                      setPage(1)
+                      setFilterName(event.target.value)
+                    }}
+                  />
+                </TableHead>
+                <TableHead>
+                  <Select
+                    value={filterTypeId}
+                    onValueChange={(value) => {
+                      setPage(1)
+                      setFilterTypeId(value)
+                    }}
+                  >
+                    <SelectTrigger className="h-8">
+                      <SelectValue placeholder="全部类型" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="all">全部类型</SelectItem>
+                        {productTypes.map((item) => (
+                          <SelectItem key={item.id} value={item.id}>
+                            {item.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </TableHead>
+                <TableHead />
+                <TableHead />
+              </TableRow>
             </TableHeader>
             <TableBody>
-              {products.map((product) => (
+              {products.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-muted-foreground">
+                    暂无产品。可先创建，或放宽筛选条件。
+                  </TableCell>
+                </TableRow>
+              ) : (
+                products.map((product) => (
                 <TableRow key={product.id}>
                   <TableCell className="font-mono text-sm">
                     {product.code}
                   </TableCell>
                   <TableCell>{product.name}</TableCell>
+                  <TableCell>{product.productTypeName || product.productTypeCode || "—"}</TableCell>
                   <TableCell className="text-muted-foreground">
                     {product.description || "—"}
                   </TableCell>
@@ -806,7 +873,8 @@ export function ProductsPanel({
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))}
+              ))
+              )}
             </TableBody>
           </Table>
         )}
@@ -856,6 +924,28 @@ export function ProductsPanel({
                 onChange={(e) => setDescription(e.target.value)}
               />
             </Field>
+            {!editingProduct ? (
+              <Field>
+                <FieldLabel>产品类型 *</FieldLabel>
+                <Select
+                  value={productTypeId}
+                  onValueChange={setProductTypeId}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="选择产品类型" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {productTypes.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {item.name} · {item.code}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+            ) : null}
             {!editingProduct ? (
               <Field>
                 <FieldLabel>创建后导入能力功能（可选）</FieldLabel>

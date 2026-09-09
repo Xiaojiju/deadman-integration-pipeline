@@ -8,6 +8,9 @@ import com.mtfm.gateway.catalog.dto.DeviceEndpointWriteRequest;
 import com.mtfm.gateway.catalog.dto.DeviceFieldOverridesWriteRequest;
 import com.mtfm.gateway.catalog.dto.DeviceFunctionScheduleView;
 import com.mtfm.gateway.catalog.dto.DeviceFunctionScheduleWriteRequest;
+import com.mtfm.gateway.catalog.dto.DeviceListQuery;
+import com.mtfm.gateway.catalog.dto.DeviceLoadBatchRequest;
+import com.mtfm.gateway.catalog.dto.DeviceLoadBatchView;
 import com.mtfm.gateway.catalog.dto.DeviceRegisterRequest;
 import com.mtfm.gateway.catalog.dto.DeviceTopicOverridesWriteRequest;
 import com.mtfm.gateway.catalog.dto.DeviceUpdateRequest;
@@ -62,8 +65,12 @@ public class CatalogDeviceController {
     @GetMapping
     public PageResult<DeviceView> listDevices(
             @RequestParam(defaultValue = "1") @Min(value = 1, message = "page 从 1 开始") int page,
-            @RequestParam(defaultValue = "20") @Min(value = 1, message = "size 至少为 1") @Max(value = 100, message = "size 不能超过 100") int size) {
-        return forms.pageDeviceViews(page, size);
+            @RequestParam(defaultValue = "20") @Min(value = 1, message = "size 至少为 1") @Max(value = 100, message = "size 不能超过 100") int size,
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) String deviceCode,
+            @RequestParam(required = false) String online,
+            @RequestParam(required = false) String productTypeId) {
+        return forms.pageDeviceViews(page, size, new DeviceListQuery(name, deviceCode, online, productTypeId));
     }
 
     @GetMapping("/{deviceCode}")
@@ -135,6 +142,11 @@ public class CatalogDeviceController {
         forms.requireDevice(deviceCode);
         boolean deleted = forms.deleteEndpoint(endpointId);
         return Map.of("endpointId", endpointId, "deleted", deleted);
+    }
+
+    @PostMapping("/load-batch")
+    public DeviceLoadBatchView loadBatch(@RequestBody(required = false) DeviceLoadBatchRequest request) {
+        return applyService.loadBatch(request == null ? null : request.deviceCodes());
     }
 
     @PostMapping("/{deviceCode}/load")

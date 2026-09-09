@@ -96,9 +96,16 @@ public class CatalogDeviceRepository {
     }
 
     public PageResult<DeviceEntity> page(int page, int size) {
+        return page(page, size, new QueryWrapper<DeviceEntity>().orderByAsc("device_code"));
+    }
+
+    public PageResult<DeviceEntity> page(int page, int size, QueryWrapper<DeviceEntity> query) {
+        QueryWrapper<DeviceEntity> wrapper = query == null
+                ? new QueryWrapper<DeviceEntity>().orderByAsc("device_code")
+                : query;
         Page<DeviceEntity> result = devices.selectPage(
                 new Page<>(CatalogPages.page(page), CatalogPages.size(size)),
-                new QueryWrapper<DeviceEntity>().orderByAsc("device_code"));
+                wrapper);
         return PageResult.of(result);
     }
 
@@ -149,6 +156,16 @@ public class CatalogDeviceRepository {
 
     public long countEndpointsByChannel(String channelPk) {
         return endpoints.selectCount(new QueryWrapper<DeviceEndpointEntity>().eq("channel_id", channelPk));
+    }
+
+    public List<DeviceEndpointEntity> listEndpointsByChannel(String channelPk) {
+        return endpoints.selectList(new QueryWrapper<DeviceEndpointEntity>().eq("channel_id", channelPk));
+    }
+
+    public Optional<DeviceEndpointEntity> findEndpoint(String devicePk, String channelPk) {
+        return Optional.ofNullable(endpoints.selectOne(new QueryWrapper<DeviceEndpointEntity>()
+                .eq("device_id", devicePk)
+                .eq("channel_id", channelPk)));
     }
 
     public boolean deleteEndpointById(String endpointId) {

@@ -1,12 +1,18 @@
 package com.mtfm.gateway.catalog.store;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.mtfm.gateway.catalog.dto.DeviceListQuery;
 import com.mtfm.gateway.catalog.dto.PageResult;
+import com.mtfm.gateway.catalog.dto.ProductListQuery;
 import com.mtfm.gateway.catalog.entity.ChannelEntity;
 import com.mtfm.gateway.catalog.entity.DeviceEndpointEntity;
 import com.mtfm.gateway.catalog.entity.DeviceEntity;
 import com.mtfm.gateway.catalog.entity.DeviceFunctionScheduleEntity;
 import com.mtfm.gateway.catalog.entity.ProductEntity;
 import com.mtfm.gateway.catalog.entity.ProductFunctionEntity;
+import com.mtfm.gateway.catalog.entity.ProductTypeEntity;
+import com.mtfm.gateway.catalog.store.support.PropertyCodec;
+import com.mtfm.gateway.spi.model.Attributes;
 import com.mtfm.gateway.spi.port.DeviceScheduleRegistry;
 import com.mtfm.gateway.spi.property.PropertyItem;
 import com.mtfm.gateway.spi.secret.SecretCodec;
@@ -27,6 +33,7 @@ import java.util.Optional;
 public class CatalogStore {
 
     private final CatalogProductRepository products;
+    private final CatalogProductTypeRepository productTypes;
     private final CatalogChannelRepository channels;
     private final CatalogDeviceRepository devices;
     private final CatalogEavLoader eav;
@@ -35,12 +42,14 @@ public class CatalogStore {
 
     public CatalogStore(
             CatalogProductRepository products,
+            CatalogProductTypeRepository productTypes,
             CatalogChannelRepository channels,
             CatalogDeviceRepository devices,
             CatalogEavLoader eav,
             CatalogPropertyRepository properties,
             ObjectProvider<SecretCodec> secretCodec) {
         this.products = products;
+        this.productTypes = productTypes;
         this.channels = channels;
         this.devices = devices;
         this.eav = eav;
@@ -56,6 +65,29 @@ public class CatalogStore {
 
     public SecretCodec secretCodec() {
         return secretCodec;
+    }
+
+    /**
+     * 解密后的通道连接参数，供探针/在线轮询调用南向接口。
+     */
+    public Attributes openedConnection(ChannelEntity channel) {
+        return Attributes.from(openConnectionSecrets(PropertyCodec.toMap(loadChannelProperties(channel))));
+    }
+
+    private Map<String, Object> openConnectionSecrets(Map<String, Object> values) {
+        if (values == null || values.isEmpty()) {
+            return values == null ? Map.of() : values;
+        }
+        Map<String, Object> opened = new java.util.LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : values.entrySet()) {
+            Object value = entry.getValue();
+            if (value instanceof String text) {
+                opened.put(entry.getKey(), secretCodec.open(text));
+            } else {
+                opened.put(entry.getKey(), value);
+            }
+        }
+        return opened;
     }
 
     public ProductEntity saveProduct(ProductEntity entity) {
@@ -118,6 +150,31 @@ public class CatalogStore {
         return eav.loadAllDeviceOverrides(devices);
     }
 
+    public Optional<ProductTypeEntity> findProductType(String idOrCode) {
+        return productTypes.find(idOrCode);
+    }
+
+    public List<ProductTypeEntity> listProductTypes() {
+        return productTypes.list();
+    }
+
+    public ProductTypeEntity saveProductType(ProductTypeEntity entity) {
+        return productTypes.insert(entity);
+    }
+
+    public ProductTypeEntity updateProductType(ProductTypeEntity entity) {
+        return productTypes.update(entity);
+    }
+
+    public boolean deleteProductType(String idOrCode) {
+        ProductTypeEntity type = productTypes.find(idOrCode)
+                .orElseThrow(() -> new IllegalArgumentException("产品类型不存在: " + idOrCode));
+        if (products.countByProductType(type.getId()) > 0) {
+            throw new IllegalArgumentException("产品类型仍被产品引用，无法删除: " + type.getCode());
+        }
+        return productTypes.deleteById(type.getId());
+    }
+
     public Optional<ProductEntity> findProduct(String productId) {
         return products.findById(productId);
     }
@@ -147,7 +204,32 @@ public class CatalogStore {
     }
 
     public PageResult<DeviceEntity> pageDevices(int page, int size) {
-        return devices.page(page, size);
+        return pageDevices(page, size, null);
+    }
+
+    public PageResult<DeviceEntity> pageDevices(int page, int size, DeviceListQuery query) {
+        QueryWrapper<DeviceEntity> wrapper = new QueryWrapper<DeviceEntity>().orderByAsc("device_code");
+        if (query != null) {
+            if (notBlank(query.name())) {
+                wrapper.like("name", query.name().trim());
+            }
+            if (notBlank(query.deviceCode())) {
+                wrapper.like("device_code", query.deviceCode().trim());
+            }
+            applyOnlineFilter(wrapper, query.online());
+            if (notBlank(query.productTypeId())) {
+                String typeId = productTypes.find(query.productTypeId())
+                        .map(ProductTypeEntity::getId)
+                        .orElse(query.productTypeId().trim());
+                List<String> productIds = products.listIdsByProductType(typeId);
+                if (productIds.isEmpty()) {
+                    wrapper.eq("id", "__none__");
+                } else {
+                    wrapper.in("product_id", productIds);
+                }
+            }
+        }
+        return devices.page(page, size, wrapper);
     }
 
     public List<ProductEntity> listProducts() {
@@ -155,7 +237,26 @@ public class CatalogStore {
     }
 
     public PageResult<ProductEntity> pageProducts(int page, int size) {
-        return products.page(page, size);
+        return pageProducts(page, size, null);
+    }
+
+    public PageResult<ProductEntity> pageProducts(int page, int size, ProductListQuery query) {
+        QueryWrapper<ProductEntity> wrapper = new QueryWrapper<ProductEntity>().orderByAsc("code");
+        if (query != null) {
+            if (notBlank(query.name())) {
+                wrapper.like("name", query.name().trim());
+            }
+            if (notBlank(query.code())) {
+                wrapper.like("code", query.code().trim());
+            }
+            if (notBlank(query.productTypeId())) {
+                String typeId = productTypes.find(query.productTypeId())
+                        .map(ProductTypeEntity::getId)
+                        .orElse(query.productTypeId().trim());
+                wrapper.eq("product_type_id", typeId);
+            }
+        }
+        return products.page(page, size, wrapper);
     }
 
     public List<ChannelEntity> listChannels() {
@@ -192,6 +293,14 @@ public class CatalogStore {
 
     public long countEndpointsByChannel(String channelPk) {
         return devices.countEndpointsByChannel(channelPk);
+    }
+
+    public List<DeviceEndpointEntity> listEndpointsByChannel(String channelPk) {
+        return devices.listEndpointsByChannel(channelPk);
+    }
+
+    public Optional<DeviceEndpointEntity> findEndpoint(String devicePk, String channelPk) {
+        return devices.findEndpoint(devicePk, channelPk);
     }
 
     public boolean deleteProduct(String productId) {
@@ -293,5 +402,27 @@ public class CatalogStore {
                 listFunctions(device.getProductId()),
                 listScheduleOverrides(device.getId()),
                 DeviceScheduleRegistry.MIN_INTERVAL_MS);
+    }
+
+    private static void applyOnlineFilter(QueryWrapper<DeviceEntity> wrapper, String online) {
+        if (!notBlank(online)) {
+            return;
+        }
+        String value = online.trim().toLowerCase();
+        if ("unknown".equals(value) || "null".equals(value)) {
+            wrapper.isNull("online");
+            return;
+        }
+        if ("true".equals(value) || "online".equals(value)) {
+            wrapper.eq("online", true);
+            return;
+        }
+        if ("false".equals(value) || "offline".equals(value)) {
+            wrapper.eq("online", false);
+        }
+    }
+
+    private static boolean notBlank(String value) {
+        return value != null && !value.isBlank();
     }
 }

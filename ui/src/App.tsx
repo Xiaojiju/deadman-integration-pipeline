@@ -6,6 +6,7 @@ import { CapabilitiesPanel } from "@/components/capabilities-panel"
 import { ChannelsPanel } from "@/components/channels-panel"
 import { DevicesPanel } from "@/components/devices-panel"
 import { NorthboundPanel } from "@/components/northbound-panel"
+import { ProductTypesPanel } from "@/components/product-types-panel"
 import { ProductsPanel } from "@/components/products-panel"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
@@ -80,6 +81,7 @@ export function App() {
           <TabsList className="h-auto flex-wrap">
             <TabsTrigger value="devices">设备</TabsTrigger>
             <TabsTrigger value="products">产品</TabsTrigger>
+            <TabsTrigger value="product-types">产品类型</TabsTrigger>
             <TabsTrigger value="channels">通道</TabsTrigger>
             <TabsTrigger value="clusters">集群</TabsTrigger>
             <TabsTrigger value="scenes">场景</TabsTrigger>
@@ -101,10 +103,14 @@ export function App() {
               onChanged={() => void refresh()}
             />
           </TabsContent>
+          <TabsContent value="product-types" className="mt-4">
+            <ProductTypesPanel onChanged={() => void refresh()} />
+          </TabsContent>
           <TabsContent value="channels" className="mt-4">
             <ChannelsPanel
               channels={channels}
               capabilities={capabilities}
+              products={products}
               onChanged={() => void refresh()}
             />
           </TabsContent>

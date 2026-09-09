@@ -71,10 +71,27 @@ public class CatalogProductRepository {
         return products.selectList(new QueryWrapper<ProductEntity>().orderByAsc("code"));
     }
 
+    public List<String> listIdsByProductType(String productTypeId) {
+        if (productTypeId == null || productTypeId.isBlank()) {
+            return List.of();
+        }
+        return products.selectList(new QueryWrapper<ProductEntity>().eq("product_type_id", productTypeId))
+                .stream()
+                .map(ProductEntity::getId)
+                .toList();
+    }
+
     public PageResult<ProductEntity> page(int page, int size) {
+        return page(page, size, new QueryWrapper<ProductEntity>().orderByAsc("code"));
+    }
+
+    public PageResult<ProductEntity> page(int page, int size, QueryWrapper<ProductEntity> query) {
+        QueryWrapper<ProductEntity> wrapper = query == null
+                ? new QueryWrapper<ProductEntity>().orderByAsc("code")
+                : query;
         Page<ProductEntity> result = products.selectPage(
                 new Page<>(CatalogPages.page(page), CatalogPages.size(size)),
-                new QueryWrapper<ProductEntity>().orderByAsc("code"));
+                wrapper);
         return PageResult.of(result);
     }
 
@@ -125,6 +142,10 @@ public class CatalogProductRepository {
             CatalogTimestamps.bump(revision);
         }
         return deleted;
+    }
+
+    public long countByProductType(String productTypeId) {
+        return products.selectCount(new QueryWrapper<ProductEntity>().eq("product_type_id", productTypeId));
     }
 
     public void deleteFunctionsByProduct(String productId) {

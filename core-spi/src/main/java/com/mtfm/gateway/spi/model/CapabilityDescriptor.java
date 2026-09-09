@@ -21,13 +21,15 @@ import java.util.Optional;
  * @param addressSchema      设备地址片字段
  * @param functionTemplates  预置功能模板
  * @param functionMode       功能目录模式：FIXED 封闭 / CONTRACT 锁参数名 / OPEN 可扩展
+ * @param probeSupported     是否支持通道探针扫描
  */
 public record CapabilityDescriptor(
         String capabilityType,
         List<SchemaField> connectionSchema,
         List<SchemaField> addressSchema,
         List<FunctionTemplate> functionTemplates,
-        FunctionCatalogMode functionMode
+        FunctionCatalogMode functionMode,
+        boolean probeSupported
 ) {
 
     public CapabilityDescriptor {
@@ -42,16 +44,23 @@ public record CapabilityDescriptor(
         }
     }
 
-    /** 不含功能模板的简化构造（默认 OPEN）。 */
+    /** 不含功能模板的简化构造（默认 OPEN，不支持探针）。 */
     public CapabilityDescriptor(String capabilityType, List<SchemaField> connectionSchema,
             List<SchemaField> addressSchema) {
-        this(capabilityType, connectionSchema, addressSchema, List.of(), FunctionCatalogMode.OPEN);
+        this(capabilityType, connectionSchema, addressSchema, List.of(), FunctionCatalogMode.OPEN, false);
     }
 
     /** 带功能模板、默认 OPEN（适合协议原语类能力）。 */
     public CapabilityDescriptor(String capabilityType, List<SchemaField> connectionSchema,
             List<SchemaField> addressSchema, List<FunctionTemplate> functionTemplates) {
-        this(capabilityType, connectionSchema, addressSchema, functionTemplates, FunctionCatalogMode.OPEN);
+        this(capabilityType, connectionSchema, addressSchema, functionTemplates, FunctionCatalogMode.OPEN, false);
+    }
+
+    /** 带功能模式、默认不支持探针。 */
+    public CapabilityDescriptor(String capabilityType, List<SchemaField> connectionSchema,
+            List<SchemaField> addressSchema, List<FunctionTemplate> functionTemplates,
+            FunctionCatalogMode functionMode) {
+        this(capabilityType, connectionSchema, addressSchema, functionTemplates, functionMode, false);
     }
 
     /** 是否封闭功能集。 */

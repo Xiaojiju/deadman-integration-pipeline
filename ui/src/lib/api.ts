@@ -20,6 +20,9 @@ import type {
   ActionGroupView,
   ActionGroupWriteRequest,
   ActionGroupExecutionView,
+  ChannelProbeView,
+  DeviceLoadBatchView,
+  ProductTypeView,
 } from "@/lib/types"
 
 export const MIN_SCHEDULE_MS = 1000
@@ -78,6 +81,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return JSON.parse(text) as T
 }
 
+function withQuery(path: string, params: Record<string, string | number | undefined>) {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === "") {
+      continue
+    }
+    search.set(key, String(value))
+  }
+  const query = search.toString()
+  return query ? `${path}?${query}` : path
+}
+
 export const catalogApi = {
   listCapabilities: () => request<CapabilityDescriptor[]>("/catalog/capabilities"),
   capabilityFunctions: (type: string) =>
@@ -98,12 +113,58 @@ export const catalogApi = {
     request<SupportedFunctionView>(
       `/catalog/capabilities/${encodeURIComponent(type)}/supported/functions/${encodeURIComponent(functionId)}`
     ),
-  listProducts: (page = 1, size = 20) =>
-    request<PageResult<ProductEntity>>(`/catalog/products?page=${page}&size=${size}`),
+  listProducts: (
+    page = 1,
+    size = 20,
+    filters?: { name?: string; code?: string; productTypeId?: string }
+  ) =>
+    request<PageResult<ProductEntity>>(
+      withQuery("/catalog/products", {
+        page,
+        size,
+        name: filters?.name,
+        code: filters?.code,
+        productTypeId: filters?.productTypeId,
+      })
+    ),
+  listProductTypes: () => request<ProductTypeView[]>("/catalog/product-types"),
+  createProductType: (body: { code: string; name: string; description?: string }) =>
+    request<ProductTypeView>("/catalog/product-types", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateProductType: (typeId: string, body: { name?: string; description?: string }) =>
+    request<ProductTypeView>(`/catalog/product-types/${encodeURIComponent(typeId)}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  deleteProductType: (typeId: string) =>
+    request<{ typeId: string; deleted: boolean }>(
+      `/catalog/product-types/${encodeURIComponent(typeId)}`,
+      { method: "DELETE" }
+    ),
   listChannels: (page = 1, size = 20) =>
     request<PageResult<ChannelEntity>>(`/catalog/channels?page=${page}&size=${size}`),
-  listDevices: (page = 1, size = 20) =>
-    request<PageResult<DeviceEntity>>(`/catalog/devices?page=${page}&size=${size}`),
+  listDevices: (
+    page = 1,
+    size = 20,
+    filters?: {
+      name?: string
+      deviceCode?: string
+      online?: string
+      productTypeId?: string
+    }
+  ) =>
+    request<PageResult<DeviceEntity>>(
+      withQuery("/catalog/devices", {
+        page,
+        size,
+        name: filters?.name,
+        deviceCode: filters?.deviceCode,
+        online: filters?.online,
+        productTypeId: filters?.productTypeId,
+      })
+    ),
   getProduct: (productId: string) =>
     request<ProductEntity>(`/catalog/products/${encodeURIComponent(productId)}`),
   listProductFunctions: (productId: string) =>
@@ -241,6 +302,11 @@ export const catalogApi = {
     request<void>(`/catalog/devices/${encodeURIComponent(deviceCode)}/load`, {
       method: "POST",
     }),
+  loadDeviceBatch: (deviceCodes?: string[]) =>
+    request<DeviceLoadBatchView>("/catalog/devices/load-batch", {
+      method: "POST",
+      body: JSON.stringify({ deviceCodes: deviceCodes ?? [] }),
+    }),
   unloadDevice: (deviceCode: string) =>
     request<void>(`/catalog/devices/${encodeURIComponent(deviceCode)}/unload`, {
       method: "POST",
@@ -265,10 +331,16 @@ export const catalogApi = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  probeChannel: (channelId: string, productId: string) =>
+    request<ChannelProbeView>(`/catalog/channels/${encodeURIComponent(channelId)}/probe`, {
+      method: "POST",
+      body: JSON.stringify({ productId }),
+    }),
   createProduct: (body: {
     code: string
     name: string
     description?: string
+    productTypeId: string
     seedCapabilityType?: string
   }) =>
     request<ProductEntity>("/catalog/products", {

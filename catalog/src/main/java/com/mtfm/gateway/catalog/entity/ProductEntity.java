@@ -20,6 +20,9 @@ public class ProductEntity {
     /** 产品业务编码，全局唯一，如 {@code pump-v1}。 */
     private String code;
 
+    /** 产品类型主键，对应 {@link ProductTypeEntity#id}。 */
+    private String productTypeId;
+
     /** 产品显示名称。 */
     private String name;
 
@@ -46,6 +49,14 @@ public class ProductEntity {
 
     public void setCode(String code) {
         this.code = code;
+    }
+
+    public String getProductTypeId() {
+        return productTypeId;
+    }
+
+    public void setProductTypeId(String productTypeId) {
+        this.productTypeId = productTypeId;
     }
 
     public String getName() {

@@ -53,11 +53,12 @@ import {
   recordToProperties,
   toFieldStringMap,
 } from "@/lib/schema-form"
-import type { CapabilityDescriptor, ChannelEntity, SchemaField } from "@/lib/types"
+import type { CapabilityDescriptor, ChannelEntity, ChannelProbeView, ProductEntity, SchemaField } from "@/lib/types"
 
 type Props = {
   channels: ChannelEntity[]
   capabilities: CapabilityDescriptor[]
+  products: ProductEntity[]
   onChanged: () => void
 }
 
@@ -83,7 +84,7 @@ function visibleConnectionSchema(
     )
 }
 
-export function ChannelsPanel({ channels, capabilities, onChanged }: Props) {
+export function ChannelsPanel({ channels, capabilities, products, onChanged }: Props) {
   const [open, setOpen] = useState(false)
   const [mode, setMode] = useState<Mode>("create")
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -92,6 +93,9 @@ export function ChannelsPanel({ channels, capabilities, onChanged }: Props) {
   const [connection, setConnection] = useState<Record<string, string>>({})
   const [enabled, setEnabled] = useState(true)
   const [pending, setPending] = useState(false)
+  const [probeChannel, setProbeChannel] = useState<ChannelEntity | null>(null)
+  const [probeProductId, setProbeProductId] = useState("")
+  const [probeResult, setProbeResult] = useState<ChannelProbeView | null>(null)
 
   const schema: SchemaField[] = useMemo(() => {
     return capabilities.find((item) => item.capabilityType === capabilityType)?.connectionSchema ?? []
@@ -171,6 +175,40 @@ export function ChannelsPanel({ channels, capabilities, onChanged }: Props) {
     }
   }
 
+  function openProbe(channel: ChannelEntity) {
+    const accessControl = products.find((item) => item.productTypeCode === "ACCESS_CONTROL")
+    setProbeChannel(channel)
+    setProbeProductId(accessControl?.id ?? products[0]?.id ?? "")
+    setProbeResult(null)
+  }
+
+  async function submitProbe() {
+    if (!probeChannel) {
+      return
+    }
+    if (!probeProductId) {
+      toast.error("请选择用于新建设备的产品")
+      return
+    }
+    setPending(true)
+    try {
+      const result = await catalogApi.probeChannel(probeChannel.id, probeProductId)
+      setProbeResult(result)
+      toast.success(
+        `扫描完成：发现 ${result.discovered}，新建 ${result.created}，序列号更新 ${result.serialUpdated}`
+      )
+      onChanged()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "扫描通道失败")
+    } finally {
+      setPending(false)
+    }
+  }
+
+  function capabilityOf(channel: ChannelEntity) {
+    return capabilities.find((item) => item.capabilityType === channel.capabilityType)
+  }
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -199,7 +237,7 @@ export function ChannelsPanel({ channels, capabilities, onChanged }: Props) {
                 <TableHead>能力</TableHead>
                 <TableHead>连接</TableHead>
                 <TableHead>状态</TableHead>
-                <TableHead className="w-32">操作</TableHead>
+                <TableHead className="w-48">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -213,7 +251,17 @@ export function ChannelsPanel({ channels, capabilities, onChanged }: Props) {
                     {JSON.stringify(propertiesToRecord(channel.properties))}
                   </TableCell>
                   <TableCell>{channel.enabled === false ? "禁用" : "启用"}</TableCell>
-                  <TableCell className="flex gap-1">
+                  <TableCell className="flex flex-wrap gap-1">
+                    {capabilityOf(channel)?.probeSupported ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={pending || channel.enabled === false}
+                        onClick={() => openProbe(channel)}
+                      >
+                        扫描
+                      </Button>
+                    ) : null}
                     <Button
                       variant="ghost"
                       size="sm"
@@ -311,6 +359,50 @@ export function ChannelsPanel({ channels, capabilities, onChanged }: Props) {
             </Button>
             <Button onClick={() => void submit()} disabled={pending}>
               {mode === "create" ? "创建" : "保存"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={probeChannel !== null} onOpenChange={(next) => !next && setProbeChannel(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>扫描通道设备</DialogTitle>
+            <DialogDescription>
+              从 {probeChannel?.code} 拉取门禁子设备。已存在的设备只更新序列号与在线状态，名称不变；新建的设备不会自动加载。
+            </DialogDescription>
+          </DialogHeader>
+          <FieldGroup>
+            <Field>
+              <FieldLabel>新产品归属</FieldLabel>
+              <Select value={probeProductId} onValueChange={setProbeProductId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="选择门禁产品" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {products.map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {item.name || item.code}
+                        {item.productTypeName ? ` · ${item.productTypeName}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+            {probeResult ? (
+              <p className="text-sm text-muted-foreground">
+                发现 {probeResult.discovered} 台，新建 {probeResult.created}，序列号更新 {probeResult.serialUpdated}，未变 {probeResult.unchanged}。
+              </p>
+            ) : null}
+          </FieldGroup>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setProbeChannel(null)} disabled={pending}>
+              关闭
+            </Button>
+            <Button onClick={() => void submitProbe()} disabled={pending || !probeProductId}>
+              开始扫描
             </Button>
           </DialogFooter>
         </DialogContent>

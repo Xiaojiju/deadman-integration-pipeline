@@ -120,6 +120,32 @@ class CatalogApplyServiceLoadTest {
         apply.reloadAll();
 
         verify(registry).register("good", "MQTT");
+        verify(registry, never()).register(eq("bad"), any());
+    }
+
+    @Test
+    void loadBatchLoadsSelectedAndSkipsAlreadyLoaded() {
+        CatalogApplyService apply = apply();
+        when(registry.findExecutor("MQTT")).thenReturn(Optional.of(mqttExecutor));
+        when(registry.isRegistered("ready")).thenReturn(true);
+        when(registry.isRegistered("wait")).thenReturn(false);
+        DeviceEntity ready = new DeviceEntity();
+        ready.setDeviceCode("ready");
+        ready.setEnabled(true);
+        DeviceEntity wait = new DeviceEntity();
+        wait.setDeviceCode("wait");
+        wait.setEnabled(true);
+        when(store.resolveDevice("ready")).thenReturn(Optional.of(ready));
+        when(store.resolveDevice("wait")).thenReturn(Optional.of(wait));
+        when(bindings.findEndpoints("wait")).thenReturn(List.of(
+                new DeviceEndpointBinding("wait", "mqtt-live", "MQTT", Attributes.empty(), Attributes.empty(), true)));
+
+        var result = apply.loadBatch(List.of("ready", "wait"));
+
+        org.junit.jupiter.api.Assertions.assertEquals(1, result.loaded());
+        org.junit.jupiter.api.Assertions.assertEquals(1, result.skipped());
+        verify(registry).register("wait", "MQTT");
+        verify(registry, never()).register(eq("ready"), any());
     }
 
     @Test

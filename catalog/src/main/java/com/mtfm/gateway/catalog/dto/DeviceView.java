@@ -10,6 +10,7 @@ import java.util.Map;
  * 设备对外视图：覆盖按 functionId → PropertyItem[]。
  *
  * @param loaded 是否已绑定到运行时（POST /devices/{code}/load）
+ * @param online 探针/在线监听状态，空=未知
  */
 public record DeviceView(
         String id,
@@ -18,6 +19,8 @@ public record DeviceView(
         String name,
         Map<String, List<PropertyItem>> functionOverrides,
         Boolean enabled,
+        Boolean online,
+        Instant onlineUpdatedAt,
         Instant createdAt,
         Instant updatedAt,
         boolean loaded
@@ -25,6 +28,7 @@ public record DeviceView(
 
     public DeviceView withLoaded(boolean loaded) {
         return new DeviceView(
-                id, deviceCode, productId, name, functionOverrides, enabled, createdAt, updatedAt, loaded);
+                id, deviceCode, productId, name, functionOverrides, enabled,
+                online, onlineUpdatedAt, createdAt, updatedAt, loaded);
     }
 }

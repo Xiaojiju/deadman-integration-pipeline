@@ -4,6 +4,7 @@ import com.mtfm.gateway.catalog.dto.ProductFunctionWriteRequest;
 import com.mtfm.gateway.catalog.dto.ProductWriteRequest;
 import com.mtfm.gateway.catalog.entity.ProductEntity;
 import com.mtfm.gateway.catalog.entity.ProductFunctionEntity;
+import com.mtfm.gateway.catalog.entity.ProductTypeEntity;
 import com.mtfm.gateway.catalog.payload.PayloadDefinitionResolver;
 import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.spi.model.AccessPermission;
@@ -41,8 +42,10 @@ final class CatalogProductCommands {
         if (store.findProductByCode(request.code()).isPresent()) {
             throw new IllegalArgumentException("产品编码已存在: " + request.code());
         }
+        ProductTypeEntity type = requireProductType(request.productTypeId());
         ProductEntity entity = new ProductEntity();
         entity.setCode(request.code());
+        entity.setProductTypeId(type.getId());
         entity.setName(request.name());
         entity.setDescription(request.description());
         ProductEntity saved = store.saveProduct(entity);
@@ -422,6 +425,14 @@ final class CatalogProductCommands {
         if (scaleOperand != null) {
             entity.setScaleOperand(scaleOperand.trim());
         }
+    }
+
+    private ProductTypeEntity requireProductType(String idOrCode) {
+        if (idOrCode == null || idOrCode.isBlank()) {
+            throw new IllegalArgumentException("产品类型不能为空");
+        }
+        return store.findProductType(idOrCode)
+                .orElseThrow(() -> new IllegalArgumentException("产品类型不存在: " + idOrCode));
     }
 
     private static String persistScaleOp(String raw) {

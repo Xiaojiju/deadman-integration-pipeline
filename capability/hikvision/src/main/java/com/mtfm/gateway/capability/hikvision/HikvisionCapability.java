@@ -96,7 +96,8 @@ public final class HikvisionCapability {
                     FunctionTemplate.of(FN_DELETE_CARD, "删除卡片", "WRITE", List.of(
                             SchemaField.required("cardNoList", FieldType.STRING, "卡号列表",
                                     FieldFormat.TEXT_LIST)))),
-            FunctionCatalogMode.FIXED);
+            FunctionCatalogMode.FIXED,
+            true);
 
     private HikvisionCapability() {
     }

@@ -33,6 +33,12 @@ public class DeviceEntity {
     /** 是否启用；禁用后不参与全量 reload。默认 {@code true}。 */
     private Boolean enabled;
 
+    /** 最近一次探针/在线监听得到的在线状态；空表示未知。 */
+    private Boolean online;
+
+    /** 在线状态最近更新时间。 */
+    private Instant onlineUpdatedAt;
+
     /** 创建时间。 */
     private Instant createdAt;
 
@@ -77,6 +83,22 @@ public class DeviceEntity {
 
     public void setEnabled(Boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public Boolean getOnline() {
+        return online;
+    }
+
+    public void setOnline(Boolean online) {
+        this.online = online;
+    }
+
+    public Instant getOnlineUpdatedAt() {
+        return onlineUpdatedAt;
+    }
+
+    public void setOnlineUpdatedAt(Instant onlineUpdatedAt) {
+        this.onlineUpdatedAt = onlineUpdatedAt;
     }
 
     public Instant getCreatedAt() {

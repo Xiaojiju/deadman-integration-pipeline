@@ -32,14 +32,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@/components/ui/empty"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import {
   Table,
@@ -58,6 +60,7 @@ import type {
   DeviceEntity,
   DeviceEndpointView,
   ProductEntity,
+  ProductTypeView,
   PropertyItem,
   SchemaField,
 } from "@/lib/types"
@@ -81,10 +84,16 @@ type Props = {
 
 export function DevicesPanel({ products, channels, capabilities, productMap }: Props) {
   const [devices, setDevices] = useState<DeviceEntity[]>([])
+  const [productTypes, setProductTypes] = useState<ProductTypeView[]>([])
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [filterCode, setFilterCode] = useState("")
+  const [filterName, setFilterName] = useState("")
+  const [filterOnline, setFilterOnline] = useState("all")
+  const [filterTypeId, setFilterTypeId] = useState("all")
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [registerOpen, setRegisterOpen] = useState(false)
   const [commandDevice, setCommandDevice] = useState<string | null>(null)
   const [overrideDevice, setOverrideDevice] = useState<DeviceEntity | null>(null)
@@ -102,21 +111,34 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
   const load = useCallback(async (targetPage = page) => {
     setLoading(true)
     try {
-      const result = await catalogApi.listDevices(targetPage, PAGE_SIZE)
+      const [result, types] = await Promise.all([
+        catalogApi.listDevices(targetPage, PAGE_SIZE, {
+          name: filterName.trim() || undefined,
+          deviceCode: filterCode.trim() || undefined,
+          online: filterOnline === "all" ? undefined : filterOnline,
+          productTypeId: filterTypeId === "all" ? undefined : filterTypeId,
+        }),
+        catalogApi.listProductTypes(),
+      ])
       setDevices(result.items)
       setPage(result.page)
       setTotal(result.total)
       setTotalPages(result.totalPages)
+      setProductTypes(types)
+      setSelected((prev) => {
+        const codes = new Set(result.items.map((item) => item.deviceCode))
+        return new Set([...prev].filter((code) => codes.has(code)))
+      })
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "加载设备失败")
     } finally {
       setLoading(false)
     }
-  }, [page])
+  }, [page, filterName, filterCode, filterOnline, filterTypeId])
 
   useEffect(() => {
     void load(page)
-  }, [page]) // eslint-disable-line react-hooks/exhaustive-deps -- 翻页时加载
+  }, [page, filterName, filterCode, filterOnline, filterTypeId]) // eslint-disable-line react-hooks/exhaustive-deps -- 翻页与筛选时加载
 
   function openEdit(device: DeviceEntity) {
     setEditDevice(device)
@@ -209,6 +231,70 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
     }
   }
 
+  function toggleSelected(deviceCode: string, checked: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (checked) {
+        next.add(deviceCode)
+      } else {
+        next.delete(deviceCode)
+      }
+      return next
+    })
+  }
+
+  function togglePage(checked: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      for (const device of devices) {
+        if (checked) {
+          next.add(device.deviceCode)
+        } else {
+          next.delete(device.deviceCode)
+        }
+      }
+      return next
+    })
+  }
+
+  async function loadSelected() {
+    const codes = [...selected]
+    if (codes.length === 0) {
+      toast.error("请先勾选要加载的设备")
+      return
+    }
+    await runBatchLoad(codes)
+  }
+
+  async function loadAllEnabled() {
+    if (!window.confirm("将加载全部已启用且尚未 Load 的设备，确认继续？")) {
+      return
+    }
+    await runBatchLoad([])
+  }
+
+  async function runBatchLoad(deviceCodes: string[]) {
+    setBusyCode("*")
+    try {
+      const result = await catalogApi.loadDeviceBatch(deviceCodes)
+      const failed = result.items.filter((item) => item.status === "failed")
+      if (result.failed > 0) {
+        toast.error(
+          `Load 完成：成功 ${result.loaded}，跳过 ${result.skipped}，失败 ${result.failed}` +
+            (failed[0]?.error ? `。例如 ${failed[0].deviceCode}: ${failed[0].error}` : "")
+        )
+      } else {
+        toast.success(`Load 完成：成功 ${result.loaded}，跳过 ${result.skipped}`)
+      }
+      setSelected(new Set())
+      await load(page)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "批量 Load 失败")
+    } finally {
+      setBusyCode(null)
+    }
+  }
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -217,6 +303,24 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
           <CardDescription>动态登记、编辑、加载/卸载、手动下发与删除。</CardDescription>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void loadAllEnabled()}
+            disabled={loading || busyCode !== null}
+          >
+            <PowerIcon data-icon="inline-start" />
+            全部 Load
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void loadSelected()}
+            disabled={loading || busyCode !== null || selected.size === 0}
+          >
+            <PowerIcon data-icon="inline-start" />
+            Load 所选 ({selected.size})
+          </Button>
           <Button variant="outline" size="sm" onClick={() => void load(page)} disabled={loading}>
             <RefreshCwIcon data-icon="inline-start" />
             刷新
@@ -233,38 +337,141 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
             <Loader2Icon className="size-4 animate-spin" />
             加载中…
           </div>
-        ) : devices.length === 0 ? (
-          <Empty className="border border-dashed">
-            <EmptyHeader>
-              <EmptyTitle>暂无设备</EmptyTitle>
-              <EmptyDescription>先创建产品与通道，再登记设备。</EmptyDescription>
-            </EmptyHeader>
-          </Empty>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10">
+                  <input
+                    type="checkbox"
+                    aria-label="全选本页"
+                    checked={devices.length > 0 && devices.every((item) => selected.has(item.deviceCode))}
+                    onChange={(event) => togglePage(event.target.checked)}
+                  />
+                </TableHead>
                 <TableHead>设备编码</TableHead>
                 <TableHead>名称</TableHead>
                 <TableHead>产品</TableHead>
+                <TableHead>类型</TableHead>
                 <TableHead>状态</TableHead>
+                <TableHead>在线</TableHead>
                 <TableHead>运行时</TableHead>
                 <TableHead className="text-right">操作</TableHead>
               </TableRow>
+              <TableRow>
+                <TableHead />
+                <TableHead>
+                  <Input
+                    value={filterCode}
+                    placeholder="筛选编码"
+                    onChange={(event) => {
+                      setPage(1)
+                      setFilterCode(event.target.value)
+                    }}
+                  />
+                </TableHead>
+                <TableHead>
+                  <Input
+                    value={filterName}
+                    placeholder="筛选名称"
+                    onChange={(event) => {
+                      setPage(1)
+                      setFilterName(event.target.value)
+                    }}
+                  />
+                </TableHead>
+                <TableHead />
+                <TableHead>
+                  <Select
+                    value={filterTypeId}
+                    onValueChange={(value) => {
+                      setPage(1)
+                      setFilterTypeId(value)
+                    }}
+                  >
+                    <SelectTrigger className="h-8">
+                      <SelectValue placeholder="全部类型" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="all">全部类型</SelectItem>
+                        {productTypes.map((item) => (
+                          <SelectItem key={item.id} value={item.id}>
+                            {item.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </TableHead>
+                <TableHead />
+                <TableHead>
+                  <Select
+                    value={filterOnline}
+                    onValueChange={(value) => {
+                      setPage(1)
+                      setFilterOnline(value)
+                    }}
+                  >
+                    <SelectTrigger className="h-8">
+                      <SelectValue placeholder="在线" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="all">全部</SelectItem>
+                        <SelectItem value="true">在线</SelectItem>
+                        <SelectItem value="false">离线</SelectItem>
+                        <SelectItem value="unknown">未知</SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </TableHead>
+                <TableHead />
+                <TableHead />
+              </TableRow>
             </TableHeader>
             <TableBody>
-              {devices.map((device) => {
+              {devices.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-muted-foreground">
+                    暂无设备。可先登记，或放宽筛选条件。
+                  </TableCell>
+                </TableRow>
+              ) : (
+                devices.map((device) => {
                 const product = productMap.get(device.productId)
-                const busy = busyCode === device.deviceCode
+                const busy = busyCode === device.deviceCode || busyCode === "*"
                 const loaded = Boolean(device.loaded)
                 return (
                   <TableRow key={device.id}>
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        aria-label={`选择 ${device.deviceCode}`}
+                        checked={selected.has(device.deviceCode)}
+                        onChange={(event) => toggleSelected(device.deviceCode, event.target.checked)}
+                      />
+                    </TableCell>
                     <TableCell className="font-mono text-sm">{device.deviceCode}</TableCell>
                     <TableCell>{device.name || "—"}</TableCell>
                     <TableCell>{product?.name || product?.code || device.productId}</TableCell>
+                    <TableCell>{product?.productTypeName || product?.productTypeCode || "—"}</TableCell>
                     <TableCell>
                       <Badge variant={device.enabled === false ? "secondary" : "outline"}>
                         {device.enabled === false ? "禁用" : "启用"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          device.online === true
+                            ? "default"
+                            : device.online === false
+                              ? "destructive"
+                              : "secondary"
+                        }
+                      >
+                        {device.online === true ? "在线" : device.online === false ? "离线" : "未知"}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -330,7 +537,8 @@ export function DevicesPanel({ products, channels, capabilities, productMap }: P
                     </TableCell>
                   </TableRow>
                 )
-              })}
+              })
+              )}
             </TableBody>
           </Table>
         )}

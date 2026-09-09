@@ -7,6 +7,7 @@ import com.mtfm.gateway.catalog.dto.DeviceEndpointView;
 import com.mtfm.gateway.catalog.dto.DeviceEndpointWriteRequest;
 import com.mtfm.gateway.catalog.dto.DeviceFunctionScheduleView;
 import com.mtfm.gateway.catalog.dto.DeviceFunctionScheduleWriteRequest;
+import com.mtfm.gateway.catalog.dto.DeviceListQuery;
 import com.mtfm.gateway.catalog.dto.DeviceRegisterRequest;
 import com.mtfm.gateway.catalog.dto.DeviceUpdateRequest;
 import com.mtfm.gateway.catalog.dto.DeviceView;
@@ -15,6 +16,9 @@ import com.mtfm.gateway.catalog.dto.FunctionFormView;
 import com.mtfm.gateway.catalog.dto.PageResult;
 import com.mtfm.gateway.catalog.dto.ProductFunctionView;
 import com.mtfm.gateway.catalog.dto.ProductFunctionWriteRequest;
+import com.mtfm.gateway.catalog.dto.ProductListQuery;
+import com.mtfm.gateway.catalog.dto.ProductTypeView;
+import com.mtfm.gateway.catalog.dto.ProductTypeWriteRequest;
 import com.mtfm.gateway.catalog.dto.ProductView;
 import com.mtfm.gateway.catalog.dto.ProductWriteRequest;
 import com.mtfm.gateway.catalog.dto.SupportedFunctionView;
@@ -24,6 +28,7 @@ import com.mtfm.gateway.catalog.entity.DeviceEndpointEntity;
 import com.mtfm.gateway.catalog.entity.DeviceEntity;
 import com.mtfm.gateway.catalog.entity.ProductEntity;
 import com.mtfm.gateway.catalog.entity.ProductFunctionEntity;
+import com.mtfm.gateway.catalog.entity.ProductTypeEntity;
 import com.mtfm.gateway.catalog.store.CatalogStore;
 import com.mtfm.gateway.catalog.store.FunctionOptionBundle;
 import com.mtfm.gateway.spi.capability.CapabilityRegistrar;
@@ -62,6 +67,7 @@ public class CatalogFormService {
     private final CatalogFormViews views;
     private final CatalogChannelCommands channels;
     private final CatalogProductCommands products;
+    private final CatalogProductTypeCommands productTypes;
     private final CatalogDeviceCommands devices;
     private final CatalogCommandFactory commands;
 
@@ -74,6 +80,7 @@ public class CatalogFormService {
             ObjectProvider<CatalogFormViews> viewsProvider,
             ObjectProvider<CatalogChannelCommands> channelsProvider,
             ObjectProvider<CatalogProductCommands> productsProvider,
+            ObjectProvider<CatalogProductTypeCommands> productTypesProvider,
             ObjectProvider<CatalogDeviceCommands> devicesProvider,
             ObjectProvider<CatalogCommandFactory> commandsProvider) {
         this.store = store;
@@ -82,6 +89,7 @@ public class CatalogFormService {
         this.views = first(viewsProvider, () -> new CatalogFormViews(store, registrar, driverRegistry));
         this.channels = first(channelsProvider, () -> new CatalogChannelCommands(store, this.support));
         this.products = first(productsProvider, () -> new CatalogProductCommands(store, this.support));
+        this.productTypes = first(productTypesProvider, () -> new CatalogProductTypeCommands(store));
         this.devices = first(devicesProvider, () -> new CatalogDeviceCommands(store, this.support, null));
         this.commands = first(commandsProvider, () -> new CatalogCommandFactory(store, this.support));
     }
@@ -94,6 +102,7 @@ public class CatalogFormService {
         this.views = new CatalogFormViews(store, registrar, null);
         this.channels = new CatalogChannelCommands(store, this.support);
         this.products = new CatalogProductCommands(store, this.support);
+        this.productTypes = new CatalogProductTypeCommands(store);
         this.devices = new CatalogDeviceCommands(store, this.support, null);
         this.commands = new CatalogCommandFactory(store, this.support);
     }
@@ -166,6 +175,34 @@ public class CatalogFormService {
         return products.updateProduct(productId, request);
     }
 
+    public List<ProductTypeView> listProductTypeViews() {
+        return store.listProductTypes().stream().map(views::toProductTypeView).toList();
+    }
+
+    public ProductTypeView requireProductTypeView(String idOrCode) {
+        return views.toProductTypeView(store.findProductType(idOrCode)
+                .orElseThrow(() -> new IllegalArgumentException("产品类型不存在: " + idOrCode)));
+    }
+
+    public ProductTypeView toProductTypeView(ProductTypeEntity entity) {
+        return views.toProductTypeView(entity);
+    }
+
+    @Transactional
+    public ProductTypeEntity createProductType(ProductTypeWriteRequest request) {
+        return productTypes.create(request);
+    }
+
+    @Transactional
+    public ProductTypeEntity updateProductType(String idOrCode, ProductTypeWriteRequest request) {
+        return productTypes.update(idOrCode, request);
+    }
+
+    @Transactional
+    public boolean deleteProductType(String idOrCode) {
+        return productTypes.delete(idOrCode);
+    }
+
     @Transactional
     public List<ProductFunctionEntity> importCapabilityFunctions(String productId, String capabilityType) {
         return products.importCapabilityFunctions(productId, capabilityType);
@@ -213,6 +250,10 @@ public class CatalogFormService {
 
     public PageResult<DeviceEntity> pageDevices(int page, int size) {
         return store.pageDevices(page, size);
+    }
+
+    public PageResult<DeviceEntity> pageDevices(int page, int size, DeviceListQuery query) {
+        return store.pageDevices(page, size, query);
     }
 
     public DeviceEntity requireDevice(String deviceCodeOrId) {
@@ -275,7 +316,11 @@ public class CatalogFormService {
     }
 
     public PageResult<ProductView> pageProductViews(int page, int size) {
-        PageResult<ProductEntity> raw = store.pageProducts(page, size);
+        return pageProductViews(page, size, null);
+    }
+
+    public PageResult<ProductView> pageProductViews(int page, int size, ProductListQuery query) {
+        PageResult<ProductEntity> raw = store.pageProducts(page, size, query);
         return new PageResult<>(
                 raw.items().stream().map(views::toProductView).toList(),
                 raw.total(),
@@ -368,7 +413,11 @@ public class CatalogFormService {
     }
 
     public PageResult<DeviceView> pageDeviceViews(int page, int size) {
-        PageResult<DeviceEntity> raw = store.pageDevices(page, size);
+        return pageDeviceViews(page, size, null);
+    }
+
+    public PageResult<DeviceView> pageDeviceViews(int page, int size, DeviceListQuery query) {
+        PageResult<DeviceEntity> raw = store.pageDevices(page, size, query);
         Map<String, Map<String, List<PropertyItem>>> overrides = store.loadAllDeviceOverrides(raw.items());
         return new PageResult<>(
                 raw.items().stream()

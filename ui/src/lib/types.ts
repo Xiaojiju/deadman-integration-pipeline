@@ -100,6 +100,16 @@ export type CapabilityDescriptor = {
   addressSchema: SchemaField[]
   functionTemplates: FunctionTemplate[]
   functionMode?: FunctionCatalogMode
+  probeSupported?: boolean
+}
+
+export type ProductTypeView = {
+  id: string
+  code: string
+  name: string
+  description?: string
+  createdAt?: string
+  updatedAt?: string
 }
 
 export type SupportedSchemaView = {
@@ -125,6 +135,9 @@ export type ProductView = {
   code: string
   name: string
   description?: string
+  productTypeId?: string
+  productTypeCode?: string
+  productTypeName?: string
   createdAt?: string
   updatedAt?: string
 }
@@ -190,8 +203,44 @@ export type DeviceEntity = {
   name?: string
   functionOverrides?: Record<string, PropertyItem[]>
   enabled?: boolean
+  /** 探针/在线监听状态；空=未知 */
+  online?: boolean | null
+  onlineUpdatedAt?: string | null
   /** 是否已 load 到网关运行时 */
   loaded?: boolean
+}
+
+export type ChannelProbeItemView = {
+  deviceCode: string
+  name?: string
+  serial?: string
+  online: boolean
+  action: "created" | "serialUpdated" | "unchanged" | string
+}
+
+export type ChannelProbeView = {
+  channelId: string
+  channelCode: string
+  productId: string
+  discovered: number
+  created: number
+  serialUpdated: number
+  unchanged: number
+  items: ChannelProbeItemView[]
+}
+
+export type DeviceLoadItemView = {
+  deviceCode: string
+  status: "loaded" | "skipped" | "failed" | string
+  error?: string | null
+}
+
+export type DeviceLoadBatchView = {
+  requested: number
+  loaded: number
+  skipped: number
+  failed: number
+  items: DeviceLoadItemView[]
 }
 
 export type DeviceEndpointView = {

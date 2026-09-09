@@ -5,6 +5,7 @@ import com.mtfm.gateway.capability.cloud.CloudPublisher;
 import com.mtfm.gateway.capability.cloud.NorthboundBinding;
 import com.mtfm.gateway.capability.cloud.NorthboundCommandPort;
 import com.mtfm.gateway.capability.hikvision.HikvisionCapability;
+import com.mtfm.gateway.capability.hikvision.HikvisionChannelProbe;
 import com.mtfm.gateway.capability.hikvision.HikvisionDriver;
 import com.mtfm.gateway.capability.hikvision.HikvisionExecutor;
 import com.mtfm.gateway.capability.loopback.cloud.LoopbackCloudPublisher;
@@ -107,6 +108,11 @@ public class GatewayAssembly {
     @Bean(destroyMethod = "close")
     public HikvisionExecutor hikvisionExecutor() {
         return new HikvisionExecutor();
+    }
+
+    @Bean
+    public HikvisionChannelProbe hikvisionChannelProbe() {
+        return new HikvisionChannelProbe();
     }
 
     @Bean(destroyMethod = "close")

@@ -7,11 +7,13 @@ import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * catalog 装配。JDBC / MyBatis 只出现在本模块。
  */
 @Configuration
+@EnableScheduling
 @MapperScan("com.mtfm.gateway.catalog.mapper")
 public class CatalogConfiguration {
 

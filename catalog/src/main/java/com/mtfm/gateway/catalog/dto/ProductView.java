@@ -10,6 +10,9 @@ public record ProductView(
         String code,
         String name,
         String description,
+        String productTypeId,
+        String productTypeCode,
+        String productTypeName,
         Instant createdAt,
         Instant updatedAt
 ) {

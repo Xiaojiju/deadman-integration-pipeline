@@ -64,6 +64,10 @@ public final class HikvisionJson {
         }
     }
 
+    public static JsonNode tree(String json) {
+        return readTree(json);
+    }
+
     private static JsonNode readTree(String json) {
         try {
             return MAPPER.readTree(json);
