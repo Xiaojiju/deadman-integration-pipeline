@@ -16,10 +16,13 @@ cd ui && npm install && npm run dev
 
 ## 功能
 
-- 产品：新建、挂载能力预置功能
-- 通道：按 connection schema 新建
-- 设备：登记（含端点）、Load/Unload、手动下发指令、删除
+- 产品类型：CRUD（与南向 capabilityType 分离；创建产品必选）
+- 产品：筛选、新建（必选类型，可选 seed 能力）、挂载功能
+- 通道：按 connection schema 新建；`probeSupported` 时扫描子设备
+- 设备：筛选、登记、编辑、在线/已加载分开展示、单台与批量 Load、Unload、指令、删除
 - 能力：查看已登记能力与 functionTemplates
+
+契约细节见 [UI 接入指南](../docs/ui-integration-guide.md)。
 
 ## 打包到网关静态资源
 

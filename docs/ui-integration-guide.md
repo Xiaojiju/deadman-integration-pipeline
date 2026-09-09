@@ -13,6 +13,9 @@
 | 功能目录模式文案 | `ui/src/lib/catalog-mode.ts` |
 | 场景定时友好表单 | `ui/src/lib/scene-schedule.ts` |
 | 页面信息架构 | `ui/src/App.tsx` |
+| 产品类型 | `ui/src/components/product-types-panel.tsx` |
+| 通道扫描 | `ui/src/components/channels-panel.tsx` |
+| 设备筛选 / 批量 Load / 在线 | `ui/src/components/devices-panel.tsx` |
 
 ---
 
@@ -28,7 +31,7 @@ Vite 开发代理还转发了 `/commands`，那是北向入站通道，**不是*
 
 1. 实现通用 HTTP 客户端（编码、错误、空响应）。
 2. 实现 Schema 渲染器 + `PropertyItem` 编解码（几乎所有写接口都依赖它）。
-3. 按「能力 → 通道 → 产品 → 设备 → 指令 → 集群/场景 → 北向」补页面。
+3. 按「能力 → 产品类型 → 通道 → 产品 → 设备 → 指令 → 集群/场景 → 北向」补页面。
 4. 用参考控制台对照同一条数据的读写结果。
 
 ---
@@ -104,7 +107,21 @@ async function request(path, init) {
 - 多页显示「第 page/totalPages 页 · 共 total 条」
 - 删除当前页最后一条且 `page > 1` 时，回到 `page - 1` 再拉列表
 
-集群 / 场景 / 能力列表**不分页**，一次返回数组。
+产品类型 / 集群 / 场景 / 能力列表**不分页**，一次返回数组。
+
+产品、设备列表支持可选筛选查询参数（均可省略；空串视为未筛选）：
+
+| 列表 | 参数 | 规则 |
+| --- | --- | --- |
+| 产品 | `name` | 模糊匹配显示名 |
+| 产品 | `code` | 模糊匹配产品编码 |
+| 产品 | `productTypeId` | 产品类型 **id 或 code** |
+| 设备 | `name` | 模糊匹配显示名 |
+| 设备 | `deviceCode` | 模糊匹配设备编码 |
+| 设备 | `online` | `true` / `online`、`false` / `offline`、`unknown` / `null` |
+| 设备 | `productTypeId` | 按产品所属类型过滤（id 或 code） |
+
+参考控制台把筛选项放在表头第二行；改筛选时把 `page` 重置为 1。
 
 ---
 
@@ -114,19 +131,26 @@ async function request(path, init) {
 Capability（南向能力，进程内登记）
   ├─ connectionSchema   → 通道连接参数
   ├─ addressSchema      → 设备端点寻址（序列号 / slaveId / topic…）
-  └─ functionTemplates  → 预置功能
+  ├─ functionTemplates  → 预置功能
+  └─ probeSupported     → 该能力是否提供通道扫描
+
+ProductType（产品类型，配置库；与 capabilityType 分离）
+  └─ 种子 code：ACCESS_CONTROL（门禁）
 
 Product（产品，配置库）
+  ├─ 必选 productTypeId
   └─ ProductFunction    → 同质设备共享的功能定义
 
 Channel（共享通道）
-  └─ connection properties（EAV）
+  ├─ connection properties（EAV）
+  └─ POST .../probe     → 扫描子设备（能力声明 probeSupported 时）
 
 Device（设备实例，路由键 = deviceCode）
   ├─ 引用 productId
   ├─ Endpoint[]：绑到一条 Channel + address properties
   ├─ functionOverrides / field-overrides / topic-overrides
-  └─ loaded：是否已进入运行时
+  ├─ loaded：是否已进入运行时（与在线无关）
+  └─ online / onlineUpdatedAt：探针或 NATIVE 轮询得到的在线；空=未知
 ```
 
 硬约束（UI 必须遵守，否则运行时会拒）：
@@ -140,6 +164,7 @@ Device（设备实例，路由键 = deviceCode）
 
 | 对象 | 路径参数 | 说明 |
 | --- | --- | --- |
+| 产品类型 | `{typeId}` | id 或 code；种子 `ACCESS_CONTROL` 的 id 与 code 相同 |
 | 产品 | `{productId}` | 雪花主键；展示用 `code` / `name` |
 | 通道 | `{channelId}` | **id 或 code** 都能解析 |
 | 设备 | `{deviceCode}` | 优先业务编码；部分接口也能 resolve 主键 |
@@ -273,25 +298,27 @@ function recordToProperties(values, schema) {
 
 | 模块 | 职责 |
 | --- | --- |
-| 设备 | 登记、编辑（名称/编码/地址）、启用、Load/Unload、指令、删除 |
-| 产品 | 创建（可选 seed 能力）、维护功能、FIXED/CONTRACT/OPEN 不同编辑器 |
-| 通道 | 按能力建共享连接 |
+| 设备 | 筛选、勾选、登记、编辑（名称/编码/地址）、启用、单台/批量 Load、Unload、指令、删除；展示在线与已加载 |
+| 产品 | 筛选、创建（必选类型，可选 seed 能力）、维护功能 |
+| 产品类型 | CRUD；与南向 `capabilityType` 分开 |
+| 通道 | 按能力建共享连接；`probeSupported` 时提供「扫描」 |
 | 集群 | 手动/编排执行的成员列表，无触发器 |
 | 场景 | 成员 + LISTEN / TIMER |
 | 北向 | MQTT / HTTP 出站 |
 | 能力 | 只读：已登记协议与模板（调试用） |
 
-启动时并行拉取三份字典，供下拉使用：
+启动时并行拉取字典，供下拉使用：
 
 ```http
 GET /catalog/capabilities
+GET /catalog/product-types
 GET /catalog/products?page=1&size=100
 GET /catalog/channels?page=1&size=100
 ```
 
-设备表用 `productId → Product` 映射显示产品名。通道下拉显示 `code · capabilityType`。
+设备表用 `productId → Product` 映射显示产品名与 `productTypeName`。通道下拉显示 `code · capabilityType`。能力是否可扫描看 `probeSupported`，不要写死海康。
 
-空态文案约定：先建产品与通道，再登记设备。
+空态文案约定：先建产品类型与产品、通道，再登记或扫描设备。
 
 ---
 
@@ -317,7 +344,9 @@ GET /catalog/capabilities/{capabilityType}/supported/functions/{functionId}
 
 缺省或未知按 `OPEN`。文案与参考控制台 `catalogModeLabel` 对齐即可。
 
-常见 `capabilityType` 由运行时登记决定（如 `MODBUS`、`MQTT`、海康 ISAPI）。UI **不要写死**类型列表，一律拉 `/catalog/capabilities`。
+常见 `capabilityType` 由运行时登记决定（如 `MODBUS`、`MQTT`、`HIKVISION_ENTRANCE`）。UI **不要写死**类型列表，一律拉 `/catalog/capabilities`。
+
+`CapabilityDescriptor.probeSupported === true` 时，通道列表为该能力的通道提供「扫描」入口（见第 7.1 节）。缺省或未下发该字段视为 `false`。
 
 ---
 
@@ -352,12 +381,76 @@ DELETE /catalog/channels/{channelId}
 
 成功删除：`{"channelId":"...","deleted":true}`。
 
----
+### 7.1 通道扫描（probe）
 
-## 8. 产品与功能
+扫描是**通道运维动作**，不是设备指令（不要走 `POST /devices/{code}/commands`）。
 
 ```http
-GET    /catalog/products?page=&size=
+POST /catalog/channels/{channelId}/probe
+```
+
+```json
+{ "productId": "产品主键或 code" }
+```
+
+前置条件（任一不满足返回 400，展示 `error` 原文）：
+
+- 通道存在且启用
+- 通道能力 `probeSupported === true`，且进程内已装配对应探针（当前海康门禁 `HIKVISION_ENTRANCE` 为 true）
+- `productId` 必填；产品类型必须是 **`ACCESS_CONTROL`**
+- 若产品已挂功能，至少一条功能的 `capabilityType` 与通道能力相同
+
+身份与 upsert（海康）：**EhomeID → `deviceCode`**，**devIndex → 端点 `deviceSerialNo`**。
+
+| 情况 | `items[].action` | 行为 |
+| --- | --- | --- |
+| 新设备 | `created` | 用扫描到的名称创建设备 + 端点；**不自动 Load** |
+| 已存在且序列号变了 | `serialUpdated` | 只改端点序列号；**不改名称**；若已 Load 则 unload 再 load |
+| 已存在且序列号未变 | `unchanged` | 只刷新在线 |
+
+响应：
+
+```json
+{
+  "channelId": "...",
+  "channelCode": "hik-1",
+  "productId": "...",
+  "discovered": 3,
+  "created": 1,
+  "serialUpdated": 1,
+  "unchanged": 1,
+  "items": [
+    { "deviceCode": "12345", "name": "一号门", "serial": "1", "online": true, "action": "created" }
+  ]
+}
+```
+
+参考 UI：仅当能力 `probeSupported` 时显示「扫描」；对话框选门禁产品，结果用 toast 汇总「发现 / 新建 / 序列号更新 / 未变」。扫描后应刷新设备列表。
+
+NATIVE 在线轮询由网关后台完成（已 Load 设备所在、且 `probeSupported` 的通道），UI **只读** `DeviceView.online`，不要另造心跳协议。
+
+---
+
+## 8. 产品类型 / 产品与功能
+
+产品类型与南向 `capabilityType` 是两套概念：类型描述业务分类（门禁等），能力描述协议。参考控制台单独一页做类型 CRUD。
+
+```http
+GET    /catalog/product-types
+GET    /catalog/product-types/{typeId}
+POST   /catalog/product-types
+PUT    /catalog/product-types/{typeId}
+DELETE /catalog/product-types/{typeId}
+```
+
+```json
+{ "code": "ACCESS_CONTROL", "name": "门禁", "description": "" }
+```
+
+`code` 创建后不可改。库种子已有 `ACCESS_CONTROL`。仍被产品引用时不能删：`产品类型仍被产品引用，无法删除`。列表不分页。
+
+```http
+GET    /catalog/products?page=&size=&name=&code=&productTypeId=
 GET    /catalog/products/{productId}
 POST   /catalog/products
 PUT    /catalog/products/{productId}
@@ -379,11 +472,14 @@ DELETE /catalog/products/{productId}/functions/{functionId}
   "code": "door",
   "name": "门锁",
   "description": "闸机",
-  "seedCapabilityType": "HIKVISION_ISAPI"
+  "productTypeId": "ACCESS_CONTROL",
+  "seedCapabilityType": "HIKVISION_ENTRANCE"
 }
 ```
 
-`seedCapabilityType` 可选：创建后按该能力预置模板挂功能（FIXED 常用）。`code` 创建后不可改；更新只传 `name` / `description`。
+`productTypeId` 创建**必填**（id 或 code）。`seedCapabilityType` 可选：创建后按该能力预置模板挂功能（FIXED 常用）。`code` 与 `productTypeId` 创建后不可改；更新只传 `name` / `description`。
+
+读回 `ProductView` 带 `productTypeId` / `productTypeCode` / `productTypeName`，列表展示用名称。
 
 仍被设备引用的产品不能删：`产品仍被设备引用，无法删除`。
 
@@ -432,10 +528,11 @@ DELETE /catalog/products/{productId}/functions/{functionId}
 ## 9. 设备
 
 ```http
-GET    /catalog/devices?page=&size=
+GET    /catalog/devices?page=&size=&name=&deviceCode=&online=&productTypeId=
 GET    /catalog/devices/{deviceCode}
 POST   /catalog/devices
 POST   /catalog/devices/register
+POST   /catalog/devices/load-batch
 PUT    /catalog/devices/{deviceCode}
 DELETE /catalog/devices/{deviceCode}
 
@@ -454,7 +551,15 @@ GET|PUT .../functions/{functionId}/topic-overrides
 GET|PUT .../functions/{functionId}/schedule
 ```
 
-列表项含 `loaded`（是否已进入运行时）。徽章：启用/禁用、已加载/未加载。
+列表项同时含 **`loaded`**（是否已进入运行时）与 **`online`**（探针/轮询在线，`null`/缺省=未知）。二者独立：扫描新建的设备可以在线但未 Load；Load 成功也不保证在线。
+
+徽章建议：启用/禁用、在线/离线/未知、已加载/未加载。`onlineUpdatedAt` 可作辅助提示。
+
+### 9.0 列表筛选与勾选
+
+查询参数见第 2.4 节。参考 UI 表头筛选；改筛选重置到第 1 页。
+
+列表提供勾选（当前页），配合第 9.3 节批量 Load。不要把筛选条件误当成 `load-batch` 的隐式范围：批量接口只认 body 里的 `deviceCodes`（空=全部已启用设备，不是「当前筛选结果」）。
 
 ### 9.1 登记（推荐，一次完成）
 
@@ -507,16 +612,50 @@ GET|PUT .../functions/{functionId}/schedule
 - 已 load 时改编码或地址：服务端先落库，再按旧码 unload、按新码 load
 - `functionOverrides` 参考 UI 仍提供原始 JSON，一般业务页可隐藏
 
-### 9.3 Load / Unload / 删除
+### 9.3 Load / Unload / 批量 Load / 删除
 
 | 操作 | 条件 |
 | --- | --- |
 | Load | 设备启用；至少一条已启用通道；运行时一设备一协议 |
 | Unload | 已 loaded |
+| 批量 Load | 见下 |
 | 指令 | **必须已 loaded**，否则 409 |
 | 删除 | 先确认；服务端会 unload 再删配置，不可恢复 |
 
-按钮禁用逻辑与参考列表一致：未加载不能 Unload/指令；已加载不能再 Load。
+按钮禁用逻辑与参考列表一致：未加载不能 Unload/指令；已加载不能再 Load。扫描新建的设备默认未 Load，需用户显式加载。
+
+**批量 Load**
+
+```http
+POST /catalog/devices/load-batch
+```
+
+```json
+{ "deviceCodes": [] }
+```
+
+| body | 行为 |
+| --- | --- |
+| 省略 / `deviceCodes` 空或 `[]` | 尝试加载**全部已启用**设备（已 Load 的记 `skipped`） |
+| `["door-1","door-2"]` | 只处理这些编码（不存在则 400） |
+
+单台失败不中断其余。响应：
+
+```json
+{
+  "requested": 3,
+  "loaded": 1,
+  "skipped": 1,
+  "failed": 1,
+  "items": [
+    { "deviceCode": "door-1", "status": "loaded", "error": null },
+    { "deviceCode": "door-2", "status": "skipped", "error": "已加载" },
+    { "deviceCode": "door-3", "status": "failed", "error": "..." }
+  ]
+}
+```
+
+`status`：`loaded` | `skipped` | `failed`。参考 UI：「全部 Load」传空数组；「Load 所选」传勾选的 `deviceCode`。完成后刷新设备列表，toast 汇总 loaded / skipped / failed。
 
 ### 9.4 手动下发
 
@@ -683,10 +822,13 @@ PUT /catalog/northbound
 | --- | --- | --- |
 | `enabled !== false` | 徽章「启用」 | Load（若未加载） |
 | `enabled === false` | 「禁用」 | 不可 Load |
+| `online === true` | 「在线」 | 与 Load 无关；仍须 Load 才能下发 |
+| `online === false` | 「离线」 | 同上 |
+| `online` 空 | 「未知」 | 尚未扫描或轮询未覆盖 |
 | `loaded === true` | 「已加载」 | 指令、Unload |
 | `loaded !== true` | 「未加载」 | Load、编辑地址后需再 Load 才进运行时 |
 
-破坏性操作（删设备 / 删产品 / 删通道 / 删功能 / 删组）必须二次确认。删除文案写清不可恢复。
+破坏性操作（删设备 / 删产品 / 删产品类型 / 删通道 / 删功能 / 删组）必须二次确认。删除文案写清不可恢复。
 
 异步按钮在请求期间 disable，并用 pending 文案（「保存」「删除中…」「登记」）。
 
@@ -700,14 +842,17 @@ PUT /catalog/northbound
 2. Schema 渲染器：type + format 映射表、choices、secret、Base64 去前缀。
 3. `PropertyItem` ↔ 表单 Record 双向转换；空可选字段不提交。
 4. 掩码 `••••` 回写不覆盖。
-5. 分页 `page` 从 1，size ≤ 100。
-6. 字典：capabilities / products / channels。
-7. 设备登记用 `addressSchema`；编辑可改 code / name / 地址。
-8. 指令与动作组成员共用同一套 caller 参数采集。
-9. 仅 `loaded` 设备可下发；`status === SUCCESS` 才算成功。
-10. 场景 TIMER：ONCE 校验未来时间；CRON 用 6 段 Spring 表达式；友好表单可选用第 10.4 节规则。
-11. 产品功能编辑器按 `functionMode` 切换 FIXED / CONTRACT / OPEN，不要让用户在 FIXED 下改字段名。
-12. 删除前检查服务端错误原文（产品被引用、通道被引用、编码冲突）。
+5. 分页 `page` 从 1，size ≤ 100；产品/设备列表支持第 2.4 节筛选。
+6. 字典：capabilities / **product-types** / products / channels。
+7. 创建设备前先有产品类型；创建产品必传 `productTypeId`。
+8. 设备登记用 `addressSchema`；编辑可改 code / name / 地址。`loaded` 与 `online` 分开展示。
+9. `probeSupported` 的通道提供扫描；新设备不自动 Load；扫描产品必须是门禁类型。
+10. 单台 Load 与 `POST /devices/load-batch`；空数组=全部已启用，非空=所选编码。
+11. 指令与动作组成员共用同一套 caller 参数采集。
+12. 仅 `loaded` 设备可下发；`status === SUCCESS` 才算成功。
+13. 场景 TIMER：ONCE 校验未来时间；CRON 用 6 段 Spring 表达式；友好表单可选用第 10.4 节规则。
+14. 产品功能编辑器按 `functionMode` 切换 FIXED / CONTRACT / OPEN，不要让用户在 FIXED 下改字段名。
+15. 删除前检查服务端错误原文（产品类型被引用、产品被引用、通道被引用、编码冲突）。
 
 不要求：React、Tailwind、特定组件库、WebSocket、GraphQL。
 
@@ -729,12 +874,15 @@ PUT /catalog/northbound
 | GET | `/capabilities/{capabilityType}/supported/functions` |
 | GET | `/capabilities/{capabilityType}/supported/functions/{functionId}` |
 
-### 通道 / 产品
+### 通道 / 产品类型 / 产品
 
 | 方法 | 路径 |
 | --- | --- |
 | GET POST | `/channels` |
 | GET PUT DELETE | `/channels/{channelId}` |
+| POST | `/channels/{channelId}/probe` |
+| GET POST | `/product-types` |
+| GET PUT DELETE | `/product-types/{typeId}` |
 | GET POST | `/products` |
 | GET PUT DELETE | `/products/{productId}` |
 | GET POST | `/products/{productId}/functions` |
@@ -748,6 +896,7 @@ PUT /catalog/northbound
 | --- | --- |
 | GET POST | `/devices` |
 | POST | `/devices/register` |
+| POST | `/devices/load-batch` |
 | GET PUT DELETE | `/devices/{deviceCode}` |
 | GET POST | `/devices/{deviceCode}/endpoints` |
 | PUT DELETE | `/devices/{deviceCode}/endpoints/{endpointId}` |
@@ -773,23 +922,35 @@ PUT /catalog/northbound
 
 ## 15. 最小接入示例（与框架无关）
 
-登记一台海康门禁并下发开门，伪代码：
+登记或扫描一台海康门禁并下发开门，伪代码：
 
 ```text
 caps     = GET /catalog/capabilities
+types    = GET /catalog/product-types
 channel  = 用户选的通道
-addressSchema = caps.find(c => c.capabilityType == channel.capabilityType).addressSchema
-properties    = recordToProperties(用户填写的地址表单, addressSchema)
+product  = 门禁类型产品（productTypeCode == ACCESS_CONTROL）
 
-POST /catalog/devices/register
-  { deviceCode, productId, name, endpoints: [{ channelId: channel.id, properties }], load: true }
+方式 A — 手工登记：
+  addressSchema = caps.find(c => c.capabilityType == channel.capabilityType).addressSchema
+  properties    = recordToProperties(用户填写的地址表单, addressSchema)
+  POST /catalog/devices/register
+    { deviceCode, productId, name, endpoints: [{ channelId: channel.id, properties }], load: true }
+
+方式 B — 通道扫描（capability.probeSupported == true）：
+  POST /catalog/channels/{channel.id}/probe
+    { productId: product.id }
+  看 created / serialUpdated / unchanged
+  新设备不会自动 Load，需要：
+  POST /catalog/devices/load-batch
+    { deviceCodes: [扫到的 deviceCode...] }
+  或空数组加载全部已启用未加载设备
 
 若要改序列号：
   endpoints = GET /catalog/devices/{deviceCode}/endpoints
   PUT /catalog/devices/{deviceCode}
     { name, deviceCode, endpoints: [{ id, properties: 新地址 }] }
 
-下发：
+下发（必须 loaded；online 仅展示）：
   forms = GET /catalog/devices/{deviceCode}/functions
   选 WRITE 功能，按 parameters 收集 arguments
   POST /catalog/devices/{deviceCode}/commands
